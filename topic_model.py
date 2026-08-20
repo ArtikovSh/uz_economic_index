@@ -1,42 +1,47 @@
-import numpy as np
-import pandas as pd
-from gensim.models.ldamodel import LdaModel
-from config import NUM_TOPICS, PASSES, TARGET_TOPICS
+"""
+Secondary LDA topic model — EXPLORATORY / DIAGNOSTIC ONLY.
 
-def fit_lda_and_score(df, dictionary, corpus):
-    lda_model = LdaModel(
-        corpus=corpus,
-        id2word=dictionary,
-        num_topics=NUM_TOPICS,
-        random_state=42,
-        passes=PASSES,
-        alpha='auto'
-    )
-    
-    # Calculate topic distributions
-    topic_distributions = []
-    for bow in corpus:
-        doc_topics = dict(lda_model.get_document_topics(bow, minimum_probability=0.0))
-        topic_distributions.append(doc_topics)
-    
-    topic_df = pd.DataFrame(topic_distributions).fillna(0.0)
-    topic_df.columns = [f'topic_{i}_weight' for i in range(NUM_TOPICS)]
-    
-    # Combine with original DataFrame
-    df = pd.concat([df, topic_df], axis=1)
-    
-    # Calculate target topic weights and engagement-weighted scores
-    target_cols = [f'topic_{i}_weight' for i in TARGET_TOPICS]
-    df['target_topic_weight'] = df[target_cols].sum(axis=1)
-    df['engagement_score'] = np.log1p(df['views'] + (df['forwards'] * 2))
-    df['weighted_index_score'] = df['target_topic_weight'] * df['engagement_score']
-    
-    # Aggregate to Daily Index
-    df['date_only'] = pd.to_datetime(df['date']).dt.date
-    daily_index = df.groupby('date_only').agg(
-        total_messages=('message_id', 'count'),
-        avg_target_topic_share=('target_topic_weight', 'mean'),
-        composite_daily_index=('weighted_index_score', 'mean')
-    ).reset_index()
-    
-    return lda_model, df, daily_index
+It is NOT used to compute the index (the lexicon-based EAI/ESI in indicator.py
+is the headline signal, because LDA topics are unstable on short news posts and
+not comparable across retrainings). LDA here only surfaces "what themes are in
+the news right now" as human-readable context, plus a coherence score so you
+can judge topic quality. See METHODOLOGY.md.
+"""
+from gensim import corpora
+from gensim.models.ldamodel import LdaModel
+from gensim.models.coherencemodel import CoherenceModel
+
+from text_utils import to_latin_tokens
+from lexicons import STOPWORDS
+from config import NUM_TOPICS, PASSES, LDA_NO_BELOW, LDA_NO_ABOVE
+
+
+def run_topic_model(df):
+    texts = [to_latin_tokens(t, STOPWORDS) for t in df["raw_text"].fillna("")]
+    dictionary = corpora.Dictionary(texts)
+    dictionary.filter_extremes(no_below=LDA_NO_BELOW, no_above=LDA_NO_ABOVE)
+    corpus = [dictionary.doc2bow(t) for t in texts]
+
+    if len(dictionary) < NUM_TOPICS or sum(1 for c in corpus if c) < NUM_TOPICS:
+        print("Topic model: not enough data, skipped.")
+        return [], None
+
+    lda = LdaModel(corpus=corpus, id2word=dictionary, num_topics=NUM_TOPICS,
+                   random_state=42, passes=PASSES, alpha="auto")
+
+    topics = [
+        {"Topic_ID": f"Topic {i}",
+         "Top_Keywords": ", ".join(w for w, _ in lda.show_topic(i, topn=10))}
+        for i in range(lda.num_topics)
+    ]
+
+    coherence = None
+    try:
+        # u_mass is corpus-based and fast (c_v's sliding window is too slow for CI)
+        cm = CoherenceModel(model=lda, corpus=corpus, dictionary=dictionary, coherence="u_mass")
+        coherence = round(cm.get_coherence(), 4)
+    except Exception as e:
+        print(f"Coherence skipped: {e}")
+
+    print(f"Topic model: {NUM_TOPICS} topics, coherence(u_mass)={coherence}")
+    return topics, coherence

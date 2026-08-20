@@ -50,14 +50,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
-      - name: Commit result to repo
+      - name: Commit results to repo
         run: |
           git config user.name "ArtikovSh"
           git config user.email "ortikovshokhrukh@gmail.com"
+          git add data/messages.csv data/daily_index.csv
           git add -f output/*.xlsx
           if git diff --cached --quiet; then
-            echo "No new report to commit."
+            echo "Nothing new to commit."
           else
-            git commit -m "chore: economic index report ($(date -u +'%Y-%m-%d %H:%M') UTC)"
+            git commit -m "data: economic index update ($(date -u +'%Y-%m-%d %H:%M') UTC)"
             git push
           fi

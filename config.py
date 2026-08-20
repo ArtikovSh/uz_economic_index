@@ -1,45 +1,55 @@
 import os
 import socks
 
+# =============================================================================
+# Telegram access
+# =============================================================================
+# Override without editing the file via env vars (get your own at my.telegram.org).
+API_ID = int(os.getenv("TG_API_ID", "38779507"))
+API_HASH = os.getenv("TG_API_HASH", "5aecf3da3a4ffb546880457afe76e26d")
 
-# Telegram API Configuration
-# Defaults keep the original values; override without editing the file by setting
-# environment variables TG_API_ID / TG_API_HASH (get your own at https://my.telegram.org).
-API_ID = int(os.getenv('TG_API_ID', '38779507'))            # Your Telegram API ID
-API_HASH = os.getenv('TG_API_HASH', '5aecf3da3a4ffb546880457afe76e26d')     # Your Telegram API Hash
+# Headless session for CI (an authorized Telethon StringSession). Empty locally,
+# where the file-based 'session_lda_index.session' is used instead.
+SESSION_STRING = os.getenv("TG_SESSION_STRING", "").strip()
 
-# Headless session (for CI / GitHub Actions): a Telethon StringSession that is
-# already authorized, so no interactive phone-code login is needed on the runner.
-# Leave empty for local runs (the file-based 'session_lda_index.session' is used).
-# Generate it once with: python export_session.py  (then store as secret TG_SESSION_STRING)
-SESSION_STRING = os.getenv('TG_SESSION_STRING', '').strip()
+# News channels to track. Add economy-focused channels (@cbu_uz, @stat_uz, ...)
+# to sharpen the signal.
+CHANNELS = ["@gazetauz", "@kunuzofficial", "@daryo", "@spotuz"]
 
-# Target Telegram Channels
-CHANNELS = ['@gazetauz', '@kunuzofficial', '@daryo', '@spotuz']
+MESSAGES_PER_CHANNEL = int(os.getenv("MSG_PER_CHANNEL", "400"))
 
-# Directory Paths
-OUTPUT_DIR = 'output'
+# =============================================================================
+# Paths / storage
+# =============================================================================
+OUTPUT_DIR = "output"          # rendered Excel reports (ephemeral)
+DATA_DIR = "data"              # persistent master store + daily time series
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
-# LDA Model Parameters
-NUM_TOPICS = 5
+MASTER_CSV = os.path.join(DATA_DIR, "messages.csv")        # raw, deduped, growing
+DAILY_CSV = os.path.join(DATA_DIR, "daily_index.csv")      # the index time series
+
+# =============================================================================
+# Index parameters (see METHODOLOGY.md)
+# =============================================================================
+FORWARD_WEIGHT = 2.0     # a forward counts as N views inside the engagement log
+RELEVANCE_TAU = 2.0      # saturation constant for relevance = 1 - exp(-hits/TAU)
+ECON_MIN_HITS = 1        # a post is "economic" if it has >= this many econ hits
+
+# =============================================================================
+# Secondary LDA topic model (exploratory / diagnostic only, NOT the index)
+# =============================================================================
+NUM_TOPICS = 6
 PASSES = 15
-TARGET_TOPICS = [0, 2]         # Indices corresponding to Macro/Economic Topics
+LDA_NO_BELOW = 5         # drop tokens appearing in < N docs
+LDA_NO_ABOVE = 0.4       # drop tokens appearing in > 40% of docs
 
-# Custom Stopwords
-STOPWORDS = set([
-    "va", "ham", "uchun", "bilan", "da", "ga", "dan", "bu", "o", "shuningdek",
-    "в", "и", "на", "с", "по", "для", "что", "это", "как", "из"
-])
-
-# --- Proxy configuration ---
-# By default the scraper connects DIRECTLY (no proxy) — Telegram is reachable
-# directly in Uzbekistan. If you need to route through a local SOCKS5 client
-# (v2rayN / Nekoray / Shadowsocks etc.), enable it by setting USE_PROXY=1.
-# Host/port default to the common local client 127.0.0.1:10808; override with
-# PROXY_HOST / PROXY_PORT if your client listens elsewhere.
-USE_PROXY = os.getenv('USE_PROXY', '0') == '1'
-PROXY_HOST = os.getenv('PROXY_HOST', '127.0.0.1')
-PROXY_PORT = int(os.getenv('PROXY_PORT', '10808'))
-
+# =============================================================================
+# Proxy (local runs only). Default: DIRECT. Telegram is DPI-reset on some UZ
+# networks, so local runs usually need USE_PROXY=1 with a SOCKS5 client;
+# GitHub Actions runs outside that network and needs no proxy.
+# =============================================================================
+USE_PROXY = os.getenv("USE_PROXY", "0") == "1"
+PROXY_HOST = os.getenv("PROXY_HOST", "127.0.0.1")
+PROXY_PORT = int(os.getenv("PROXY_PORT", "10808"))
 PROXY = (socks.SOCKS5, PROXY_HOST, PROXY_PORT) if USE_PROXY else None
