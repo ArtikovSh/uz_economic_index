@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual Environment
+venv/
+ENV/
+
+# Sensitive Telegram Session files & config
+*.session
+*.session-journal
+session_string.txt
+.env
+
+# Output folder & Excel results
+output/
+*.xlsx

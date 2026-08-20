@@ -1,0 +1,9 @@
+# Pinned to the exact versions validated locally, so CI reproduces the same
+# working environment. Loosen to >= only if you deliberately want upgrades.
+telethon==1.44.0
+pandas==3.0.5
+numpy==2.5.2
+scipy==1.18.0
+gensim==4.4.0
+openpyxl==3.1.5
+PySocks==1.7.1
