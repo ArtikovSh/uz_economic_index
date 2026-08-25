@@ -51,7 +51,7 @@ LLM_LABELS_CSV = os.path.join(DATA_DIR, "llm_labels.csv")  # cached Gemini label
 # free tier + pay-as-you-go, separate from a consumer Gemini subscription).
 # =============================================================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-2.6-flash")   # or gemini-2.5-pro
+GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-3.6-flash")   # or gemini-3.6-pro
 USE_LLM = os.getenv("USE_LLM", "1" if GEMINI_API_KEY else "0") == "1"
 LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE", "20"))       # messages per API call
 LLM_MAX_CHARS = int(os.getenv("LLM_MAX_CHARS", "700"))        # truncate each post
