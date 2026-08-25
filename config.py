@@ -12,9 +12,22 @@ API_HASH = os.getenv("TG_API_HASH", "5aecf3da3a4ffb546880457afe76e26d")
 # where the file-based 'session_lda_index.session' is used instead.
 SESSION_STRING = os.getenv("TG_SESSION_STRING", "").strip()
 
-# News channels to track. Add economy-focused channels (@cbu_uz, @stat_uz, ...)
-# to sharpen the signal.
-CHANNELS = ["@gazetauz", "@kunuzofficial", "@daryo", "@spotuz"]
+# News channels to track. The scraper logs "collected N" / "skipped" per channel,
+# so a wrong/renamed handle is skipped gracefully (never fatal) — check the run log
+# and prune/adjust. (t.me could not be auto-verified from this machine: the corporate
+# proxy blocks the page body.)
+CHANNELS = [
+    # original general + economy news
+    "@gazetauz", "@kunuzofficial", "@daryo", "@spotuz",
+    # added business / economy-focused media
+    "@Review_uz", "@uzdaily", "@qalampir_uz", "@yuz_uz", "@repost_uz",
+]
+# Candidate official / economy channels — VERIFY the exact handle on Telegram, then
+# move into CHANNELS above (kept out until confirmed to avoid scraping a wrong channel):
+#   "@cbu_uz"          # Markaziy bank (Central Bank)
+#   "@soliqqomitasi"   # Soliq qo'mitasi (Tax Committee)
+#   "@stat_uz"         # Statistika agentligi
+#   "@norma_uz"        # Norma.uz (soliq / buxgalteriya)
 
 MESSAGES_PER_CHANNEL = int(os.getenv("MSG_PER_CHANNEL", "400"))
 
@@ -34,7 +47,9 @@ DAILY_CSV = os.path.join(DATA_DIR, "daily_index.csv")      # the index time seri
 # =============================================================================
 FORWARD_WEIGHT = 2.0     # a forward counts as N views inside the engagement log
 RELEVANCE_TAU = 2.0      # saturation constant for relevance = 1 - exp(-hits/TAU)
-ECON_MIN_HITS = 1        # a post is "economic" if it has >= this many econ hits
+ECON_MIN_HITS = 2        # a post is "economic" only with >= this many econ hits
+                         # (raised from 1: a single stem hit was a coin-flip; see
+                         #  METHODOLOGY §7 / the classification-quality audit)
 
 # =============================================================================
 # Secondary LDA topic model (exploratory / diagnostic only, NOT the index)

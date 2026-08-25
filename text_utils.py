@@ -45,6 +45,16 @@ def unify_apostrophes(text: str) -> str:
     return text
 
 
+def normalize_light(text: str) -> str:
+    """Lower-cased, apostrophe-unified, whitespace-collapsed — but boilerplate KEPT.
+    Used for flag detection (ads/digests/off-topic/foreign) that must still see
+    words like 'реклама'/'aksiya' which normalize_text() strips."""
+    if not isinstance(text, str):
+        return ""
+    text = unify_apostrophes(text).lower()
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def normalize_text(text: str) -> str:
     """Lower-cased, boilerplate-free string for lexicon matching (script kept)."""
     if not isinstance(text, str):

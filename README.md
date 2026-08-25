@@ -20,7 +20,9 @@ LDA faqat yordamchi diagnostikaga tushirilgan. Sabablari METHODOLOGY.md §1, §7
 | `scraper.py` | Telethon orqali yig'ish (StringSession/proxy qo'llab-quvvatlaydi) |
 | `store.py` | O'suvchi, dublikatsiz master arxiv (`data/messages.csv`) |
 | `text_utils.py` | Normallashtirish, shablon-filtri, kirill→lotin transliteratsiya |
-| `lexicons.py` | Uch tilli iqtisodiy + sentiment + stop-so'z leksikonlari |
+| `lexicons.py` | Uch tilli iqtisodiy leksikon — **chegaralangan regex naqshlar** (10 kategoriya) + reklama/xorijiy detektorlar |
+| `categorizer.py` | Har xabarga **primary_topic** (10 kategoriya) + reklama/dayjest/xorijiy flag |
+| `sentiment.py` | **Aspekt-asosli** sentiment (narx↑=−, ishlab chiqarish↑=+, kurs↑=−) |
 | `indicator.py` | **Yadro:** relevance, sentiment, engagement → EAI/ESI |
 | `topic_model.py` | LDA (faqat diagnostik: mavzular + koherentlik) |
 | `excel_exporter.py` | 5 varaqli Excel + grafik |
@@ -30,8 +32,12 @@ LDA faqat yordamchi diagnostikaga tushirilgan. Sabablari METHODOLOGY.md §1, §7
 
 - `data/messages.csv` — o'suvchi xom arxiv (CI commit qiladi)
 - `data/daily_index.csv` — EAI/ESI kunlik vaqt qatori (CI commit qiladi)
-- `output/economic_index_<sana>.xlsx` — 5 varaqli hisobot + grafik:
-  Daily Index · Messages & Scores · Economic Lexicon · Topic Glossary · Methodology
+- `output/economic_index_<sana>.xlsx` — 6 varaqli hisobot + grafik:
+  Daily Index · Messages & Scores (muhimlik bo'yicha saralangan) · Topic Breakdown ·
+  Economic Lexicon · Topic Glossary · Methodology
+
+Har xabar `primary_topic` (10 iqtisodiy kategoriya yoki `non_economic`) oladi; reklama,
+dayjest va xorijiy-makro postlar indeksdan chiqariladi.
 
 ## Lokal ishga tushirish (Windows)
 

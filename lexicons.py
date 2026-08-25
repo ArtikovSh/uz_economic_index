@@ -1,91 +1,121 @@
 """
-Trilingual economic + sentiment lexicons (Uzbek-Latin, Uzbek-Cyrillic, Russian).
+Trilingual economic lexicons as PRECISE regex patterns (uz-Latin, uz-Cyrillic, ru).
 
-Design
-------
-The corpus mixes three scripts/languages, so every concept is listed in all of
-them. Entries are word STEMS matched at a word boundary as a prefix
-(`\\bstem`), which is a cheap stand-in for lemmatisation in an agglutinative
-language: the stem "narx" also catches "narxlar", "narxlarning", "narxi".
+Why patterns, not bare stems
+----------------------------
+The earlier version matched bare stems as `\\bstem`, which collided badly:
+`цен`→центр/центральный (center), `yevro`→Yevropa (Europe), `elektr`→elektron,
+`baho`→baholash (assess), `dollar`→"$" as a unit. A corpus audit showed the single
+largest category was ~44% collision garbage and ~7% of "economic" posts were false
+positives that also inflated the EAI index. Here every entry is a bounded regex
+(negative look-aheads, word boundaries, context requirements) audited against the
+real surface forms. See METHODOLOGY.md §7 and the workflow audit.
 
-Three families:
-  * ECONOMIC   – concrete domestic-economy concepts (prices, FX, fiscal, trade,
-                 macro, banking, labour, energy). Used for the RELEVANCE score.
-  * POSITIVE   – wording that is good for the economy / households.
-  * NEGATIVE   – wording that is bad for the economy / households.
-
-The lexicons are deliberately transparent and easy to extend – add a stem to a
-list and it takes effect immediately. See METHODOLOGY.md for the rationale and
-known limitations (ads, geopolitical "economic", aspect ambiguity of "growth").
+Structure
+---------
+ECONOMIC_TERMS : {category: [regex, ...]}  — 10 economic categories.
+CAT_RE / ECON_RE : compiled per-category and combined.
+Flag detectors (run on normalize_light text, which keeps 'реклама'/'aksiya'):
+  AD_RE, DIGEST_RE, FOREIGN_RE, UZ_ENTITY_RE.
+STOPWORDS : for the exploratory LDA only.
 """
 import re
+from collections import Counter
 
-# ---------------------------------------------------------------- ECONOMIC ----
+# ============================================================ ECONOMIC ========
+# Each list holds bounded regexes. Priority order (tie-break) defined below.
 ECONOMIC_TERMS = {
     "prices_inflation": [
-        "narx", "baho", "inflatsiya", "qimmatchilik", "arzon", "qimmat", "tarif",
-        "цен", "инфляц", "подорожан", "подешеван", "тариф", "стоимост", "дорожа",
+        r"\bnarx", r"\bнарх", r"инфляц", r"inflats", r"qimmatchilik", r"қиммат",
+        r"подорожан", r"подешеван", r"подорожал", r"подешевел", r"қимматлаш",
+        r"\bцен(?=а|ы|е|у|ой|ам|ах|н|ово)",       # цена/цены/ценовой… NOT центр
+        r"стоимост", r"\btarif", r"тариф", r"qimmat", r"arzonlash",
     ],
     "currency_fx": [
-        # NB: bare "so'm"/"сум" deliberately excluded — it appears in almost any
-        # price/fine post and floods relevance with noise. FX relevance comes
-        # from unambiguous terms instead.
-        "valyuta", "kurs", "dollar", "yevro", "devalvatsiya",
-        "валют", "курс", "доллар", "евро", "девальвац",
+        r"валют", r"valyuta", r"девальвац", r"devalvatsiya", r"деноминац",
+        r"курс\s+(доллар|евро|валют|рубл|сум)",   # exchange RATE, not $-as-unit
+        r"\bkurs(i|ida|ining|lari)?\b", r"\bевро\b", r"\byevro\b",
+        r"(доллар|dollar)\w*\s+(вырос|снизил|подорожал|подешевел|укрепил|ослаб|tushdi|ko'taril|pasay)",
     ],
     "fiscal": [
-        "byudjet", "soliq", "bojxona", "subsidiya", "xarajat", "defitsit",
-        "бюджет", "налог", "таможн", "субсиди", "расход", "дефицит", "госдолг",
+        r"бюджет", r"byudjet", r"бюджет", r"\bналог", r"\bsoliq", r"солиқ",
+        r"таможн", r"bojxona", r"божхона", r"субсид", r"subsidiya",
+        r"\bдефицит", r"defitsit", r"госдолг", r"\bрасход", r"xarajat", r"харажат",
+        r"\bштраф", r"\bjarima", r"\bжарима", r"акциз",
     ],
     "trade": [
-        "eksport", "import", "savdo", "tovar", "tashqi savdo",
-        "экспорт", "импорт", "торговл", "товарооборот", "внешнеторгов",
+        r"экспорт", r"eksport", r"импорт", r"\bimport", r"внешнеторгов",
+        r"tashqi savdo", r"ташқи савдо", r"торговл", r"\bsavdo", r"\bсавдо",
+        r"товарооборот", r"\bтовар(?=ов|ы|а|ные|ного|ам|у)",
     ],
     "macro": [
-        "iqtisod", "yaim", "yalpi ichki", "ishlab chiqar", "iste'mol", "retsessiya",
-        "inqiroz", "o'sish sur", "sanoat", "qishloq xo'jal",
-        "экономик", "ввп", "производств", "потреблени", "рецесси", "промышленн",
-        "макроэконом",
+        r"\bввп\b", r"\byaim\b", r"\bgdp\b", r"макроэконом", r"iqtisodiyot",
+        r"иқтисодиёт", r"iqtisodiy o'sish", r"рецесси", r"retsessiya",
+        r"промышленн", r"производств", r"ishlab chiqar", r"ишлаб чиқар",
+        r"iste'mol", r"истеъмол",
     ],
     "banking_finance": [
-        "bank", "kredit", "ipoteka", "depozit", "qarz", "investitsiya", "sarmoya",
-        "aksiya", "birja", "foiz stavka", "stavka",
-        "банк", "кредит", "ипотек", "депозит", "инвестиц", "акци", "биржа", "ставк",
+        r"\bбанк", r"\bbank", r"кредит", r"kredit", r"кредитн", r"ипотек",
+        r"ipoteka", r"депозит", r"depozit", r"инвестиц", r"investits", r"sarmoya",
+        r"сармоя", r"облигаци", r"obligatsiya", r"\bбиржа", r"фондов",
+        r"ставк[аиуе]", r"процентн", r"\bqarz", r"\bқарз", r"микрозайм",
     ],
     "labour_income": [
-        "ish o'rni", "ish haqi", "maosh", "oylik", "ishsiz", "bandlik", "pensiya",
-        "nafaqa", "daromad",
-        "зарплат", "безработиц", "занятост", "пенси", "пособи", "доход", "оклад",
+        r"зарплат", r"ish haqi", r"иш ҳақи", r"\bmaosh", r"\bмаош", r"\boylik",
+        r"\bойлик", r"безработиц", r"ishsiz", r"ишсиз", r"занятост", r"bandlik",
+        r"\bпенси", r"pensiya", r"пенсия", r"нафақа", r"nafaqa", r"\bдоход(?!ит|ят)",
+        r"daromad", r"даромад",
     ],
     "energy_utility": [
-        "benzin", "yoqilg'i", "gaz", "elektr", "kommunal",
-        "бензин", "топлив", "электроэнерг", "коммунальн", "газоснабж",
+        r"бензин", r"benzin", r"yoqilg'i", r"ёқилғи", r"\bтоплив",
+        r"\bгаз(?=а|у|ом|оснабж|опровод|ифи|\b)", r"\bgaz\b", r"\bгаз\b",
+        r"электроэнерг", r"\belektr(?!on|osh)", r"электр(?=о|и|ост)", r"коммунал",
+        r"kommunal", r"нефт", r"\bneft", r"нефтегаз",
+    ],
+    "business": [
+        r"тадбиркор", r"tadbirkor", r"предпринимател", r"\bбизнес", r"\bbiznes",
+        r"kichik biznes", r"малый бизнес", r"\bмсб\b", r"реестр\s+операторов",
+        r"мораторий\s+на\s+проверк", r"litsenziya", r"лицензи",
+    ],
+    "construction_realty": [
+        r"qurilish", r"қурилиш", r"строительств", r"недвижимост", r"ko'chmas mulk",
+        r"кўчмас мулк", r"\bжиль[её]", r"uy-joy", r"уй-жой", r"новостро",
+        r"застройщик",
     ],
 }
 
-# ----------------------------------------------------------------- SENTIMENT ---
-POSITIVE_TERMS = [
-    # uz
-    "o'sdi", "o'sish", "ko'paydi", "arzonlash", "arzonlashdi", "yaxshilan",
-    "rivojlan", "barqaror", "mustahkamlan", "rekord", "foyda", "tiklan",
-    "jonlan", "imtiyoz", "qo'llab-quvvat", "o'sti", "oshirildi maosh",
-    # ru
-    "рост", "вырос", "увеличил", "подешевел", "улучш", "развит", "стабильн",
-    "укреплен", "рекорд", "прибыл", "восстанов", "приток", "льгот", "рекордн",
-]
-NEGATIVE_TERMS = [
-    # uz
-    "qimmatlash", "qimmatlashdi", "qimmatchilik", "pasaydi", "tushib ketdi",
-    "inqiroz", "tanqislik", "defitsit", "ishsizlik", "devalvatsiya", "jarima",
-    "zarar", "kamaydi", "taqchil", "qarz oshdi", "narx oshdi", "baholar oshdi",
-    # ru
-    "подорожал", "подорожан", "дорожает", "кризис", "дефицит", "безработиц",
-    "обвал", "паден", "девальваци", "убыток", "дефолт", "спад", "сокращени",
-    "подорожа", "штраф",
+# Tie-break priority (more specific / narrower first, macro last)
+PRIORITY = [
+    "currency_fx", "prices_inflation", "banking_finance", "fiscal", "trade",
+    "energy_utility", "labour_income", "construction_realty", "business", "macro",
 ]
 
-# ------------------------------------------------------------------ STOPWORDS --
-# Expanded trilingual stopword + boilerplate set for the LDA topic model.
+# ================================================================ FLAGS ========
+# Run on normalize_light() text (boilerplate kept).
+AD_RE = re.compile(
+    r"\bреклама\b|\breklama\b|\(reklama\)|\bаксия\b|\baksiya\w*|промокод|промо-?акци|"
+    r"скидк\w+|chegirma|sotuvda|sotiladi|аренда\b|arzon narx|скидки до|"
+    r"salom\s+maktab|байрам\s+акци", re.IGNORECASE)
+
+DIGEST_RE = re.compile(r"дайджест|dayjest|yangiliklar\s+dayjest|янгиликлар\s+дайжест|"
+                       r"кун\w*\s+asosiy\s+yangilik|главное\s+за\s+день", re.IGNORECASE)
+
+# Foreign-country / -leader markers (a post is foreign only if NO UZ entity present)
+FOREIGN_RE = re.compile(
+    r"\bсша\b|\baqsh\b|\bu\.?s\.?a\b|россия\b|россии\b|российск|rossiya|украин|ukraina|"
+    r"\bкитай|xitoy|xitoyn|турци|turkiya|\bиран\b|\beron\b|израил|isroil|"
+    r"казахстан|qozog'iston|европ|yevropa|евросоюз|\bкорея|япони|германи|"
+    r"трамп|\btrump|путин|байден|zelensk|\bгаза\b|сектор\s+газа", re.IGNORECASE)
+
+UZ_ENTITY_RE = re.compile(
+    r"узбекистан|o'zbekiston|ozbekiston|ўзбекистон|\bсум\b|\bсўм|so'm\b|"
+    r"ташкент|toshkent|тошкент|самарканд|samarqand|бухар|buxoro|андижан|andijon|"
+    r"фергана|farg'ona|наманган|namangan|кашкадарь|qashqadaryo|сурхандарь|surxondaryo|"
+    r"джизак|jizzax|сырдарь|sirdaryo|навои|navoiy|хорезм|xorazm|каракалпак|qoraqalpog|"
+    r"марказий\s+банк|центробанк|\bцб\b|мирзиёев|mirziyoyev|минэконом|макроиқтисод",
+    re.IGNORECASE)
+
+# ============================================================= STOPWORDS =======
 STOPWORDS = set("""
 va ham uchun bilan da ga dan bu o shuningdek yoki hamda esa emas edi ekan
 bir bo'ldi bo'lgan bo'lib kerak lekin ammo yana faqat qildi qilish bo'yicha
@@ -94,37 +124,32 @@ yangi kuni kun yil oy soat mln mlrd ming yicha zbekistonda zbekiston mumkin
 также при после уже еще есть нет тот эта эти год года лет день дней сум сумов
 млн млрд тыс который которые между более менее очень так этот того чтобы
 """.split())
-
-# Transliterated Russian function words + frequent place/boilerplate leaks that
-# survive into the (latinised) LDA tokens. Diagnostic-quality only.
 STOPWORDS |= set("""
 chto dlya takje pri posle budet budut goda god ego kak bolee chem eto bil bili
 mejdu kotoriy kotorie vse uje esche net tot eta eti tom toy svoi nash ves pod
 nad bez ili bi je li iz za ob dvuh treh raz kogda tolko tak etot etogo etu ona
 uzbekistan uzbekistana uzbekistane ozbekiston ozbekistonda sum suma sumov mln
 mlrd tis avgust avgusta rossiya rossii oblasti kanali rasmiy bolgan boldi bor
-strani stranah goroda dnya chego komu byla svoih
+strani stranah goroda dnya chego komu byla svoih etom togo krome odnako ranee
+pochti biznesa tashkente godu chelovek cherez mojno ego dlya
 """.split())
 
-# ---------------------------------------------------------------- compiled -----
-def _compile(terms):
-    # word-boundary prefix match; escape stems, allow trailing word chars
-    parts = [r"\b" + re.escape(t.strip()) for t in terms if t.strip()]
-    return re.compile("|".join(parts), re.IGNORECASE | re.UNICODE)
-
-_ALL_ECON = [t for terms in ECONOMIC_TERMS.values() for t in terms]
-ECON_RE = _compile(_ALL_ECON)
-POS_RE = _compile(POSITIVE_TERMS)
-NEG_RE = _compile(NEGATIVE_TERMS)
+# ============================================================ COMPILED =========
+CAT_RE = {c: [re.compile(p, re.IGNORECASE | re.UNICODE) for p in pats]
+          for c, pats in ECONOMIC_TERMS.items()}
+_ALL = [re.compile(p, re.IGNORECASE | re.UNICODE)
+        for pats in ECONOMIC_TERMS.values() for p in pats]
 
 
 def econ_hits(norm_text: str) -> int:
-    return len(ECON_RE.findall(norm_text))
+    return sum(len(r.findall(norm_text)) for r in _ALL)
 
 
-def pos_hits(norm_text: str) -> int:
-    return len(POS_RE.findall(norm_text))
-
-
-def neg_hits(norm_text: str) -> int:
-    return len(NEG_RE.findall(norm_text))
+def category_hits(norm_text: str) -> Counter:
+    """Per-category hit counts on normalize_text() output."""
+    c = Counter()
+    for cat, rgxs in CAT_RE.items():
+        n = sum(len(r.findall(norm_text)) for r in rgxs)
+        if n:
+            c[cat] = n
+    return c
