@@ -41,6 +41,21 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 MASTER_CSV = os.path.join(DATA_DIR, "messages.csv")        # raw, deduped, growing
 DAILY_CSV = os.path.join(DATA_DIR, "daily_index.csv")      # the index time series
+LLM_LABELS_CSV = os.path.join(DATA_DIR, "llm_labels.csv")  # cached Gemini labels
+
+# =============================================================================
+# Gemini LLM classifier (optional, high quality). If GEMINI_API_KEY is set the
+# pipeline classifies each NEW message with Gemini (cached in llm_labels.csv, so
+# only unseen posts cost a call) and falls back to the rule-based classifier on
+# any error. Get a key at https://aistudio.google.com/apikey (the API has its own
+# free tier + pay-as-you-go, separate from a consumer Gemini subscription).
+# =============================================================================
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash")   # or gemini-2.5-pro
+USE_LLM = os.getenv("USE_LLM", "1" if GEMINI_API_KEY else "0") == "1"
+LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE", "20"))       # messages per API call
+LLM_MAX_CHARS = int(os.getenv("LLM_MAX_CHARS", "700"))        # truncate each post
+LLM_LABEL_VERSION = "v1"                                      # bump to invalidate cache
 
 # =============================================================================
 # Index parameters (see METHODOLOGY.md)

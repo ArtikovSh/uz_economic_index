@@ -95,6 +95,23 @@ $$\text{engagement}=\ln(1+\text{views}+2\cdot\text{forwards}),\qquad w=\frac{\te
 `ln` — og'ir-dumli ko'rishlarni siqadi; forward×2 — kuchliroq signal; kanalga bo'lish —
 katta kanal bosib ketmasin. *Manba:* Antweiler–Frank (2004).
 
+### 4.6. LLM klassifikator (Gemini) — ixtiyoriy, yuqori sifat
+`GEMINI_API_KEY` o'rnatilsa, har xabarni **Gemini** (`gemini_classifier.py`) tasniflaydi:
+`economic`, `topic` (o'sha 10 kategoriya), `relevance` (0–1), `sentiment` (−1..1),
+`is_ad`/`is_digest`/`is_foreign` — barchasi **struktura sxemasi** (majburiy JSON) bilan.
+LLM til va kontekstni qoidalardan ancha yaxshi tushunadi (aspekt, reklama, geosiyosat).
+Prompt `prompts.py` da — kategoriyalar ta'rifi, aspekt-sentiment mantiqi va O'zbekiston
+domen fokusi aniq berilgan.
+
+Muhandislik jihatlari: (a) natijalar `data/llm_labels.csv` da **keshlanadi** —
+faqat yangi `(kanal, message_id)` chaqiriladi, o'suvchi master arzon qoladi;
+(b) xabarlar **partiyalab** (20 tadan) yuboriladi; (c) kalit yo'q / tarmoq / kvota
+xatosida o'sha partiya **qoida-asosli klassifikatorga fallback** qiladi (quvur hech
+qachon buzilmaydi), va faqat haqiqiy Gemini yorliqlari keshlanadi (xatolilar keyingi
+run'da qayta urinadi). Model `GEMINI_MODEL` bilan sozlanadi (default `gemini-2.5-flash`,
+`gemini-2.5-pro` ham mumkin). Kalit `aistudio.google.com/apikey` dan olinadi (API'ning
+o'z bepul/tekin-limiti bor, iste'molchi obunasidan alohida).
+
 ---
 
 ## 5. Kunlik indekslar

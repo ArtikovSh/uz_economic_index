@@ -21,7 +21,8 @@ import pandas as pd
 
 from categorizer import classify
 from sentiment import aspect_sentiment
-from config import FORWARD_WEIGHT, RELEVANCE_TAU, ECON_MIN_HITS
+from config import (FORWARD_WEIGHT, RELEVANCE_TAU, ECON_MIN_HITS,
+                    USE_LLM, GEMINI_API_KEY)
 
 
 def _score_row(text):
@@ -44,8 +45,28 @@ def _score_row(text):
 
 def score_messages(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    scored = df["raw_text"].apply(_score_row)
-    df = pd.concat([df, scored], axis=1)
+
+    if USE_LLM and GEMINI_API_KEY:
+        # LLM path: Gemini labels each new post (cached); columns filled below.
+        from gemini_classifier import label_messages
+        lab = label_messages(df)
+        df["is_economic"] = lab["is_economic"].astype(int).values
+        df["primary_topic"] = lab["primary_topic"].astype(str).values
+        df["relevance"] = lab["relevance"].astype(float).values
+        df["sentiment"] = lab["sentiment"].astype(float).values
+        df["is_ad"] = lab["is_ad"].astype(int).values
+        df["is_digest"] = lab["is_digest"].astype(int).values
+        df["is_foreign"] = lab["is_foreign"].astype(int).values
+        df["secondary_topics"] = ""
+        df["econ_hits"] = pd.NA
+        df["sent_label"] = df["sentiment"].apply(
+            lambda s: "pos" if s > 0.15 else ("neg" if s < -0.15 else "neu"))
+        df["label_source"] = "gemini"
+    else:
+        # Rule-based path (lexicon classifier + aspect sentiment).
+        scored = df["raw_text"].apply(_score_row)
+        df = pd.concat([df, scored], axis=1)
+        df["label_source"] = "rules"
 
     df["views"] = pd.to_numeric(df["views"], errors="coerce").fillna(0)
     df["forwards"] = pd.to_numeric(df["forwards"], errors="coerce").fillna(0)

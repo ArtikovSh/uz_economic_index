@@ -39,6 +39,10 @@ jobs:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION_STRING: ${{ secrets.TG_SESSION_STRING }}
+          # Optional: set the GEMINI_API_KEY secret to classify with Gemini.
+          # If unset, the pipeline uses the rule-based classifier automatically.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
         run: python main.py
 
       - name: Upload Excel artifact
@@ -55,6 +59,7 @@ jobs:
           git config user.name "ArtikovSh"
           git config user.email "ortikovshokhrukh@gmail.com"
           git add data/messages.csv data/daily_index.csv
+          git add data/llm_labels.csv 2>/dev/null || true
           git add -f output/*.xlsx
           if git diff --cached --quiet; then
             echo "Nothing new to commit."
