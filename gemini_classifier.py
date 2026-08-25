@@ -19,33 +19,79 @@ from config import (GEMINI_API_KEY, GEMINI_MODEL, LLM_BATCH_SIZE, LLM_MAX_CHARS,
                     LLM_LABELS_CSV, LLM_LABEL_VERSION, ECON_MIN_HITS)
 from prompts import SYSTEM_PROMPT, RESPONSE_SCHEMA, build_user_prompt, CATEGORIES
 
-API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+BASE = "https://generativelanguage.googleapis.com/v1beta"
 LABEL_COLS = ["is_economic", "primary_topic", "relevance", "sentiment",
               "is_ad", "is_digest", "is_foreign"]
+_resolved = {"model": None}
+
+
+# ------------------------------------------------------------- model resolve ---
+def list_models():
+    """Model names that support generateContent for this API key."""
+    r = requests.get(f"{BASE}/models", params={"key": GEMINI_API_KEY}, timeout=60)
+    r.raise_for_status()
+    out = []
+    for m in r.json().get("models", []):
+        if "generateContent" in m.get("supportedGenerationMethods", []):
+            out.append(m["name"].replace("models/", ""))
+    return out
+
+
+def resolve_model(preferred=None):
+    """Return a valid model name; auto-pick the best available if the wanted one
+    isn't there (handles typos / version drift / 'gemini-2.6' etc.)."""
+    preferred = (preferred or GEMINI_MODEL).replace("models/", "")
+    try:
+        avail = list_models()
+    except Exception as e:
+        print(f"  (could not list models: {e}); trying '{preferred}' as-is")
+        return preferred
+    if preferred in avail:
+        return preferred
+
+    def pick(pred):
+        return next((m for m in avail if pred(m)), None)
+    choice = (pick(lambda m: "flash" in m and "2.5" in m)
+              or pick(lambda m: "flash" in m and "latest" in m)
+              or pick(lambda m: "flash" in m)
+              or pick(lambda m: "pro" in m and "2.5" in m)
+              or pick(lambda m: m.startswith("gemini") and "embedding" not in m)
+              or (avail[0] if avail else preferred))
+    print(f"  model '{preferred}' unavailable -> using '{choice}'. "
+          f"Available: {avail[:10]}")
+    return choice
 
 
 # --------------------------------------------------------------- API call ------
-def _call_gemini(texts):
-    payload = {
+def _payload(texts, use_schema):
+    gen = {"temperature": 0, "responseMimeType": "application/json"}
+    if use_schema:
+        gen["responseSchema"] = RESPONSE_SCHEMA
+    return {
         "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
         "contents": [{"role": "user", "parts": [{"text": build_user_prompt(texts)}]}],
-        "generationConfig": {
-            "temperature": 0,
-            "responseMimeType": "application/json",
-            "responseSchema": RESPONSE_SCHEMA,
-        },
+        "generationConfig": gen,
     }
-    url = API_URL.format(model=GEMINI_MODEL)
+
+
+def _call_gemini(texts, model=None):
+    model = model or _resolved["model"] or GEMINI_MODEL
+    url = f"{BASE}/models/{model}:generateContent"
+    use_schema = True
     last = None
-    for attempt in range(4):
-        r = requests.post(url, params={"key": GEMINI_API_KEY}, json=payload, timeout=120)
+    for attempt in range(5):
+        r = requests.post(url, params={"key": GEMINI_API_KEY},
+                          json=_payload(texts, use_schema), timeout=120)
         if r.status_code == 200:
             text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
             arr = json.loads(text)
             if len(arr) != len(texts):
                 raise ValueError(f"expected {len(texts)} labels, got {len(arr)}")
             return arr
-        last = f"{r.status_code}: {r.text[:180]}"
+        last = f"HTTP {r.status_code}: {r.text[:220]}"
+        if r.status_code == 400 and use_schema:
+            use_schema = False          # retry without the strict responseSchema
+            continue
         if r.status_code in (429, 500, 503):
             time.sleep(2 * (attempt + 1))
             continue
@@ -125,8 +171,10 @@ def label_messages(df: pd.DataFrame) -> pd.DataFrame:
 
     todo = [(i, k) for i, k in zip(df.index, key) if k not in cache]
     if todo:
+        if _resolved["model"] is None:
+            _resolved["model"] = resolve_model(GEMINI_MODEL)
         print(f"  Gemini: classifying {len(todo)} new posts "
-              f"({len(cache)} cached) with {GEMINI_MODEL}")
+              f"({len(cache)} cached) with {_resolved['model']}")
         idxs = [i for i, _ in todo]
         keys = [k for _, k in todo]
         texts = (df.loc[idxs, "raw_text"].fillna("").astype(str)
