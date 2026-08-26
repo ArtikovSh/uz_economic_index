@@ -77,33 +77,36 @@ FIELDS
    Uzbekistan angle (e.g. US national debt, Russia's war financing). If it is a
    bilateral/UZ-relevant story (UZ-Kazakhstan trade), is_foreign = false.
 
-Be precise and consistent. Output ONLY the structured JSON array, one object per
-input post, in the SAME ORDER as the inputs."""
+Be precise and consistent. Output ONLY a JSON object of the form
+{"results": [ ...one object per input post, in the SAME ORDER... ]}."""
 
-# Gemini structured-output schema (OpenAPI subset; ARRAY of objects).
-RESPONSE_SCHEMA = {
-    "type": "ARRAY",
-    "items": {
-        "type": "OBJECT",
-        "properties": {
-            "economic": {"type": "BOOLEAN"},
-            "topic": {"type": "STRING", "enum": CATEGORIES},
-            "relevance": {"type": "NUMBER"},
-            "sentiment": {"type": "NUMBER"},
-            "is_ad": {"type": "BOOLEAN"},
-            "is_digest": {"type": "BOOLEAN"},
-            "is_foreign": {"type": "BOOLEAN"},
-        },
-        "required": ["economic", "topic", "relevance", "sentiment",
-                     "is_ad", "is_digest", "is_foreign"],
+_ITEM = {
+    "type": "OBJECT",
+    "properties": {
+        "economic": {"type": "BOOLEAN"},
+        "topic": {"type": "STRING", "enum": CATEGORIES},
+        "relevance": {"type": "NUMBER"},
+        "sentiment": {"type": "NUMBER"},
+        "is_ad": {"type": "BOOLEAN"},
+        "is_digest": {"type": "BOOLEAN"},
+        "is_foreign": {"type": "BOOLEAN"},
     },
+    "required": ["economic", "topic", "relevance", "sentiment",
+                 "is_ad", "is_digest", "is_foreign"],
+}
+
+# Gemini structured-output schema (OpenAPI subset): object with a "results" array.
+RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {"results": {"type": "ARRAY", "items": _ITEM}},
+    "required": ["results"],
 }
 
 
 def build_user_prompt(texts):
     """Number the posts so the model returns labels in the same order."""
-    lines = ["Classify these posts. Return a JSON array of exactly "
-             f"{len(texts)} objects, in order.\n"]
+    lines = ['Classify these posts. Return a JSON object {"results": [...]} with '
+             f"exactly {len(texts)} objects, in the same order.\n"]
     for i, t in enumerate(texts):
         lines.append(f"--- POST {i} ---\n{t}\n")
     return "\n".join(lines)

@@ -21,8 +21,7 @@ import pandas as pd
 
 from categorizer import classify
 from sentiment import aspect_sentiment
-from config import (FORWARD_WEIGHT, RELEVANCE_TAU, ECON_MIN_HITS,
-                    USE_LLM, GEMINI_API_KEY)
+from config import FORWARD_WEIGHT, RELEVANCE_TAU, ECON_MIN_HITS, USE_LLM, LLM_PROVIDER
 
 
 def _score_row(text):
@@ -46,9 +45,9 @@ def _score_row(text):
 def score_messages(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    if USE_LLM and GEMINI_API_KEY:
-        # LLM path: Gemini labels each new post (cached); columns filled below.
-        from gemini_classifier import label_messages
+    if USE_LLM:
+        # LLM path: an LLM labels each new post (cached); columns filled below.
+        from llm_classifier import label_messages
         lab = label_messages(df)
         df["is_economic"] = lab["is_economic"].astype(int).values
         df["primary_topic"] = lab["primary_topic"].astype(str).values
@@ -61,7 +60,7 @@ def score_messages(df: pd.DataFrame) -> pd.DataFrame:
         df["econ_hits"] = pd.NA
         df["sent_label"] = df["sentiment"].apply(
             lambda s: "pos" if s > 0.15 else ("neg" if s < -0.15 else "neu"))
-        df["label_source"] = "gemini"
+        df["label_source"] = LLM_PROVIDER
     else:
         # Rule-based path (lexicon classifier + aspect sentiment).
         scored = df["raw_text"].apply(_score_row)

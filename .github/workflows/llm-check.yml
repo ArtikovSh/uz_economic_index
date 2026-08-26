@@ -1,0 +1,31 @@
+name: llm-check
+
+# Manual diagnostic for the active LLM provider (GitHub Models by default).
+# Run from the Actions tab, then read the log: it does one real classification
+# call and prints the labels or the exact error.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  models: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+      - name: LLM diagnostic
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+          GITHUB_MODEL: ${{ vars.GITHUB_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+        run: python llm_check.py

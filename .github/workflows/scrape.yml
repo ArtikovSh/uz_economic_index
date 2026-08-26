@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write               # allow the workflow to push the result back
+  models: read                  # allow calling GitHub Models (free LLM classifier)
 
 concurrency:
   group: uz-economic-index
@@ -39,8 +40,11 @@ jobs:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION_STRING: ${{ secrets.TG_SESSION_STRING }}
-          # Optional: set the GEMINI_API_KEY secret to classify with Gemini.
-          # If unset, the pipeline uses the rule-based classifier automatically.
+          # LLM classifier: GitHub Models (free, GPT via the built-in token) is the
+          # default. Override with LLM_PROVIDER=gemini + GEMINI_API_KEY if preferred.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+          GITHUB_MODEL: ${{ vars.GITHUB_MODEL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
         run: python main.py

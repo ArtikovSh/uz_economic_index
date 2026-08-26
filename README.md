@@ -23,8 +23,9 @@ LDA faqat yordamchi diagnostikaga tushirilgan. Sabablari METHODOLOGY.md §1, §7
 | `lexicons.py` | Uch tilli iqtisodiy leksikon — **chegaralangan regex naqshlar** (10 kategoriya) + reklama/xorijiy detektorlar |
 | `categorizer.py` | Qoida-asosli **primary_topic** (10 kategoriya) + reklama/dayjest/xorijiy flag |
 | `sentiment.py` | Qoida-asosli **aspekt** sentiment (narx↑=−, ishlab chiqarish↑=+, kurs↑=−) |
-| `gemini_classifier.py` | **Gemini LLM** klassifikatori (ixtiyoriy, keshli, fallback bilan) |
-| `prompts.py` | Gemini uchun tasniflash prompti + JSON sxema |
+| `llm_classifier.py` | **LLM** klassifikatori — GitHub Models (GPT, bepul) yoki Gemini; keshli, fallback bilan |
+| `prompts.py` | LLM uchun tasniflash prompti + JSON sxema |
+| `llm_check.py` | LLM provayderini diagnostika qiluvchi skript |
 | `indicator.py` | **Yadro:** relevance, sentiment, engagement → EAI/ESI |
 | `topic_model.py` | LDA (faqat diagnostik: mavzular + koherentlik) |
 | `excel_exporter.py` | 5 varaqli Excel + grafik |
@@ -60,8 +61,12 @@ $env:USE_PROXY=1; $env:PROXY_PORT=10808   # agar proxy klientingiz bo'lsa
 Secretlar: `TG_API_ID`, `TG_API_HASH`, `TG_SESSION_STRING` (sessiyani Google Colab
 yoki `export_session.py` orqali yarating — METHODOLOGY.md / oldingi ko'rsatmalarga qarang).
 
-**Gemini bilan tasniflash (ixtiyoriy, tavsiya etiladi):** `GEMINI_API_KEY` secret'ini
-qo'shing (kalit: https://aistudio.google.com/apikey). Bo'lsa — har yangi xabar Gemini
-bilan tasniflanadi (keshlanadi, `data/llm_labels.csv`); bo'lmasa — avtomatik qoida-asosli
-klassifikatorga fallback. Modelni almashtirish uchun `GEMINI_MODEL` repo o'zgaruvchisini
-`gemini-2.5-pro` qiling (default `gemini-2.5-flash`).
+**LLM bilan tasniflash (tavsiya etiladi):**
+- **GitHub Models (default, BEPUL, GPT):** hech narsa qo'shish shart emas — workflow'da
+  `permissions: models: read` bor va Actions'ning `GITHUB_TOKEN`'ini ishlatadi. Model:
+  repo o'zgaruvchisi `GITHUB_MODEL` (default `openai/gpt-4o-mini`, `openai/gpt-4o` ham mumkin).
+- **Gemini (muqobil):** `LLM_PROVIDER=gemini` o'zgaruvchisi + `GEMINI_API_KEY` secret'i
+  (kalit: https://aistudio.google.com/apikey).
+- LLM ishlamasa — avtomatik **qoida-asosli** klassifikatorga fallback (quvur buzilmaydi).
+  Har yangi xabar bir marta belgilanadi va `data/llm_labels.csv` da keshlanadi.
+- Diagnostika: Actions → **`llm-check`** → Run workflow (aniq xato/modellarni ko'rsatadi).
