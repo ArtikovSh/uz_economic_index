@@ -1,0 +1,62 @@
+name: uz-economic-index-monthly
+
+# Build the PREVIOUS month's index from the daily-collected data. Runs on the 3rd
+# of each month — by then the daily T-2 scraper has collected the whole previous
+# month (its last day is scraped 2 days later). No scraping; re-uses the LLM cache.
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 6 3 * *'          # 3rd of each month, 06:00 UTC = 11:00 Tashkent
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uz-economic-index-monthly
+  cancel-in-progress: false
+
+jobs:
+  build-monthly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+
+      - name: Build monthly index
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+          TARGET_MONTH: ${{ vars.TARGET_MONTH }}      # optional YYYY-MM (manual backfill)
+        run: python main_monthly.py
+
+      - name: Upload monthly artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: economic-index-monthly
+          path: output/economic_index_monthly_latest.xlsx
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Commit monthly result
+        run: |
+          git config user.name "ArtikovSh"
+          git config user.email "ortikovshokhrukh@gmail.com"
+          git add data/                                # monthly_index.csv (+ any new llm cache)
+          git add -f output/economic_index_monthly_latest.xlsx
+          if git diff --cached --quiet; then
+            echo "Nothing new to commit."
+          else
+            git commit -m "data: monthly index update ($(date -u +'%Y-%m-%d') UTC)"
+            git push
+          fi

@@ -105,3 +105,38 @@ def export_results(scored_df, daily_df, topics, coherence):
 
     print(f"Excel report generated: {filepath}")
     return filepath
+
+
+def export_monthly(series_df, month_df, label):
+    """Monthly report: the month-over-month series + the target month's detail."""
+    filepath = os.path.join(OUTPUT_DIR, "economic_index_monthly_latest.xlsx")
+    month_df = month_df.copy()
+    month_df["importance"] = (month_df["relevance"] * month_df["eng_weight"]).round(4)
+
+    with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
+        # 1) monthly time series (+ chart if >=2 months)
+        series_df.to_excel(writer, sheet_name="Monthly Index", index=False)
+        if len(series_df) >= 2:
+            ws = writer.sheets["Monthly Index"]
+            cols = {c: i + 1 for i, c in enumerate(series_df.columns)}
+            chart = LineChart()
+            chart.title = f"Monthly EAI_100 & ESI_100 (through {label})"
+            chart.height, chart.width = 9, 22
+            for name in ("EAI_100", "ESI_100"):
+                if name in cols:
+                    chart.add_data(Reference(ws, min_col=cols[name], min_row=1,
+                                             max_row=len(series_df) + 1), titles_from_data=True)
+            chart.set_categories(Reference(ws, min_col=cols["month"], min_row=2,
+                                           max_row=len(series_df) + 1))
+            ws.add_chart(chart, "N2")
+
+        # 2) topic breakdown for the month
+        _topic_breakdown(month_df).to_excel(writer, sheet_name=f"Topics {label}", index=False)
+
+        # 3) the month's messages, most economically important first
+        cols = [c for c in MSG_COLS if c in month_df.columns]
+        (month_df.sort_values(["in_index", "importance"], ascending=[False, False])[cols]
+         .to_excel(writer, sheet_name=f"Messages {label}", index=False))
+
+    print(f"Monthly report generated: {filepath}  (month {label})")
+    return filepath

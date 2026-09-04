@@ -88,7 +88,7 @@ LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE", "10"))     # messages per API c
 LLM_MAX_CHARS = int(os.getenv("LLM_MAX_CHARS", "700"))      # truncate each post
 LLM_MAX_PER_RUN = int(os.getenv("LLM_MAX_PER_RUN", "0"))    # 0 = no cap (classify all new)
 LLM_SLEEP = float(os.getenv("LLM_SLEEP", "3"))             # seconds between batches (RPM limits)
-LLM_LABEL_VERSION = "v1"                                    # bump to invalidate cache
+LLM_LABEL_VERSION = "v2"                                    # bump to invalidate cache (v2: stronger FX/digest prompt)
 
 # =============================================================================
 # Index parameters (see METHODOLOGY.md)

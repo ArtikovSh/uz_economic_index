@@ -56,22 +56,35 @@ FIELDS
    If economic=false, relevance = 0.0.
 
 4. sentiment (number -1.0 to 1.0): tone FOR the Uzbek economy/households.
-   Apply ASPECT logic, not word polarity:
-     - prices/tariffs/inflation/cost UP  -> NEGATIVE ; DOWN -> POSITIVE
+   Apply ASPECT logic, not word polarity — the SIGN depends on WHAT moved:
+     - prices/tariffs/inflation/cost/fine/tax rate UP -> NEGATIVE ; DOWN -> POSITIVE
      - GDP/output/exports/investment/wages/income/pensions/reserves UP -> POSITIVE ; DOWN -> NEGATIVE
-     - som exchange rate: dollar/euro UP vs som (som weakening) -> NEGATIVE ;
-       som strengthening / dollar down -> POSITIVE
      - crisis, default, deficit, unemployment, shortage, bankruptcy -> NEGATIVE
      - subsidies, tax relief, stability, records, recovery, support -> POSITIVE
      - respect NEGATION ("prices asked NOT to be raised" is not negative).
+
+   *** EXCHANGE RATE — READ CAREFULLY (a frequent mistake) ***
+   The unit is the SOM. What matters is the som's strength, which is the OPPOSITE
+   of the dollar/euro rate:
+     - dollar/euro rate DOWN / "снизился" / "подешевел" / "kurs tushdi" / "arzonlashdi"
+       => the SOM STRENGTHENED => POSITIVE (sentiment > 0). This is GOOD news.
+     - dollar/euro rate UP / "вырос" / "подорожал" / "kurs oshdi" / "ko'tarildi"
+       => the SOM WEAKENED => NEGATIVE (sentiment < 0). This is BAD news.
+     Examples: "Курс доллара снизился на 7 сумов" -> +0.6 (som stronger, positive).
+               "Dollar kursi tushdi" -> +0.6.   "Доллар подорожал" -> -0.6.
+     NEVER score a falling dollar as negative.
    0.0 if neutral/factual or economic=false.
 
 5. is_ad (boolean): advertisement / promotion / sponsored — bank product promos,
-   discounts (chegirma/skidka), "aksiya", installment offers, real-estate sales
-   pitches, telecom promos. These must be excluded from the index.
+   discounts (chegirma/skidka), "aksiya", installment offers, telecom promos, and
+   REAL-ESTATE SALES pitches ("Продаются апартаменты", "sotiladi", "для дополнительного
+   дохода", listings with price/contact). If the post is selling something, is_ad=true.
 
-6. is_digest (boolean): a news DIGEST that bundles many unrelated stories into one
-   post ("kunning asosiy yangiliklari", "дайджест"). Unscorable as one item.
+6. is_digest (boolean): true for a news DIGEST that bundles many separate stories
+   into ONE post — e.g. the title contains "dayjest" / "дайджест" / "yangiliklar
+   dayjesti" / "kunning asosiy yangiliklari", or the body is a bulleted list of
+   several unrelated headlines. Such a post is unscorable as one item -> is_digest=true
+   (this takes priority over is_foreign).
 
 7. is_foreign (boolean): the story is about a FOREIGN economy with no material
    Uzbekistan angle (e.g. US national debt, Russia's war financing). If it is a

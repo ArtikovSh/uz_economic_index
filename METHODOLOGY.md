@@ -139,6 +139,14 @@ Normallashtirish: `x_z=(x-mean)/std`; `EAI_100=100·EAI/mean(EAI)` (o'rtacha kun
 `ESI_100=50·(ESI+1)` (0…100, 50=neytral). *Manba:* FRBSF News Sentiment (Shapiro 2020);
 z-ball/diffuziya indekslari — standart iqtisodiy amaliyot.
 
+### 5.4. Oylik indeks (`monthly.py`)
+Oylik indeks kunlik agregatlardan emas, **xabar darajasidan** qayta hisoblanadi
+(kunlar har xil hajmda bo'lgani uchun kunlik EAI'larning oddiy o'rtachasi noto'g'ri
+bo'lardi): o'sha oy (Toshkent) barcha postlari bo'yicha $EAI_{oy}=\frac{\sum w R}{\sum w}$,
+$ESI_{oy}=\frac{\sum w s}{\sum w}$ (hisobga olingan postlar). `EAI_100` oylar bo'yicha
+(o'rtacha oy=100) normallashtiriladi. Har oyning **3-kunida** o'tgan oy uchun hisoblanadi —
+o'sha vaqtga kelib T−2 scraper o'tgan oyning oxirgi kunini ham yig'ib bo'lgan bo'ladi.
+
 ---
 
 ## 6. Natijalarni o'qish

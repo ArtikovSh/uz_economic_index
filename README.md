@@ -34,10 +34,11 @@ LDA faqat yordamchi diagnostikaga tushirilgan. Sabablari METHODOLOGY.md §1, §7
 ## Natijalar
 
 - `data/messages.csv` — o'suvchi xom arxiv (CI commit qiladi)
-- `data/daily_index.csv` — EAI/ESI kunlik vaqt qatori (CI commit qiladi)
-- `output/economic_index_<sana>.xlsx` — 6 varaqli hisobot + grafik:
-  Daily Index · Messages & Scores (muhimlik bo'yicha saralangan) · Topic Breakdown ·
-  Economic Lexicon · Topic Glossary · Methodology
+- `data/daily_index.csv` — EAI/ESI **kunlik** vaqt qatori
+- `data/monthly_index.csv` — EAI/ESI **oylik** vaqt qatori (har oyning 3-kunida)
+- `data/llm_labels.csv` — LLM tasnif keshi (har xabar bir marta belgilanadi)
+- `output/economic_index_latest.xlsx` — kunlik hisobot (6 varaq + grafik)
+- `output/economic_index_monthly_latest.xlsx` — oylik hisobot (seriya + mavzu tahlili)
 
 Har xabar `primary_topic` (10 iqtisodiy kategoriya yoki `non_economic`) oladi; reklama,
 dayjest va xorijiy-makro postlar indeksdan chiqariladi.
@@ -55,10 +56,13 @@ $env:USE_PROXY=1; $env:PROXY_PORT=10808   # agar proxy klientingiz bo'lsa
 
 ## GitHub Actions (avtomatik, tavsiya etiladi)
 
-`.github/workflows/scrape.yml` har kuni **21:00 va 23:00 Toshkent** + qo'lda ishlaydi.
+**Kunlik** — `.github/workflows/scrape.yml` har kuni **21:00 va 23:00 Toshkent** + qo'lda.
 Har run **2 kun oldingi to'liq kun**ni (Toshkent 00:00–23:59) yig'adi (`SCRAPE_DAYS_BACK`),
-natijani `ArtikovSh` nomidan repo'ga commit qiladi + artifact yuklaydi. Aniq kunni
-qo'lda backfill qilish: `TARGET_DATE=YYYY-MM-DD`.
+GPT bilan tasniflaydi va repo'ga commit qiladi. Aniq kunni backfill: `TARGET_DATE=YYYY-MM-DD`.
+
+**Oylik** — `.github/workflows/monthly.yml` har oyning **3-kunida** (+ qo'lda) o'tgan
+oyning to'plangan kunlik ma'lumotlaridan oylik indeksni hisoblaydi (scraping yo'q,
+keshdan foydalanadi). Aniq oyni backfill: `TARGET_MONTH=YYYY-MM`.
 
 Secretlar: `TG_API_ID`, `TG_API_HASH`, `TG_SESSION_STRING` (sessiyani Google Colab
 yoki `export_session.py` orqali yarating — METHODOLOGY.md / oldingi ko'rsatmalarga qarang).
