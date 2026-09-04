@@ -84,7 +84,7 @@ if not LLM_PROVIDER:
                     else "gemini" if GEMINI_API_KEY else "rules")
 USE_LLM = LLM_PROVIDER in ("openai", "github", "gemini")
 
-LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE", "20"))     # messages per API call
+LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE", "10"))     # messages per API call
 LLM_MAX_CHARS = int(os.getenv("LLM_MAX_CHARS", "700"))      # truncate each post
 LLM_MAX_PER_RUN = int(os.getenv("LLM_MAX_PER_RUN", "0"))    # 0 = no cap (classify all new)
 LLM_SLEEP = float(os.getenv("LLM_SLEEP", "3"))             # seconds between batches (RPM limits)

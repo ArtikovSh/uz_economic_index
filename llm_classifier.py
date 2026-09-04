@@ -16,6 +16,7 @@ Design:
     labels are persisted (failed ones retry next run).
 """
 import json
+import re
 import time
 import numpy as np
 import pandas as pd
@@ -70,6 +71,17 @@ def _retry_wait(resp, attempt):
     return 2 * (attempt + 1)
 
 
+def _extract_json(text):
+    """Pull a JSON object out of a chat reply (may have ```json fences or prose)."""
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text).strip()
+    i, j = text.find("{"), text.rfind("}")
+    if i != -1 and j != -1 and j > i:
+        text = text[i:j + 1]
+    return json.loads(text)
+
+
 def _parse_results(obj, n):
     arr = obj["results"] if isinstance(obj, dict) and "results" in obj else obj
     if not isinstance(arr, list) or len(arr) != n:
@@ -78,23 +90,36 @@ def _parse_results(obj, n):
 
 
 # ----------------------------------------- OpenAI-compatible (Groq/OpenAI/...) -
-def _call_openai(texts, base_url, api_key, model, label):
+def _openai_body(texts, model, use_json_format):
     body = {
         "model": model,
         "messages": [{"role": "system", "content": SYSTEM_PROMPT},
                      {"role": "user", "content": build_user_prompt(texts)}],
         "temperature": 0,
-        "response_format": {"type": "json_object"},
+        "max_tokens": 8000,                         # avoid truncated JSON on big batches
     }
+    if use_json_format:
+        body["response_format"] = {"type": "json_object"}
+    if "gpt-oss" in model.lower():
+        body["reasoning_effort"] = "low"            # reasoning model: spend budget on the answer
+    return body
+
+
+def _call_openai(texts, base_url, api_key, model, label):
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     url = f"{base_url}/chat/completions"
+    use_json = True
     last = None
     for attempt in range(5):
-        r = requests.post(url, headers=headers, json=body, timeout=120)
+        r = requests.post(url, headers=headers,
+                          json=_openai_body(texts, model, use_json), timeout=120)
         if r.status_code == 200:
             content = r.json()["choices"][0]["message"]["content"]
-            return _parse_results(json.loads(content), len(texts))
+            return _parse_results(_extract_json(content), len(texts))
         last = f"HTTP {r.status_code}: {r.text[:220]}"
+        if r.status_code == 400 and use_json:
+            use_json = False                        # strict json mode broke -> retry without it
+            continue
         if r.status_code in (429, 500, 503):
             time.sleep(_retry_wait(r, attempt))
             continue
