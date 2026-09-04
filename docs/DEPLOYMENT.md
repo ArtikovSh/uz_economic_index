@@ -41,19 +41,39 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
 
 ---
 
-## 2-qism — Vercel (bot + Mini App)  ← keyingi bosqich (kod tayyorlanmoqda)
+## 2-qism — Vercel (bot)  ← bot kodi TAYYOR (`app/api/bot.py`)
 
-Kod tayyor bo'lgach:
-1. **Telegram bot yarating:** Telegram'da **@BotFather** → `/newbot` → tokenni saqlang.
-2. **O'z Telegram ID'ingizni oling:** @userinfobot ga yozing → raqamli `id`.
-3. **Vercel loyihasi:** https://vercel.com → GitHub repo'ni import qiling.
-4. **Vercel env o'zgaruvchilari:** `TELEGRAM_BOT_TOKEN`, `BOT_ADMIN_ID` (sizning ID),
-   `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`.
-5. **Webhook o'rnating:** `https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<vercel-app>.vercel.app/api/bot`
-6. Botga `/start` yozing → admin sifatida tan olinasiz → boshqa foydalanuvchilarni
-   `/approve <id> <rol>` bilan tasdiqlaysiz.
+1. **Bot yarating:** Telegram'da **@BotFather** → `/newbot` → nomi bering → **tokenni** saqlang.
+2. **O'z Telegram ID'ingizni oling:** **@userinfobot** ga yozing → raqamli `id` (bu sizni
+   admin qiladi).
+3. **Vercel loyihasi:** https://vercel.com (GitHub bilan kiring) → *Add New → Project* →
+   `uz_economic_index` repo'ni import qiling. **MUHIM:** *Root Directory* ni **`app`** qilib
+   belgilang (Edit → app). Framework: **Other**.
+4. **Env Variables** (Vercel loyiha sozlamalarida) qo'shing:
+   | Nomi | Qiymati |
+   |------|---------|
+   | `TELEGRAM_BOT_TOKEN` | BotFather tokeni |
+   | `BOT_ADMIN_ID` | sizning Telegram ID'ingiz |
+   | `SUPABASE_DB_URL` | 1-qismdagi pooler URI (parol bilan) |
+   | `WEBHOOK_SECRET` | ixtiyoriy — istalgan tasodifiy satr |
+5. **Deploy** bosing → app manzilini oling: `https://<app>.vercel.app`.
+   Tekshirish: brauzerda `https://<app>.vercel.app/api/bot` → "bot is running" chiqadi.
+6. **Webhook o'rnating** (brauzerda bir marta oching, `<TOKEN>` va `<app>` ni almashtiring;
+   `WEBHOOK_SECRET` qo'ygan bo'lsangiz `&secret_token=...` qo'shing):
+   ```
+   https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<app>.vercel.app/api/bot&secret_token=<WEBHOOK_SECRET>
+   ```
+   `{"ok":true,...}` chiqishi kerak.
+7. **Botga `/start`** yozing → admin sifatida tan olinasiz. Endi:
+   - boshqalar `/start` yozsa — sizga bildirishnoma keladi;
+   - `/approve <id> economist` (yoki `cb_analyst` / `public`) bilan tasdiqlaysiz;
+   - `/pending`, `/users`, `/block <id>` — boshqaruv.
 
-*(2-qism qadamlari kod tayyor bo'lganda to'ldiriladi.)*
+**Bot buyruqlari:** `/today` `/index` `/top` `/topics` `/topic <nom>` `/me` `/help`.
+Statistikalar 1-qismdagi Supabase ma'lumotidan olinadi (avval workflow sync qilgan bo'lsin).
+
+## 3-qism — Mini App (keyingi bosqich)
+React dashboard, Vercel'da statik. Kod keyingi bosqichda tayyorlanadi.
 
 ---
 
