@@ -1,14 +1,11 @@
 name: llm-check
 
-# Manual diagnostic for the active LLM provider (GitHub Models by default).
-# Run from the Actions tab, then read the log: it does one real classification
-# call and prints the labels or the exact error.
+# Manual diagnostic for the active LLM provider. Run from the Actions tab, then
+# read the log: it does one real classification call and prints labels or the exact
+# error (wrong model, bad key, quota, endpoint down).
 
 on:
   workflow_dispatch: {}
-
-permissions:
-  models: read
 
 jobs:
   check:
@@ -23,9 +20,10 @@ jobs:
       - run: pip install -r requirements.txt
       - name: LLM diagnostic
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
-          GITHUB_MODEL: ${{ vars.GITHUB_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
         run: python llm_check.py

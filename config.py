@@ -17,17 +17,14 @@ SESSION_STRING = os.getenv("TG_SESSION_STRING", "").strip()
 # and prune/adjust. (t.me could not be auto-verified from this machine: the corporate
 # proxy blocks the page body.)
 CHANNELS = [
-    # original general + economy news
-    "@gazetauz", "@kunuzofficial", "@daryo", "@spotuz",
-    # added business / economy-focused media
-    "@Review_uz", "@uzdaily", "@qalampir_uz", "@yuz_uz", "@repost_uz",
+    # general + economy news (verified: these resolve for the session's account)
+    "@gazetauz", "@kunuzofficial", "@daryo", "@spotuz", "@uzdaily",
 ]
-# Candidate official / economy channels — VERIFY the exact handle on Telegram, then
-# move into CHANNELS above (kept out until confirmed to avoid scraping a wrong channel):
-#   "@cbu_uz"          # Markaziy bank (Central Bank)
-#   "@soliqqomitasi"   # Soliq qo'mitasi (Tax Committee)
-#   "@stat_uz"         # Statistika agentligi
-#   "@norma_uz"        # Norma.uz (soliq / buxgalteriya)
+# To add more, paste the EXACT @username from the Telegram app (open the channel ->
+# its @handle under the title) and append here. Guessed handles fail with
+# "Nobody is using this username" and are skipped. Candidates to verify & add:
+#   Review.uz, Qalampir, Yuz.uz, Repost.uz, Kun.uz economy, @cbu_uz (Markaziy bank),
+#   @stat_uz (Statistika), @soliqqomitasi (Soliq), Norma.uz.
 
 MESSAGES_PER_CHANNEL = int(os.getenv("MSG_PER_CHANNEL", "400"))
 
@@ -49,25 +46,37 @@ LLM_LABELS_CSV = os.path.join(DATA_DIR, "llm_labels.csv")  # cached LLM labels
 # falls back to the rule-based classifier per-batch, so the pipeline never breaks.
 #
 # Provider (LLM_PROVIDER):
-#   "github" — GitHub Models (FREE, no separate key: uses GITHUB_TOKEN in Actions;
-#              GPT models like openai/gpt-4o-mini). Needs `permissions: models: read`.
-#   "gemini" — Google Gemini API (needs GEMINI_API_KEY; low free quota).
+#   "openai" — ANY OpenAI-compatible endpoint (RECOMMENDED). Set OPENAI_API_KEY +
+#              OPENAI_BASE_URL + OPENAI_MODEL. Defaults to Groq (FREE, generous, fast,
+#              serves GPT-OSS + Llama). Also works for OpenRouter / OpenAI / local.
+#   "gemini" — Google Gemini API (needs GEMINI_API_KEY; low free quota — needs pacing).
+#   "github" — GitHub Models. DEPRECATED: GitHub is retiring this service (HTTP 410).
 #   "rules"  — no LLM, deterministic classifier only.
-# Auto-default: github if a token is present, else gemini if a key is present, else rules.
+# Auto-default: openai if OPENAI_API_KEY, else gemini if GEMINI_API_KEY, else rules.
 # =============================================================================
+# Generic OpenAI-compatible provider (default endpoint = Groq).
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_BASE_URL = (os.getenv("OPENAI_BASE_URL") or "https://api.groq.com/openai/v1").rstrip("/")
+OPENAI_MODEL = (os.getenv("OPENAI_MODEL") or "llama-3.3-70b-versatile")  # Groq; or openai/gpt-oss-120b
+
+# GitHub Models (being retired by GitHub — manual option only).
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
-GITHUB_MODEL = (os.getenv("GITHUB_MODEL") or "openai/gpt-4o-mini")   # or openai/gpt-4o
+GITHUB_MODEL = (os.getenv("GITHUB_MODEL") or "openai/gpt-4o-mini")
+
+# Google Gemini.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash")     # or gemini-2.5-pro
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").strip().lower()
 if not LLM_PROVIDER:
-    LLM_PROVIDER = "github" if GITHUB_TOKEN else ("gemini" if GEMINI_API_KEY else "rules")
-USE_LLM = LLM_PROVIDER in ("github", "gemini")
+    LLM_PROVIDER = ("openai" if OPENAI_API_KEY
+                    else "gemini" if GEMINI_API_KEY else "rules")
+USE_LLM = LLM_PROVIDER in ("openai", "github", "gemini")
 
 LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE", "20"))     # messages per API call
 LLM_MAX_CHARS = int(os.getenv("LLM_MAX_CHARS", "700"))      # truncate each post
 LLM_MAX_PER_RUN = int(os.getenv("LLM_MAX_PER_RUN", "600"))  # cap new posts/run (rate limits)
+LLM_SLEEP = float(os.getenv("LLM_SLEEP", "3"))             # seconds between batches (RPM limits)
 LLM_LABEL_VERSION = "v1"                                    # bump to invalidate cache
 
 # =============================================================================

@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: write               # allow the workflow to push the result back
-  models: read                  # allow calling GitHub Models (free LLM classifier)
 
 concurrency:
   group: uz-economic-index
@@ -40,13 +39,15 @@ jobs:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION_STRING: ${{ secrets.TG_SESSION_STRING }}
-          # LLM classifier: GitHub Models (free, GPT via the built-in token) is the
-          # default. Override with LLM_PROVIDER=gemini + GEMINI_API_KEY if preferred.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
-          GITHUB_MODEL: ${{ vars.GITHUB_MODEL }}
+          # LLM classifier. RECOMMENDED: OpenAI-compatible (Groq is free) — add the
+          # OPENAI_API_KEY secret; provider auto-selects "openai". Falls back to the
+          # rule-based classifier if no key is set. (GitHub Models is being retired.)
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
         run: python main.py
 
       - name: Upload Excel artifact

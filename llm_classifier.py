@@ -21,13 +21,14 @@ import numpy as np
 import pandas as pd
 import requests
 
-from config import (LLM_PROVIDER, GITHUB_TOKEN, GITHUB_MODEL, GEMINI_API_KEY,
-                    GEMINI_MODEL, LLM_BATCH_SIZE, LLM_MAX_CHARS, LLM_MAX_PER_RUN,
+from config import (LLM_PROVIDER, OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL,
+                    GITHUB_TOKEN, GITHUB_MODEL, GEMINI_API_KEY, GEMINI_MODEL,
+                    LLM_BATCH_SIZE, LLM_MAX_CHARS, LLM_MAX_PER_RUN, LLM_SLEEP,
                     LLM_LABELS_CSV, LLM_LABEL_VERSION, ECON_MIN_HITS)
 from prompts import SYSTEM_PROMPT, RESPONSE_SCHEMA, build_user_prompt, CATEGORIES
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
-GITHUB_URL = "https://models.github.ai/inference/chat/completions"
+GITHUB_BASE = "https://models.github.ai/inference"
 LABEL_COLS = ["is_economic", "primary_topic", "relevance", "sentiment",
               "is_ad", "is_digest", "is_foreign"]
 _resolved = {"gemini_model": None}
@@ -47,19 +48,20 @@ def _parse_results(obj, n):
     return arr
 
 
-# --------------------------------------------------- GitHub Models (OpenAI) ----
-def _call_github(texts):
+# ----------------------------------------- OpenAI-compatible (Groq/OpenAI/...) -
+def _call_openai(texts, base_url, api_key, model, label):
     body = {
-        "model": GITHUB_MODEL,
+        "model": model,
         "messages": [{"role": "system", "content": SYSTEM_PROMPT},
                      {"role": "user", "content": build_user_prompt(texts)}],
         "temperature": 0,
         "response_format": {"type": "json_object"},
     }
-    headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    url = f"{base_url}/chat/completions"
     last = None
     for attempt in range(5):
-        r = requests.post(GITHUB_URL, headers=headers, json=body, timeout=120)
+        r = requests.post(url, headers=headers, json=body, timeout=120)
         if r.status_code == 200:
             content = r.json()["choices"][0]["message"]["content"]
             return _parse_results(json.loads(content), len(texts))
@@ -68,7 +70,7 @@ def _call_github(texts):
             time.sleep(_retry_wait(r, attempt))
             continue
         break
-    raise RuntimeError(f"GitHub Models failed ({last})")
+    raise RuntimeError(f"{label} failed ({last})")
 
 
 # ------------------------------------------------------------------ Gemini -----
@@ -131,8 +133,18 @@ def _call_gemini(texts):
 
 
 def _classify_batch(texts):
-    raw = _call_github(texts) if LLM_PROVIDER == "github" else _call_gemini(texts)
+    if LLM_PROVIDER == "openai":
+        raw = _call_openai(texts, OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL, "OpenAI-compatible")
+    elif LLM_PROVIDER == "github":
+        raw = _call_openai(texts, GITHUB_BASE, GITHUB_TOKEN, GITHUB_MODEL, "GitHub Models")
+    else:
+        raw = _call_gemini(texts)
     return [_to_label(d) for d in raw]
+
+
+def _active_model():
+    return {"openai": OPENAI_MODEL, "github": GITHUB_MODEL,
+            "gemini": GEMINI_MODEL}.get(LLM_PROVIDER, "")
 
 
 # ------------------------------------------------------------------ mapping ----
@@ -202,27 +214,35 @@ def label_messages(df: pd.DataFrame) -> pd.DataFrame:
     if todo:
         capped = todo[:LLM_MAX_PER_RUN]
         deferred = todo[LLM_MAX_PER_RUN:]
-        print(f"  LLM ({LLM_PROVIDER}/{GITHUB_MODEL if LLM_PROVIDER=='github' else GEMINI_MODEL}): "
-              f"{len(capped)} new posts this run ({len(cache)} cached, {len(deferred)} deferred)")
+        print(f"  LLM ({LLM_PROVIDER}/{_active_model()}): {len(capped)} new posts this "
+              f"run ({len(cache)} cached, {len(deferred)} deferred)")
         idxs = [i for i, _ in capped]
         keys = [k for _, k in capped]
         texts = (df.loc[idxs, "raw_text"].fillna("").astype(str)
                  .str.slice(0, LLM_MAX_CHARS).tolist())
         to_persist = []
+        llm_dead = False   # once the provider hard-fails, stop hammering it this run
         for start in range(0, len(texts), LLM_BATCH_SIZE):
             bt, bk = texts[start:start + LLM_BATCH_SIZE], keys[start:start + LLM_BATCH_SIZE]
-            try:
-                labels = _classify_batch(bt)
-                src = "llm"
-            except Exception as e:
-                print(f"    batch {start // LLM_BATCH_SIZE}: {e} -> rule fallback")
-                labels = _rule_labels(bt)
-                src = "rules"
+            if llm_dead:
+                labels, src = _rule_labels(bt), "rules"
+            else:
+                try:
+                    labels = _classify_batch(bt)
+                    src = "llm"
+                except Exception as e:
+                    print(f"    batch {start // LLM_BATCH_SIZE}: {e} -> rule fallback")
+                    labels, src = _rule_labels(bt), "rules"
+                    if any(c in str(e) for c in ("410", "401", "403", "404")):
+                        print("    provider unavailable -> using rules for the rest of this run")
+                        llm_dead = True
             for k, lab in zip(bk, labels):
                 result[k] = lab
                 if src == "llm":
                     to_persist.append({"key": k, "label_version": LLM_LABEL_VERSION, **lab})
             print(f"    {min(start + LLM_BATCH_SIZE, len(texts))}/{len(texts)} ({src})")
+            if src == "llm" and start + LLM_BATCH_SIZE < len(texts) and LLM_SLEEP > 0:
+                time.sleep(LLM_SLEEP)          # pace to respect RPM limits
         _append_cache(to_persist)
 
         # deferred posts: rule-based for THIS run (not persisted -> LLM next run)

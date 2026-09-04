@@ -1,43 +1,38 @@
 r"""
 Diagnose the active LLM provider without sharing any secret.
 
-Run locally:
-    # GitHub Models (needs a PAT with `models: read`)
-    $env:GITHUB_TOKEN="ghp_..."; .\venv\Scripts\python.exe llm_check.py
+Run locally (or via the `llm-check` workflow from the Actions tab):
+    # OpenAI-compatible (Groq is free)
+    $env:OPENAI_API_KEY="gsk_..."; .\venv\Scripts\python.exe llm_check.py
     # Gemini
     $env:GEMINI_API_KEY="..."; .\venv\Scripts\python.exe llm_check.py
-Or run the `llm-check` workflow from the Actions tab (uses the built-in token).
 
 It does ONE real classification call and prints the labels or the exact error.
 """
 import json
 import requests
-from config import (LLM_PROVIDER, GITHUB_TOKEN, GITHUB_MODEL, GEMINI_API_KEY,
-                    GEMINI_MODEL)
+from config import (LLM_PROVIDER, OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL,
+                    GITHUB_TOKEN, GITHUB_MODEL, GEMINI_API_KEY, GEMINI_MODEL)
+
+SAMPLE = ["Markaziy bank dollar kursini e'lon qildi: dollar biroz ko'tarildi.",
+          "Bugun Toshkentda havo issiq bo'ladi, yomg'ir kutilmaydi."]
 
 
-def check_github():
-    print(f"Provider: github  model: {GITHUB_MODEL}")
-    if not GITHUB_TOKEN:
-        print("GITHUB_TOKEN not set (in Actions add `permissions: models: read`).")
-        return
+def _report(fn):
     try:
-        r = requests.get("https://models.github.ai/catalog/models",
-                         headers={"Authorization": f"Bearer {GITHUB_TOKEN}"}, timeout=60)
-        if r.status_code == 200:
-            ids = [m.get("id") for m in r.json()][:25]
-            print("Sample catalog model ids:", ids)
-        else:
-            print(f"catalog HTTP {r.status_code}: {r.text[:200]}")
-    except Exception as e:
-        print("catalog fetch skipped:", e)
-    from llm_classifier import _call_github
-    try:
-        out = _call_github(["Markaziy bank dollar kursini oshirdi.",
-                            "Bugun havo issiq bo'ladi."])
+        out = fn()
         print("SUCCESS:", json.dumps(out, ensure_ascii=False))
     except Exception as e:
         print("FAILED:", e)
+
+
+def check_openai(base_url, api_key, model, label):
+    print(f"Provider: {label}  base: {base_url}  model: {model}")
+    if not api_key:
+        print("API key not set.")
+        return
+    from llm_classifier import _call_openai
+    _report(lambda: _call_openai(SAMPLE, base_url, api_key, model, label))
 
 
 def check_gemini():
@@ -55,16 +50,14 @@ def check_gemini():
               if "generateContent" in m.get("supportedGenerationMethods", [])]
     print("Models:", models)
     from llm_classifier import _call_gemini
-    try:
-        out = _call_gemini(["Dollar kursi tushdi.", "Bugun havo issiq."])
-        print("SUCCESS:", json.dumps(out, ensure_ascii=False))
-    except Exception as e:
-        print("FAILED:", e)
+    _report(lambda: _call_gemini(SAMPLE))
 
 
 if __name__ == "__main__":
     print("Active LLM_PROVIDER:", LLM_PROVIDER, "\n")
     if LLM_PROVIDER == "gemini":
         check_gemini()
+    elif LLM_PROVIDER == "github":
+        check_openai("https://models.github.ai/inference", GITHUB_TOKEN, GITHUB_MODEL, "github")
     else:
-        check_github()
+        check_openai(OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL, "openai")

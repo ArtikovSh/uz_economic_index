@@ -101,18 +101,20 @@ Har xabarni tasniflaydi: `economic`, `topic` (o'sha 10 kategoriya), `relevance` 
 `sentiment` (−1..1), `is_ad`/`is_digest`/`is_foreign` — majburiy JSON bilan. Prompt
 `prompts.py` da (kategoriyalar, aspekt-sentiment mantiqi, O'zbekiston domen fokusi).
 
-**Ikki provayder** (`LLM_PROVIDER`):
-- **`github`** (default, tavsiya) — **GitHub Models**: BEPUL, alohida kalit shart emas,
-  Actions'dagi `GITHUB_TOKEN` ishlatadi (`permissions: models: read`), **GPT** modellari
-  (`openai/gpt-4o-mini`, `openai/gpt-4o`). OpenAI-mos JSON rejimi.
-- **`gemini`** — Google Gemini API (`GEMINI_API_KEY` kerak; bepul kvotasi past).
+**Provayderlar** (`LLM_PROVIDER`):
+- **`openai`** (default, tavsiya) — **istalgan OpenAI-mos endpoint**: `OPENAI_API_KEY` +
+  `OPENAI_BASE_URL` + `OPENAI_MODEL`. Default endpoint — **Groq** (BEPUL, saxiy limit,
+  tez; **GPT-OSS** va Llama modellari). OpenRouter/OpenAI/lokal ham shu orqali.
+- **`gemini`** — Google Gemini API (`GEMINI_API_KEY`; bepul kvotasi past — pauza kerak).
+- **`github`** — GitHub Models. **Eskirgan:** GitHub bu xizmatni yopyapti (HTTP 410).
 
 Muhandislik jihatlari: (a) natijalar `data/llm_labels.csv` da **keshlanadi** — faqat
-yangi `(kanal, message_id)` chaqiriladi; (b) **partiyalab** (20 tadan); (c) har run
-`LLM_MAX_PER_RUN` (default 600) tadan ko'p yangi post chaqirilmaydi — rate-limitни
-oshirmaslik uchun katta backfill bir necha run'ga taqsimlanadi; (d) kvota/tarmoq/kalit
-xatosida o'sha partiya **qoida-asosli fallback** qiladi (quvur buzilmaydi), faqat
-haqiqiy LLM yorliqlari keshlanadi (xatolilar keyingi run'da qayta urinadi).
+yangi `(kanal, message_id)` chaqiriladi; (b) **partiyalab** (20 tadan), partiyalararo
+`LLM_SLEEP` (default 3s) pauza — RPM limitini hurmat qiladi; (c) har run `LLM_MAX_PER_RUN`
+(default 600) tadan ko'p chaqirilmaydi — katta backfill run'larga taqsimlanadi; (d)
+kvota/tarmoq/kalit xatosida o'sha partiya **qoida-asosli fallback** qiladi (quvur
+buzilmaydi); **410/401/403/404 kabi qattiq xatoda** o'sha run qolganini darhol qoidaga
+o'tkazadi (takroriy xatolarni bosmaydi). Faqat haqiqiy LLM yorliqlari keshlanadi.
 Diagnostika: `llm_check.py` / `llm-check` workflow aniq xatoni ko'rsatadi.
 
 ---
