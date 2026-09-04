@@ -39,6 +39,11 @@ jobs:
           TARGET_MONTH: ${{ vars.TARGET_MONTH }}      # optional YYYY-MM (manual backfill)
         run: python main_monthly.py
 
+      - name: Sync to Supabase (no-op if SUPABASE_DB_URL unset)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python sync_to_db.py
+
       - name: Upload monthly artifact
         if: always()
         uses: actions/upload-artifact@v4

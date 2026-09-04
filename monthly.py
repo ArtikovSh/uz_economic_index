@@ -13,10 +13,9 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 
-from config import DATA_DIR, TZ_OFFSET_HOURS
+from config import DATA_DIR, TZ_OFFSET_HOURS, MONTHLY_CSV
 
 TASHKENT = timezone(timedelta(hours=TZ_OFFSET_HOURS))
-MONTHLY_CSV = os.path.join(DATA_DIR, "monthly_index.csv")
 
 
 def target_month(override=""):

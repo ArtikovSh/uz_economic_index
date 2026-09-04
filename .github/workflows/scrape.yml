@@ -55,6 +55,11 @@ jobs:
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
         run: python main.py
 
+      - name: Sync to Supabase (no-op if SUPABASE_DB_URL unset)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python sync_to_db.py
+
       - name: Upload Excel artifact
         if: always()
         uses: actions/upload-artifact@v4

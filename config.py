@@ -49,6 +49,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 MASTER_CSV = os.path.join(DATA_DIR, "messages.csv")        # raw, deduped, growing
 DAILY_CSV = os.path.join(DATA_DIR, "daily_index.csv")      # the index time series
+MONTHLY_CSV = os.path.join(DATA_DIR, "monthly_index.csv")  # the monthly time series
 LLM_LABELS_CSV = os.path.join(DATA_DIR, "llm_labels.csv")  # cached LLM labels
 
 # =============================================================================

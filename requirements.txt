@@ -8,3 +8,4 @@ gensim==4.4.0
 openpyxl==3.1.5
 PySocks==1.7.1
 requests>=2.31.0
+psycopg[binary]>=3.1              # Supabase/Postgres sync (sync_to_db.py)
