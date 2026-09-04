@@ -54,8 +54,9 @@ def _topic_breakdown(scored):
 
 
 def export_results(scored_df, daily_df, topics, coherence):
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
-    filepath = os.path.join(OUTPUT_DIR, f"economic_index_{ts}.xlsx")
+    # Fixed filename, overwritten each run, so the repo keeps ONE current report
+    # instead of accumulating a timestamped file per run.
+    filepath = os.path.join(OUTPUT_DIR, "economic_index_latest.xlsx")
 
     scored_df = scored_df.copy()
     scored_df["importance"] = (scored_df["relevance"] * scored_df["eng_weight"]).round(4)

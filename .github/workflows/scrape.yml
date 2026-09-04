@@ -68,9 +68,8 @@ jobs:
         run: |
           git config user.name "ArtikovSh"
           git config user.email "ortikovshokhrukh@gmail.com"
-          git add data/messages.csv data/daily_index.csv
-          git add data/llm_labels.csv 2>/dev/null || true
-          git add -f output/*.xlsx
+          git add data/                          # messages + daily_index + llm cache
+          git add -f output/economic_index_latest.xlsx
           if git diff --cached --quiet; then
             echo "Nothing new to commit."
           else

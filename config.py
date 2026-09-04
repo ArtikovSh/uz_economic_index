@@ -36,7 +36,7 @@ MESSAGES_PER_CHANNEL = int(os.getenv("MSG_PER_CHANNEL", "400"))   # (legacy, unu
 # (manual backfill of a specific day).
 SCRAPE_DAYS_BACK = int(os.getenv("SCRAPE_DAYS_BACK", "2"))
 TZ_OFFSET_HOURS = int(os.getenv("TZ_OFFSET_HOURS", "5"))          # Tashkent = UTC+5
-SCRAPE_HARD_LIMIT = int(os.getenv("SCRAPE_HARD_LIMIT", "3000"))   # safety cap /channel/day
+SCRAPE_HARD_LIMIT = int(os.getenv("SCRAPE_HARD_LIMIT", "0"))      # 0 = no cap (whole day)
 TARGET_DATE = os.getenv("TARGET_DATE", "").strip()               # YYYY-MM-DD or empty
 
 # =============================================================================
@@ -86,7 +86,7 @@ USE_LLM = LLM_PROVIDER in ("openai", "github", "gemini")
 
 LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE", "20"))     # messages per API call
 LLM_MAX_CHARS = int(os.getenv("LLM_MAX_CHARS", "700"))      # truncate each post
-LLM_MAX_PER_RUN = int(os.getenv("LLM_MAX_PER_RUN", "600"))  # cap new posts/run (rate limits)
+LLM_MAX_PER_RUN = int(os.getenv("LLM_MAX_PER_RUN", "0"))    # 0 = no cap (classify all new)
 LLM_SLEEP = float(os.getenv("LLM_SLEEP", "3"))             # seconds between batches (RPM limits)
 LLM_LABEL_VERSION = "v1"                                    # bump to invalidate cache
 

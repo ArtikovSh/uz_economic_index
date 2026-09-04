@@ -27,7 +27,9 @@ async def fetch_channel_day(client, channel, start_utc, end_utc):
     """All text messages posted within [start_utc, end_utc) for one channel."""
     out = []
     # iter_messages(offset_date=end_utc) walks newest->oldest from just before end_utc.
-    async for msg in client.iter_messages(channel, offset_date=end_utc, limit=SCRAPE_HARD_LIMIT):
+    # limit=None -> no cap; the day boundary (break below) is the only stop.
+    async for msg in client.iter_messages(channel, offset_date=end_utc,
+                                          limit=SCRAPE_HARD_LIMIT or None):
         if msg.date < start_utc:
             break                                        # gone past the target day
         if msg.date >= end_utc or not msg.text:

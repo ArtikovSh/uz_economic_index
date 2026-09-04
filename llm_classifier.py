@@ -246,8 +246,9 @@ def label_messages(df: pd.DataFrame) -> pd.DataFrame:
 
     todo = [(i, k) for i, k in zip(df.index, key) if k not in cache]
     if todo:
-        capped = todo[:LLM_MAX_PER_RUN]
-        deferred = todo[LLM_MAX_PER_RUN:]
+        cap = LLM_MAX_PER_RUN if LLM_MAX_PER_RUN > 0 else len(todo)   # 0 = no cap
+        capped = todo[:cap]
+        deferred = todo[cap:]
         print(f"  LLM ({LLM_PROVIDER}/{_active_model()}): {len(capped)} new posts this "
               f"run ({len(cache)} cached, {len(deferred)} deferred)")
         idxs = [i for i, _ in capped]
