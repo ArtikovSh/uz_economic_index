@@ -31,8 +31,14 @@ def check_openai(base_url, api_key, model, label):
     if not api_key:
         print("API key not set.")
         return
-    from llm_classifier import _call_openai
-    _report(lambda: _call_openai(SAMPLE, base_url, api_key, model, label))
+    from llm_classifier import _call_openai, list_openai_models, resolve_openai_model
+    try:
+        print("Available models:", list_openai_models(base_url, api_key))
+    except Exception as e:
+        print("/models list skipped:", e)
+    m = resolve_openai_model(base_url, api_key, model)
+    print("Using model:", m)
+    _report(lambda: _call_openai(SAMPLE, base_url, api_key, m, label))
 
 
 def check_gemini():

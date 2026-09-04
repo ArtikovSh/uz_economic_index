@@ -31,7 +31,36 @@ GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 GITHUB_BASE = "https://models.github.ai/inference"
 LABEL_COLS = ["is_economic", "primary_topic", "relevance", "sentiment",
               "is_ad", "is_digest", "is_foreign"]
-_resolved = {"gemini_model": None}
+_resolved = {"gemini_model": None, "openai_model": None}
+_BAD_MODEL = ("whisper", "embedding", "tts", "guard", "moderation", "stt", "vision-only")
+
+
+def list_openai_models(base_url, api_key):
+    r = requests.get(f"{base_url}/models",
+                     headers={"Authorization": f"Bearer {api_key}"}, timeout=60)
+    r.raise_for_status()
+    return [m["id"] for m in r.json().get("data", [])]
+
+
+def resolve_openai_model(base_url, api_key, preferred):
+    """Return a valid chat model id; auto-pick if the configured one 404s."""
+    try:
+        avail = list_openai_models(base_url, api_key)
+    except Exception as e:
+        print(f"  (could not list models: {e}); trying '{preferred}' as-is")
+        return preferred
+    if preferred in avail:
+        return preferred
+    chat = [m for m in avail if not any(b in m.lower() for b in _BAD_MODEL)]
+
+    def pick(sub):
+        return next((m for m in chat if sub in m.lower()), None)
+    choice = (pick("gpt-oss-120b") or pick("gpt-oss") or pick("llama-3.3-70b")
+              or pick("llama-3.1-8b") or pick("llama-3.3") or pick("llama")
+              or (chat[0] if chat else (avail[0] if avail else preferred)))
+    print(f"  model '{preferred}' unavailable -> using '{choice}'. "
+          f"Available chat models: {chat[:12]}")
+    return choice
 
 
 def _retry_wait(resp, attempt):
@@ -134,7 +163,11 @@ def _call_gemini(texts):
 
 def _classify_batch(texts):
     if LLM_PROVIDER == "openai":
-        raw = _call_openai(texts, OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL, "OpenAI-compatible")
+        if _resolved["openai_model"] is None:
+            _resolved["openai_model"] = resolve_openai_model(
+                OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL)
+        raw = _call_openai(texts, OPENAI_BASE_URL, OPENAI_API_KEY,
+                           _resolved["openai_model"], "OpenAI-compatible")
     elif LLM_PROVIDER == "github":
         raw = _call_openai(texts, GITHUB_BASE, GITHUB_TOKEN, GITHUB_MODEL, "GitHub Models")
     else:
@@ -143,8 +176,9 @@ def _classify_batch(texts):
 
 
 def _active_model():
-    return {"openai": OPENAI_MODEL, "github": GITHUB_MODEL,
-            "gemini": GEMINI_MODEL}.get(LLM_PROVIDER, "")
+    if LLM_PROVIDER == "openai":
+        return _resolved["openai_model"] or OPENAI_MODEL
+    return {"github": GITHUB_MODEL, "gemini": GEMINI_MODEL}.get(LLM_PROVIDER, "")
 
 
 # ------------------------------------------------------------------ mapping ----

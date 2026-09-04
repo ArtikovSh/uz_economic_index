@@ -68,7 +68,7 @@ LLM_LABELS_CSV = os.path.join(DATA_DIR, "llm_labels.csv")  # cached LLM labels
 # Generic OpenAI-compatible provider (default endpoint = Groq).
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_BASE_URL = (os.getenv("OPENAI_BASE_URL") or "https://api.groq.com/openai/v1").rstrip("/")
-OPENAI_MODEL = (os.getenv("OPENAI_MODEL") or "llama-3.3-70b-versatile")  # Groq; or openai/gpt-oss-120b
+OPENAI_MODEL = (os.getenv("OPENAI_MODEL") or "openai/gpt-oss-20b")  # Groq GPT; auto-resolves if unavailable
 
 # GitHub Models (being retired by GitHub — manual option only).
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
