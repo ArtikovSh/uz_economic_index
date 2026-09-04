@@ -21,7 +21,8 @@ import pandas as pd
 
 from categorizer import classify
 from sentiment import aspect_sentiment
-from config import FORWARD_WEIGHT, RELEVANCE_TAU, ECON_MIN_HITS, USE_LLM, LLM_PROVIDER
+from config import (FORWARD_WEIGHT, RELEVANCE_TAU, ECON_MIN_HITS, USE_LLM,
+                    LLM_PROVIDER, TZ_OFFSET_HOURS)
 
 
 def _score_row(text):
@@ -79,7 +80,10 @@ def score_messages(df: pd.DataFrame) -> pd.DataFrame:
                       & (df["is_digest"] == 0) & (df["is_foreign"] == 0)).astype(int)
     df["relevance_eff"] = np.where(df["in_index"] == 1, df["relevance"], 0.0)
 
-    df["date_only"] = pd.to_datetime(df["date"]).dt.date
+    # Stored dates are UTC (naive); group by the Tashkent calendar day so the
+    # daily index aligns with the scrape window (UTC+TZ_OFFSET_HOURS).
+    df["date_only"] = (pd.to_datetime(df["date"], errors="coerce")
+                       + pd.Timedelta(hours=TZ_OFFSET_HOURS)).dt.date
     return df
 
 

@@ -25,7 +25,15 @@ EAI va ESI ataylab **ajratilgan** (biri hajm/diqqat, biri yo'nalish/ohang).
 
 - **Kanallar:** umumiy + biznes/iqtisod media (`config.CHANNELS`). Scraper har kanal
   uchun "collected N"/"skipped" log qiladi — noto'g'ri handle xavfsiz o'tkaziladi.
-- **O'suvchi master arxiv** `data/messages.csv`: har run yangi postlarni qo'shadi,
+- **Sana oralig'i bo'yicha yig'ish (T−2):** har run **bitta to'liq kalendar kun**ni
+  (Toshkent 00:00:00–23:59:59) yig'adi — "bugun"dan `SCRAPE_DAYS_BACK` (default **2**)
+  kun oldingisini. 2 kunlik kechikish (a) kun **to'liq** bo'lishini kafolatlaydi,
+  (b) ko'rish/forward'lar **yetilishiga** (view maturation) vaqt beradi — bu eski
+  "oxirgi N post" usulidagi noto'liq-kun va past-e'tibor xatosini bartaraf qiladi.
+  Xabarlar UTC'da saqlanadi, lekin kunlik indeks **Toshkent kuni** bo'yicha guruhlanadi
+  (`date_only = UTC + TZ_OFFSET_HOURS`). `TARGET_DATE=YYYY-MM-DD` bilan aniq kunni
+  qo'lda backfill qilish mumkin.
+- **O'suvchi master arxiv** `data/messages.csv`: har run yangi kunni qo'shadi,
   `(kanal, message_id)` bo'yicha dublikatsiz → **haqiqiy, solishtiriladigan vaqt qatori**.
 - Til: rus + o'zbek (lotin) + o'zbek (kirill) — leksikonlar **uch tilli**.
 

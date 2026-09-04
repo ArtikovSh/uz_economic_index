@@ -26,7 +26,18 @@ CHANNELS = [
 #   Review.uz, Qalampir, Yuz.uz, Repost.uz, Kun.uz economy, @cbu_uz (Markaziy bank),
 #   @stat_uz (Statistika), @soliqqomitasi (Soliq), Norma.uz.
 
-MESSAGES_PER_CHANNEL = int(os.getenv("MSG_PER_CHANNEL", "400"))
+MESSAGES_PER_CHANNEL = int(os.getenv("MSG_PER_CHANNEL", "400"))   # (legacy, unused)
+
+# --- Scrape window ---------------------------------------------------------
+# Each run scrapes ONE full calendar day (Tashkent time): the day DAYS_BACK days
+# before "today" in Tashkent. Default 2 -> a run on Sep 2 scrapes Aug 31
+# 00:00:00–23:59:59 (Tashkent). The 2-day lag lets views/forwards mature and
+# guarantees the day is complete. Override the target with TARGET_DATE=YYYY-MM-DD
+# (manual backfill of a specific day).
+SCRAPE_DAYS_BACK = int(os.getenv("SCRAPE_DAYS_BACK", "2"))
+TZ_OFFSET_HOURS = int(os.getenv("TZ_OFFSET_HOURS", "5"))          # Tashkent = UTC+5
+SCRAPE_HARD_LIMIT = int(os.getenv("SCRAPE_HARD_LIMIT", "3000"))   # safety cap /channel/day
+TARGET_DATE = os.getenv("TARGET_DATE", "").strip()               # YYYY-MM-DD or empty
 
 # =============================================================================
 # Paths / storage

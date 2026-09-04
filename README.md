@@ -55,8 +55,10 @@ $env:USE_PROXY=1; $env:PROXY_PORT=10808   # agar proxy klientingiz bo'lsa
 
 ## GitHub Actions (avtomatik, tavsiya etiladi)
 
-`.github/workflows/scrape.yml` har kuni 23:00 Toshkent + qo'lda ishlaydi, natijani
-`ArtikovSh` nomidan repo'ga commit qiladi + artifact yuklaydi.
+`.github/workflows/scrape.yml` har kuni **21:00 va 23:00 Toshkent** + qo'lda ishlaydi.
+Har run **2 kun oldingi to'liq kun**ni (Toshkent 00:00–23:59) yig'adi (`SCRAPE_DAYS_BACK`),
+natijani `ArtikovSh` nomidan repo'ga commit qiladi + artifact yuklaydi. Aniq kunni
+qo'lda backfill qilish: `TARGET_DATE=YYYY-MM-DD`.
 
 Secretlar: `TG_API_ID`, `TG_API_HASH`, `TG_SESSION_STRING` (sessiyani Google Colab
 yoki `export_session.py` orqali yarating — METHODOLOGY.md / oldingi ko'rsatmalarga qarang).

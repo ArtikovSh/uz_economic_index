@@ -6,7 +6,12 @@ name: uz-economic-index
 on:
   workflow_dispatch:            # manual "Run workflow" button
   schedule:
-    - cron: '0 18 * * *'        # daily 18:00 UTC = 23:00 Tashkent (end of day)
+    # Scrape the day 2 days ago (Tashkent). Run in the 21:00–23:00 Tashkent
+    # window; two times for runner-acquisition resilience (both fetch the same
+    # T-2 day, deduped in the master). Kept < 19:00 UTC so "today" stays the
+    # right Tashkent date when computing the target day.
+    - cron: '0 16 * * *'        # 21:00 Tashkent
+    - cron: '0 18 * * *'        # 23:00 Tashkent
 
 permissions:
   contents: write               # allow the workflow to push the result back
