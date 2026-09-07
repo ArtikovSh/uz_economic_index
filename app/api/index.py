@@ -14,7 +14,7 @@ import hashlib
 import hmac
 import json
 import os
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 
 import psycopg
 import requests
@@ -76,11 +76,83 @@ def send(chat_id, text, **kw):
         print("send error:", e)
 
 
+def main_kb(is_admin=False):
+    """Interactive navigation keyboard shown under bot messages."""
+    rows = [
+        [{"text": "📊 Bugun", "callback_data": "nav:today"},
+         {"text": "🔝 Top", "callback_data": "nav:top"}],
+        [{"text": "🗂 Mavzular", "callback_data": "nav:topics"},
+         {"text": "📈 Grafik", "callback_data": "nav:chart"}],
+    ]
+    if WEBAPP_URL:
+        rows.append([{"text": "📱 Dashboard (Mini App)", "web_app": {"url": WEBAPP_URL}}])
+    return {"inline_keyboard": rows}
+
+
 def app_kb():
-    if not WEBAPP_URL:
-        return None
-    return {"inline_keyboard": [[{"text": "📊 Dashboard (Mini App)",
-                                  "web_app": {"url": WEBAPP_URL}}]]}
+    return main_kb()
+
+
+def edit(chat_id, mid, text, kb=None):
+    if not BOT_TOKEN:
+        return
+    payload = {"chat_id": chat_id, "message_id": mid, "text": text,
+               "parse_mode": "HTML", "disable_web_page_preview": True}
+    if kb:
+        payload["reply_markup"] = kb
+    try:
+        r = requests.post(f"{API}/editMessageText", json=payload, timeout=15)
+        if not r.ok and "not modified" not in r.text:
+            print("edit failed:", r.status_code, r.text[:200])
+    except Exception as e:
+        print("edit error:", e)
+
+
+def answer_cb(cb_id, text=None):
+    try:
+        requests.post(f"{API}/answerCallbackQuery", timeout=10,
+                      json={"callback_query_id": cb_id, **({"text": text} if text else {})})
+    except Exception as e:
+        print("answer_cb error:", e)
+
+
+def send_photo(chat_id, url, caption="", kb=None):
+    if not BOT_TOKEN:
+        return
+    payload = {"chat_id": chat_id, "photo": url, "caption": caption, "parse_mode": "HTML"}
+    if kb:
+        payload["reply_markup"] = kb
+    try:
+        r = requests.post(f"{API}/sendPhoto", json=payload, timeout=25)
+        if not r.ok:
+            print("sendPhoto failed:", r.status_code, r.text[:200])
+    except Exception as e:
+        print("send_photo error:", e)
+
+
+def sparkline(vals):
+    blocks = "▁▂▃▄▅▆▇█"
+    vals = [v for v in vals if v is not None]
+    if not vals:
+        return ""
+    lo, hi = min(vals), max(vals)
+    rng = (hi - lo) or 1
+    return "".join(blocks[min(7, int(7 * (v - lo) / rng))] for v in vals)
+
+
+def quickchart_url(n=30):
+    d = q("select date_only::text d, eai_100, esi_100 from daily_index order by date_only desc limit %s", (n,)) or []
+    d = list(reversed(d))
+    cfg = {"type": "line",
+           "data": {"labels": [x["d"][5:] for x in d],
+                    "datasets": [
+                        {"label": "E'tibor (EAI)", "data": [round(x["eai_100"] or 0) for x in d],
+                         "borderColor": "#3b82f6", "backgroundColor": "rgba(59,130,246,.15)", "fill": True, "tension": 0.35, "pointRadius": 0},
+                        {"label": "Kayfiyat (ESI)", "data": [round(x["esi_100"] or 0) for x in d],
+                         "borderColor": "#22c55e", "fill": False, "tension": 0.35, "pointRadius": 0}]},
+           "options": {"plugins": {"title": {"display": True, "text": f"UZ Economic Index — {n} kun"}},
+                       "scales": {"y": {"min": 0}}}}
+    return "https://quickchart.io/chart?w=640&h=360&bkg=white&c=" + quote(json.dumps(cfg))
 
 
 # --------------------------------------------------------------------- stats ---
@@ -89,20 +161,31 @@ def _day():
     return r["d"] if r else None
 
 
+def _arrow(v):
+    return "▲" if v > 0 else ("▼" if v < 0 else "▬")
+
+
 def fmt_index():
-    rows = q("select * from daily_index order by date_only desc limit 2")
+    rows = q("""select date_only, eai_100, esi_100, economic_messages, total_messages
+                from daily_index order by date_only desc limit 14""")
     if not rows:
         return "Hozircha ma'lumot yo'q. Quvur birinchi kunni yig'ishini kuting."
     d = rows[0]
     prev = rows[1] if len(rows) > 1 else None
-    chg = ""
-    if prev and prev.get("eai_100") is not None:
-        chg = (f"\nO'zgarish: e'tibor {(d['eai_100'] or 0) - (prev['eai_100'] or 0):+.0f}, "
-               f"kayfiyat {(d['esi_100'] or 0) - (prev['esi_100'] or 0):+.0f} (oldingi kunga)")
-    return (f"📊 <b>{d['date_only']} (Toshkent)</b>\n"
-            f"E'tibor indeksi (EAI): <b>{d['eai_100']:.0f}</b> (o'rtacha=100)\n"
-            f"Kayfiyat indeksi (ESI): <b>{d['esi_100']:.0f}</b> (50=neytral)\n"
-            f"Iqtisodiy xabarlar: {d['economic_messages']}/{d['total_messages']}{chg}")
+    hist = list(reversed(rows))
+    de = ds = 0
+    if prev:
+        de = (d["eai_100"] or 0) - (prev["eai_100"] or 0)
+        ds = (d["esi_100"] or 0) - (prev["esi_100"] or 0)
+    mood = "🟢 ijobiy" if (d["esi_100"] or 50) >= 55 else ("🔴 salbiy" if (d["esi_100"] or 50) <= 45 else "🟡 neytral")
+    return (f"📊 <b>Iqtisodiy manzara — {d['date_only']}</b> <i>(Toshkent)</i>\n"
+            f"<i>2 kun oldingi to'liq kun</i>\n\n"
+            f"🎯 <b>E'tibor (EAI): {d['eai_100']:.0f}</b>  {_arrow(de)}{abs(de):.0f}  <i>(o'rtacha=100)</i>\n"
+            f"   <code>{sparkline([r['eai_100'] for r in hist])}</code>\n"
+            f"💬 <b>Kayfiyat (ESI): {d['esi_100']:.0f}</b>  {_arrow(ds)}{abs(ds):.0f}  <i>({mood})</i>\n"
+            f"   <code>{sparkline([r['esi_100'] for r in hist])}</code>\n\n"
+            f"📰 Iqtisodiy xabarlar: <b>{d['economic_messages']}</b> / {d['total_messages']}\n"
+            f"<i>50=neytral · so'nggi 14 kun trendi</i>")
 
 
 def fmt_top(n):
@@ -190,7 +273,31 @@ ADMIN_HELP = ("\n\n<b>Admin:</b>\n/pending\n/approve &lt;id&gt; &lt;rol&gt;\n"
               "/setrole &lt;id&gt; &lt;rol&gt;\n/block &lt;id&gt;\n/users")
 
 
+def handle_callback(cq):
+    data = cq.get("data", "")
+    frm = cq["from"]
+    m = cq.get("message", {})
+    chat_id = m.get("chat", {}).get("id")
+    mid = m.get("message_id")
+    role, status = get_or_create_user(frm["id"], frm)
+    answer_cb(cq["id"])
+    if status != "active":
+        return
+    is_full = role in FULL_ROLES
+    kb = main_kb(role == "admin")
+    if data == "nav:today":
+        edit(chat_id, mid, fmt_index(), kb)
+    elif data == "nav:top":
+        edit(chat_id, mid, fmt_top(8 if is_full else 3), kb)
+    elif data == "nav:topics":
+        edit(chat_id, mid, fmt_topics() if is_full else "🔒 Mavzular kesimi to'liq rol uchun.", kb)
+    elif data == "nav:chart":
+        send_photo(chat_id, quickchart_url(), "📈 <b>EAI/ESI — 30 kunlik trend</b>", kb)
+
+
 def handle_update(update):
+    if "callback_query" in update:
+        return handle_callback(update["callback_query"])
     msg = update.get("message") or update.get("edited_message")
     if not msg or "text" not in msg:
         return
@@ -209,7 +316,9 @@ def handle_update(update):
                 send(int(ADMIN_ID), f"🔔 Yangi foydalanuvchi: {frm['id']} @{frm.get('username','')} "
                                     f"— /approve {frm['id']} economist")
         else:
-            send(chat_id, HELP + (ADMIN_HELP if is_admin else ""), reply_markup=app_kb())
+            send(chat_id, "🇺🇿 <b>UZ Economic Index</b>\nO'zbekiston iqtisodiy yangiliklar indeksi.\n"
+                 "Quyidagi tugmalar orqali indeks, mavzular va top yangiliklarni ko'ring 👇"
+                 + (ADMIN_HELP if is_admin else ""), reply_markup=app_kb())
         return
     if cmd == "/help":
         send(chat_id, HELP + (ADMIN_HELP if is_admin else "")); return
