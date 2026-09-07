@@ -49,7 +49,7 @@ def verify_init_data(init_data):
 
 
 def q(sql, params=(), one=False):
-    with psycopg.connect(DB_URL) as conn, conn.cursor() as cur:
+    with psycopg.connect(DB_URL, prepare_threshold=None) as conn, conn.cursor() as cur:
         cur.execute(sql, params)
         if cur.description is None:
             return None

@@ -18,7 +18,9 @@ DB_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL") or ""
 
 def _connect():
     import psycopg
-    conn = psycopg.connect(DB_URL, autocommit=False)
+    # prepare_threshold=None -> no server-side prepared statements, so the
+    # Supabase transaction pooler (pgbouncer) works fine.
+    conn = psycopg.connect(DB_URL, autocommit=False, prepare_threshold=None)
     with conn.cursor() as cur:
         cur.execute("SET TIME ZONE 'UTC'")
     return conn

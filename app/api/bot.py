@@ -54,7 +54,7 @@ def send(chat_id, text, **kw):
 
 # ----------------------------------------------------------------- database ----
 def q(sql, params=(), one=False):
-    with psycopg.connect(DB_URL) as conn, conn.cursor() as cur:
+    with psycopg.connect(DB_URL, prepare_threshold=None) as conn, conn.cursor() as cur:
         cur.execute(sql, params)
         if cur.description is None:
             return None
