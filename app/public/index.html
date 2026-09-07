@@ -56,7 +56,7 @@ const ROLE = {admin:'Admin',cb_analyst:'MB analitigi',economist:'Iqtisodchi',pub
 async function load(){
   let r;
   try{
-    r = await fetch('/api/data', {headers:{'X-Telegram-Init-Data': tg?.initData || ''}});
+    r = await fetch('/api/index', {headers:{'X-Telegram-Init-Data': tg?.initData || ''}});
   }catch(e){ return show(`<div class="center">Tarmoq xatosi.</div>`); }
   if(r.status===401) return show(`<div class="center">Telegram orqali oching (initData topilmadi).</div>`);
   const d = await r.json();

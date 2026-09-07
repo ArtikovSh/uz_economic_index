@@ -41,7 +41,7 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
 
 ---
 
-## 2-qism — Vercel (bot)  ← bot kodi TAYYOR (`app/api/bot.py`)
+## 2-qism — Vercel (bot)  ← bot kodi TAYYOR (`app/api/index.py`)
 
 1. **Bot yarating:** Telegram'da **@BotFather** → `/newbot` → nomi bering → **tokenni** saqlang.
 2. **O'z Telegram ID'ingizni oling:** **@userinfobot** ga yozing → raqamli `id` (bu sizni
@@ -58,11 +58,11 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
    | `WEBHOOK_SECRET` | ixtiyoriy — istalgan tasodifiy satr |
    | `WEBAPP_URL` | deploy'dan keyingi manzil, masalan `https://<app>.vercel.app` (Mini App tugmasi uchun) |
 5. **Deploy** bosing → app manzilini oling: `https://<app>.vercel.app`.
-   Tekshirish: brauzerda `https://<app>.vercel.app/api/bot` → "bot is running" chiqadi.
+   Tekshirish: brauzerda `https://<app>.vercel.app/api/index` → "bot is running" chiqadi.
 6. **Webhook o'rnating** (brauzerda bir marta oching, `<TOKEN>` va `<app>` ni almashtiring;
    `WEBHOOK_SECRET` qo'ygan bo'lsangiz `&secret_token=...` qo'shing):
    ```
-   https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<app>.vercel.app/api/bot&secret_token=<WEBHOOK_SECRET>
+   https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<app>.vercel.app/api/index&secret_token=<WEBHOOK_SECRET>
    ```
    `{"ok":true,...}` chiqishi kerak.
 7. **Botga `/start`** yozing → admin sifatida tan olinasiz. Endi:
@@ -73,7 +73,7 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
 **Bot buyruqlari:** `/today` `/index` `/top` `/topics` `/topic <nom>` `/me` `/help`.
 Statistikalar 1-qismdagi Supabase ma'lumotidan olinadi (avval workflow sync qilgan bo'lsin).
 
-## 3-qism — Mini App (TAYYOR: `app/public/index.html` + `app/api/data.py`)
+## 3-qism — Mini App (TAYYOR: `app/public/index.html` + `app/api/index.py`)
 
 Mini App bir xil Vercel deploy'da keladi — **build shart emas** (statik HTML + Chart.js).
 Vercel uni ildizda beradi: `https://<app>.vercel.app/`.
@@ -83,7 +83,7 @@ Vercel uni ildizda beradi: `https://<app>.vercel.app/`.
 2. **Menu tugmasi (ixtiyoriy, chiroyliroq):** @BotFather → `/setmenubutton` → botni tanlang →
    *URL* → `https://<app>.vercel.app` → nomi "Dashboard". Endi bot chatida doim "Open App"
    tugmasi turadi.
-3. **Xavfsizlik:** Mini App `/api/data` ga Telegram `initData` yuboradi; funksiya uni
+3. **Xavfsizlik:** Mini App `/api/index` ga Telegram `initData` yuboradi; funksiya uni
    bot-token bilan **HMAC** tekshiradi (soxta so'rov rad etiladi), rolni aniqlaydi va
    faqat ruxsat etilgan ma'lumotni qaytaradi. `public` rol — sarlavha indeks + top 3;
    to'liq rollar — mavzular + ko'proq postlar. Baza faqat backend orqali (RLS).
