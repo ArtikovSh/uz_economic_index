@@ -2,134 +2,221 @@
 <html lang="uz">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>UZ Economic Index</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
-    --bg: var(--tg-theme-bg-color, #ffffff);
-    --sec: var(--tg-theme-secondary-bg-color, #f2f3f5);
-    --text: var(--tg-theme-text-color, #17212b);
-    --hint: var(--tg-theme-hint-color, #8894a0);
-    --accent: var(--tg-theme-button-color, #2f7bf6);
-    --pos:#1fa971; --neg:#e0533d; --neu:#8894a0;
+    --bg: var(--tg-theme-bg-color,#0f1720);
+    --card: var(--tg-theme-secondary-bg-color,#18222e);
+    --text: var(--tg-theme-text-color,#eaf0f6);
+    --hint: var(--tg-theme-hint-color,#8aa0b2);
+    --line: color-mix(in srgb, var(--hint) 22%, transparent);
+    --accent: var(--tg-theme-button-color,#3b82f6);
+    --pos:#22c55e; --neg:#ef4444; --neu:#f59e0b;
+    --blue:#3b82f6; --blue2:#60a5fa;
+    --radius:18px; --shadow:0 6px 24px rgba(0,0,0,.18);
   }
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);
-       font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;padding:12px 12px 40px}
-  h1{font-size:16px;margin:0 0 2px}
-  .muted{color:var(--hint);font-size:12px}
-  .row{display:flex;gap:10px}
-  .card{background:var(--sec);border-radius:14px;padding:14px;margin-top:10px}
-  .kpi{flex:1;text-align:center}
-  .kpi .big{font-size:30px;font-weight:700;line-height:1.1}
-  .kpi .lbl{font-size:11px;color:var(--hint);margin-top:2px}
-  .chg{font-size:12px;margin-top:3px}
-  .badge{display:inline-block;padding:2px 9px;border-radius:20px;background:var(--accent);
-         color:#fff;font-size:11px;vertical-align:middle}
-  .sec-title{font-size:13px;font-weight:600;margin:0 0 8px}
-  .tbar{display:flex;align-items:center;gap:8px;margin:6px 0}
-  .tbar .n{font-size:12px;color:var(--hint);min-width:74px}
-  .tbar .track{flex:1;height:8px;background:rgba(136,148,160,.22);border-radius:6px;overflow:hidden}
-  .tbar .fill{height:100%;border-radius:6px;background:var(--accent)}
-  .post{padding:9px 0;border-top:1px solid rgba(136,148,160,.18)}
-  .post:first-child{border-top:none}
-  .post .meta{font-size:11px;color:var(--hint);margin-bottom:2px}
-  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
-  .center{text-align:center;padding:40px 16px;color:var(--hint)}
-  .disc{font-size:11px;color:var(--hint);margin-top:14px;text-align:center}
-  canvas{margin-top:6px}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.5 -apple-system,"SF Pro Display",Segoe UI,Roboto,system-ui,sans-serif}
+  body{padding:14px 14px 78px}
+  .fade{animation:fade .35s ease both}@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1}}
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+  .head h1{font-size:17px;font-weight:750;margin:0;letter-spacing:-.2px}
+  .sub{color:var(--hint);font-size:12px;margin-bottom:12px}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;
+        font-size:11px;font-weight:650;background:color-mix(in srgb,var(--accent) 18%,transparent);
+        color:var(--accent)}
+  .card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:12px;
+        box-shadow:var(--shadow);border:1px solid var(--line)}
+  .gauges{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .g{background:var(--card);border-radius:var(--radius);padding:14px 10px 12px;text-align:center;
+     box-shadow:var(--shadow);border:1px solid var(--line)}
+  .g .lab{font-size:11px;color:var(--hint);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+  .g .val{font-size:30px;font-weight:800;line-height:1;margin-top:-30px}
+  .g .delta{font-size:12px;font-weight:700;margin-top:6px}
+  .g .hint{font-size:10px;color:var(--hint);margin-top:1px}
+  .st{font-size:12px;font-weight:700;color:var(--hint);text-transform:uppercase;letter-spacing:.4px;margin:0 0 12px}
+  .seg{display:flex;gap:6px;margin-bottom:10px}
+  .seg button{flex:1;padding:7px;border:none;border-radius:10px;font-size:12px;font-weight:650;
+     background:color-mix(in srgb,var(--hint) 14%,transparent);color:var(--hint)}
+  .seg button.on{background:var(--accent);color:#fff}
+  .sdist{display:flex;height:12px;border-radius:8px;overflow:hidden;margin:4px 0 10px}
+  .sdist span{display:block}
+  .sleg{display:flex;justify-content:space-between;font-size:11px;color:var(--hint)}
+  .sleg b{color:var(--text)}
+  .trow{display:flex;align-items:center;gap:10px;padding:9px 0;cursor:pointer}
+  .trow+.trow{border-top:1px solid var(--line)}
+  .trow .nm{font-size:13px;font-weight:600;min-width:96px}
+  .trow .track{flex:1;height:9px;background:color-mix(in srgb,var(--hint) 16%,transparent);border-radius:6px;overflow:hidden}
+  .trow .fill{height:100%;border-radius:6px}
+  .trow .cnt{font-size:12px;font-weight:700;min-width:26px;text-align:right}
+  .post{display:block;padding:13px 14px;background:var(--card);border:1px solid var(--line);
+        border-radius:14px;margin-bottom:10px;color:inherit;text-decoration:none;box-shadow:var(--shadow)}
+  .post .top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .tag{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px}
+  .post .ch{font-size:11px;color:var(--hint);margin-left:auto}
+  .post .tx{font-size:13.5px;line-height:1.5}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .filters{display:flex;gap:7px;overflow-x:auto;padding-bottom:8px;margin-bottom:2px}
+  .filters button{white-space:nowrap;padding:6px 12px;border:none;border-radius:20px;font-size:12px;font-weight:600;
+     background:color-mix(in srgb,var(--hint) 14%,transparent);color:var(--hint)}
+  .filters button.on{background:var(--accent);color:#fff}
+  .center{text-align:center;padding:52px 18px;color:var(--hint)}
+  .disc{font-size:11px;color:var(--hint);text-align:center;margin:16px 0 4px;opacity:.85}
+  .tabbar{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);
+     border-top:1px solid var(--line);padding:8px 0 max(8px,env(safe-area-inset-bottom));z-index:9}
+  .tabbar button{flex:1;background:none;border:none;color:var(--hint);font-size:11px;font-weight:600;
+     display:flex;flex-direction:column;align-items:center;gap:3px}
+  .tabbar button.on{color:var(--accent)}
+  .tabbar .ic{font-size:19px}
+  .skl{background:color-mix(in srgb,var(--hint) 12%,transparent);border-radius:10px;
+       animation:pulse 1.3s ease-in-out infinite}@keyframes pulse{50%{opacity:.5}}
+  [hidden]{display:none!important}
 </style>
 </head>
 <body>
-<div id="app"><div class="center" id="loading">Yuklanmoqda…</div></div>
+<div id="root"><div id="loading">
+  <div class="gauges"><div class="g skl" style="height:120px"></div><div class="g skl" style="height:120px"></div></div>
+  <div class="card skl" style="height:180px"></div><div class="card skl" style="height:130px"></div>
+</div></div>
+<div class="tabbar" id="tabbar" hidden>
+  <button data-tab="over" class="on"><span class="ic">📊</span>Umumiy</button>
+  <button data-tab="topics"><span class="ic">🗂</span>Mavzular</button>
+  <button data-tab="posts"><span class="ic">📰</span>Postlar</button>
+</div>
 
 <script>
-const tg = window.Telegram?.WebApp;
-try{ tg?.ready(); tg?.expand(); }catch(e){}
-const app = document.getElementById('app');
-const el = (h)=>{const d=document.createElement('div');d.innerHTML=h;return d.firstElementChild;};
-const moodColor = s => s>0.15?'var(--pos)':(s<-0.15?'var(--neg)':'var(--neu)');
-const ROLE = {admin:'Admin',cb_analyst:'MB analitigi',economist:'Iqtisodchi',public:'Ommaviy'};
+const tg=window.Telegram?.WebApp; try{tg?.ready();tg?.expand();}catch(e){}
+const root=document.getElementById('root'), tabbar=document.getElementById('tabbar');
+const hap=(t='light')=>{try{tg.HapticFeedback.impactOccurred(t)}catch(e){}};
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const moodC=s=>s>0.15?'var(--pos)':(s<-0.15?'var(--neg)':'var(--neu)');
+const ROLE={admin:'Admin',cb_analyst:'MB analitigi',economist:'Iqtisodchi',public:'Ommaviy'};
+let DATA=null, TAB='over', period=30, postFilter=null, chart=null;
 
 async function load(){
-  let r;
-  try{
-    r = await fetch('/api/index', {headers:{'X-Telegram-Init-Data': tg?.initData || ''}});
-  }catch(e){ return show(`<div class="center">Tarmoq xatosi.</div>`); }
-  if(r.status===401) return show(`<div class="center">Telegram orqali oching (initData topilmadi).</div>`);
-  const d = await r.json();
-  if(d.status && d.status!=='active')
-    return show(`<div class="center">⏳ Hisobingiz <b>tasdiq kutyapti</b>.<br>Botда /start yozing va admin tasdig'ini kuting.</div>`);
-  render(d);
+  let r; try{ r=await fetch('/api/index',{headers:{'X-Telegram-Init-Data':tg?.initData||''}}); }
+  catch(e){ return msg('Tarmoq xatosi. Qayta urinib ko\'ring.'); }
+  if(r.status===401) return msg('Iltimos, botni Telegram ichida oching.');
+  const d=await r.json();
+  if(d.status&&d.status!=='active')
+    return msg('⏳ Hisobingiz <b>tasdiq kutyapti</b>.<br>Botда /start yozing va admin tasdig\'ini kuting.');
+  DATA=d; tabbar.hidden=false; render();
+}
+function msg(h){root.innerHTML=`<div class="center">${h}</div>`;}
+
+/* ---------- gauges (SVG semicircle) ---------- */
+function arc(cx,cy,r,a0,a1){
+  const p=(a)=>[cx+r*Math.cos(Math.PI*a/180), cy-r*Math.sin(Math.PI*a/180)];
+  const[x0,y0]=p(a0),[x1,y1]=p(a1); const large=Math.abs(a1-a0)>180?1:0;
+  return `M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1}`;
+}
+function gauge(id,value,min,max,grad,color){
+  const v=Math.max(min,Math.min(max,value)), frac=(v-min)/(max-min);
+  const ang=180-180*frac; // 180(left)->0(right)
+  const W=150,H=88,cx=75,cy=80,r=62;
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="${grad[0]}"/><stop offset="1" stop-color="${grad[1]}"/></linearGradient></defs>
+    <path d="${arc(cx,cy,r,180,0)}" fill="none" stroke="color-mix(in srgb,var(--hint) 18%,transparent)" stroke-width="11" stroke-linecap="round"/>
+    <path d="${arc(cx,cy,r,180,ang)}" fill="none" stroke="url(#${id})" stroke-width="11" stroke-linecap="round"/>
+  </svg>`;
 }
 
-function kpi(val, label, sub){
-  return `<div class="kpi"><div class="big">${val}</div><div class="lbl">${label}</div>
-          <div class="chg">${sub||''}</div></div>`;
+/* ---------- views ---------- */
+function overview(){
+  const L=DATA.latest||{},P=DATA.prev||{},d=DATA;
+  const eai=Math.round(L.eai_100||0), esi=Math.round(L.esi_100||0);
+  const dE=Math.round((L.eai_100||0)-(P.eai_100||0)), dS=Math.round((L.esi_100||0)-(P.esi_100||0));
+  const delta=(v)=>`<span style="color:${v>0?'var(--pos)':v<0?'var(--neg)':'var(--hint)'}">${v>0?'▲':v<0?'▼':'▬'} ${Math.abs(v)}</span>`;
+  const esiCol=esi>=55?'var(--pos)':esi<=45?'var(--neg)':'var(--neu)';
+  const s=d.sentiment||{pos:0,neu:0,neg:0}, tot=(s.pos+s.neu+s.neg)||1;
+  const bar=`<div class="sdist">
+    <span style="width:${100*s.pos/tot}%;background:var(--pos)"></span>
+    <span style="width:${100*s.neu/tot}%;background:var(--neu)"></span>
+    <span style="width:${100*s.neg/tot}%;background:var(--neg)"></span></div>
+    <div class="sleg"><span>🟢 Ijobiy <b>${s.pos}</b></span><span>🟡 Neytral <b>${s.neu}</b></span><span>🔴 Salbiy <b>${s.neg}</b></span></div>`;
+  const topT=(d.topics||[]).slice(0,5);
+  const maxN=Math.max(1,...topT.map(t=>t.n));
+  const trows=topT.map(t=>`<div class="trow" data-topic="${t.primary_topic}">
+      <div class="nm">${t.name}</div>
+      <div class="track"><div class="fill" style="width:${Math.round(100*t.n/maxN)}%;background:${moodC(t.s)}"></div></div>
+      <div class="cnt">${t.n}</div></div>`).join('');
+  return `
+  <div class="gauges fade">
+    <div class="g">${gauge('gA',eai,0,200,['#3b82f6','#60a5fa'])}
+      <div class="val">${eai}</div><div class="lab">E'tibor · EAI</div>
+      <div class="delta">${delta(dE)}</div><div class="hint">o'rtacha kun = 100</div></div>
+    <div class="g">${gauge('gB',esi,0,100,['#ef4444','#22c55e'])}
+      <div class="val" style="color:${esiCol}">${esi}</div><div class="lab">Kayfiyat · ESI</div>
+      <div class="delta">${delta(dS)}</div><div class="hint">50 = neytral</div></div>
+  </div>
+  <div class="card fade"><p class="st">Trend</p>
+    <div class="seg">${[7,30,90].map(p=>`<button data-p="${p}" class="${p===period?'on':''}">${p} kun</button>`).join('')}</div>
+    <canvas id="trend" height="150"></canvas></div>
+  <div class="card fade"><p class="st">Kayfiyat taqsimoti — ${d.date||''}</p>${bar}</div>
+  ${topT.length?`<div class="card fade"><p class="st">Asosiy mavzular</p>${trows}</div>`:''}
+  <div class="disc">⚠️ Tajriba indeksi — rasmiy statistika emas.</div>`;
 }
-function arrow(cur, prev){
-  if(prev==null) return '';
-  const dv = Math.round(cur-prev);
-  const c = dv>0?'var(--pos)':(dv<0?'var(--neg)':'var(--hint)');
-  return `<span style="color:${c}">${dv>0?'▲':dv<0?'▼':'▬'} ${Math.abs(dv)}</span>`;
+function topicsView(){
+  const t=DATA.topics||[];
+  if(!t.length) return `<div class="center">${DATA.is_full?'Bu kun uchun mavzu topilmadi.':'🔒 Mavzular kesimi to\'liq rol uchun.<br>Admin sizga <b>economist/analyst</b> rolini bersa ochiladi.'}</div>`;
+  const maxN=Math.max(1,...t.map(x=>x.n));
+  return `<p class="st fade">Mavzular — ${DATA.date||''} <span style="color:var(--hint);text-transform:none">(bosing → postlar)</span></p>`+
+    t.map(x=>`<div class="card fade trow" data-topic="${x.primary_topic}" style="margin-bottom:8px">
+      <div class="nm" style="min-width:120px">${x.name}</div>
+      <div class="track"><div class="fill" style="width:${Math.round(100*x.n/maxN)}%;background:${moodC(x.s)}"></div></div>
+      <div style="text-align:right"><div class="cnt">${x.n}</div>
+        <div style="font-size:10px;color:var(--hint)">${x.s>0?'+':''}${x.s}</div></div></div>`).join('');
+}
+function postsView(){
+  let posts=DATA.top||[];
+  if(postFilter) posts=posts.filter(p=>p.primary_topic===postFilter);
+  const topics=[...new Set((DATA.top||[]).map(p=>p.primary_topic))];
+  const chips=`<div class="filters fade"><button class="${!postFilter?'on':''}" data-f="">Hammasi</button>`+
+    topics.map(t=>`<button class="${postFilter===t?'on':''}" data-f="${t}">${DATA.top.find(p=>p.primary_topic===t).topic}</button>`).join('')+`</div>`;
+  if(!posts.length) return chips+`<div class="center">Post topilmadi.</div>`;
+  const cards=posts.map(p=>`<a class="post fade" href="${p.link}" data-link="${p.link}">
+     <div class="top"><span class="dot" style="background:${moodC(p.sentiment)}"></span>
+       <span class="tag" style="background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)">${p.topic}</span>
+       <span class="ch">${p.channel} · 👁 ${p.views}</span></div>
+     <div class="tx">${esc(p.raw_text)}</div></a>`).join('');
+  return chips+cards;
 }
 
-function render(d){
-  app.innerHTML='';
-  const L=d.latest||{}, P=d.prev;
-  const esiColor = (L.esi_100>=55)?'var(--pos)':(L.esi_100<=45?'var(--neg)':'var(--text)');
-  app.appendChild(el(`<div>
-    <h1>UZ Iqtisodiy Yangiliklar Indeksi <span class="badge">${ROLE[d.role]||d.role}</span></h1>
-    <div class="muted">${d.date||''} · iqtisodiy xabarlar: ${L.economic_messages||0}/${L.total_messages||0}</div>
-  </div>`));
-  app.appendChild(el(`<div class="card row">
-    ${kpi(Math.round(L.eai_100||0), "E'tibor (EAI)", arrow(L.eai_100, P?.eai_100)+' <span class="muted">oʻrt=100</span>')}
-    ${kpi(`<span style="color:${esiColor}">${Math.round(L.esi_100||0)}</span>`, "Kayfiyat (ESI)", arrow(L.esi_100, P?.esi_100)+' <span class="muted">50=neytral</span>')}
-  </div>`));
-
-  // trend chart
-  const chartCard = el(`<div class="card"><div class="sec-title">Trend (kunlik)</div><canvas id="trend" height="150"></canvas></div>`);
-  app.appendChild(chartCard);
-  drawTrend(d.daily||[]);
-
-  // topics (full role only)
-  if(d.is_full && d.topics?.length){
-    const max = Math.max(...d.topics.map(t=>t.n));
-    const bars = d.topics.map(t=>`<div class="tbar"><div class="n">${t.name}</div>
-      <div class="track"><div class="fill" style="width:${Math.round(100*t.n/max)}%;background:${moodColor(t.s)}"></div></div>
-      <div class="n" style="min-width:34px;text-align:right">${t.n}</div></div>`).join('');
-    app.appendChild(el(`<div class="card"><div class="sec-title">Mavzular (kayfiyat rangda)</div>${bars}</div>`));
-  }
-
-  // top posts
-  if(d.top?.length){
-    const posts = d.top.map(p=>`<div class="post">
-      <div class="meta"><span class="dot" style="background:${moodColor(p.sentiment)}"></span>${p.channel} · 👁 ${p.views}</div>
-      ${escapeHtml(p.raw_text)}</div>`).join('');
-    app.appendChild(el(`<div class="card"><div class="sec-title">Top iqtisodiy postlar</div>${posts}</div>`));
-  }
-
-  app.appendChild(el(`<div class="disc">⚠️ Tajriba indeksi — rasmiy statistika emas.</div>`));
+function render(){
+  root.innerHTML = TAB==='over'?overview():TAB==='topics'?topicsView():postsView();
+  if(TAB==='over') drawChart();
+  bind();
+  [...tabbar.children].forEach(b=>b.classList.toggle('on',b.dataset.tab===TAB));
 }
-
-function drawTrend(daily){
-  const ctx = document.getElementById('trend');
-  const labels = daily.map(x=>x.d.slice(5));
-  const hint = getComputedStyle(document.body).getPropertyValue('--hint');
-  new Chart(ctx,{type:'line',
-    data:{labels,datasets:[
-      {label:'EAI (e\'tibor)',data:daily.map(x=>x.eai_100),borderColor:'#2f7bf6',tension:.3,pointRadius:0,borderWidth:2},
-      {label:'ESI (kayfiyat)',data:daily.map(x=>x.esi_100),borderColor:'#1fa971',tension:.3,pointRadius:0,borderWidth:2},
+function drawChart(){
+  const el=document.getElementById('trend'); if(!el) return;
+  const dd=(DATA.daily||[]).slice(-period);
+  const hint=getComputedStyle(document.body).getPropertyValue('--hint');
+  const ctx=el.getContext('2d');
+  const grad=ctx.createLinearGradient(0,0,0,150); grad.addColorStop(0,'rgba(59,130,246,.35)');grad.addColorStop(1,'rgba(59,130,246,0)');
+  if(chart) chart.destroy();
+  chart=new Chart(el,{type:'line',
+    data:{labels:dd.map(x=>x.d.slice(5)),datasets:[
+      {label:'E\'tibor (EAI)',data:dd.map(x=>x.eai_100),borderColor:'#3b82f6',backgroundColor:grad,fill:true,tension:.4,pointRadius:0,borderWidth:2.5},
+      {label:'Kayfiyat (ESI)',data:dd.map(x=>x.esi_100),borderColor:'#22c55e',fill:false,tension:.4,pointRadius:0,borderWidth:2.5},
     ]},
-    options:{responsive:true,plugins:{legend:{labels:{boxWidth:12,color:hint,font:{size:10}}}},
+    options:{responsive:true,interaction:{intersect:false,mode:'index'},
+      plugins:{legend:{labels:{boxWidth:12,color:hint,font:{size:11},usePointStyle:true}}},
       scales:{x:{ticks:{color:hint,maxTicksLimit:6,font:{size:9}},grid:{display:false}},
-              y:{ticks:{color:hint,font:{size:9}},grid:{color:'rgba(136,148,160,.15)'}}}}});
+              y:{ticks:{color:hint,font:{size:9}},grid:{color:'rgba(140,160,180,.12)'}}}}});
 }
-
-function escapeHtml(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-function show(h){app.innerHTML=h;}
+function bind(){
+  root.querySelectorAll('[data-topic]').forEach(e=>e.onclick=()=>{hap();postFilter=e.dataset.topic;TAB='posts';render();});
+  root.querySelectorAll('.seg [data-p]').forEach(b=>b.onclick=()=>{hap();period=+b.dataset.p;render();});
+  root.querySelectorAll('.filters [data-f]').forEach(b=>b.onclick=()=>{hap();postFilter=b.dataset.f||null;render();});
+  root.querySelectorAll('[data-link]').forEach(a=>a.onclick=(ev)=>{ev.preventDefault();hap();try{tg.openTelegramLink(a.dataset.link)}catch(e){window.open(a.dataset.link)}});
+}
+tabbar.querySelectorAll('button').forEach(b=>b.onclick=()=>{hap();TAB=b.dataset.tab;postFilter=null;render();});
 load();
 </script>
 </body>

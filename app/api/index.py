@@ -265,35 +265,51 @@ def verify_init_data(init_data):
         return None
 
 
+def _post_link(channel, mid):
+    return f"https://t.me/{str(channel).lstrip('@')}/{mid}"
+
+
 def build_payload(role):
     is_full = role in FULL_ROLES
-    daily = q("""select date_only::text d, eai_100, esi_100, economic_messages, total_messages
-                 from daily_index order by date_only desc limit 60""") or []
+    daily = q("""select date_only::text d, eai_100, esi_100, econ_share,
+                        economic_messages, counted_messages, total_messages
+                 from daily_index order by date_only desc limit 90""") or []
     daily = list(reversed(daily))
-    monthly = q("""select month, eai_100, esi_100 from monthly_index order by month""") or []
+    monthly = q("""select month, eai_100, esi_100, economic_messages, total_messages
+                   from monthly_index order by month""") or []
     day = _day()
-    topics, top = [], []
+    topics, top, sent = [], [], {"pos": 0, "neu": 0, "neg": 0}
+    cond = ("is_economic and not is_ad and not is_foreign and not is_digest")
     if day:
-        topics = q(f"""select primary_topic, count(*) n, round(avg(sentiment)::numeric,2) s
-                       from posts where (date_utc + interval '{TZ}')::date=%s
-                         and is_economic and not is_ad and not is_foreign and not is_digest
+        topics = q(f"""select primary_topic, count(*) n, round(avg(sentiment)::numeric,2) s,
+                              round(avg(relevance)::numeric,2) r
+                       from posts where (date_utc + interval '{TZ}')::date=%s and {cond}
                        group by primary_topic order by n desc""", (day,)) or []
         for t in topics:
             t["name"] = TOPICS.get(t["primary_topic"], t["primary_topic"])
-            t["s"] = float(t["s"])
-        top = q(f"""select channel, sentiment, views, raw_text from posts
-                    where (date_utc + interval '{TZ}')::date=%s
-                      and is_economic and not is_ad and not is_foreign and not is_digest
+            t["s"] = float(t["s"]); t["r"] = float(t["r"])
+        sd = q(f"""select
+                     count(*) filter (where sentiment > 0.15) pos,
+                     count(*) filter (where sentiment < -0.15) neg,
+                     count(*) filter (where sentiment between -0.15 and 0.15) neu
+                   from posts where (date_utc + interval '{TZ}')::date=%s and {cond}""",
+               (day,), one=True) or {}
+        sent = {"pos": sd.get("pos", 0), "neu": sd.get("neu", 0), "neg": sd.get("neg", 0)}
+        top = q(f"""select channel, message_id, primary_topic, sentiment, relevance,
+                           views, forwards, raw_text
+                    from posts where (date_utc + interval '{TZ}')::date=%s and {cond}
                     order by relevance*ln(1+views+2*forwards) desc limit %s""",
-                (day, 12 if is_full else 3)) or []
+                (day, 25 if is_full else 5)) or []
         for p in top:
-            p["raw_text"] = " ".join(str(p["raw_text"]).split())[:220]
+            p["raw_text"] = " ".join(str(p["raw_text"]).split())[:240]
             p["sentiment"] = float(p["sentiment"])
+            p["topic"] = TOPICS.get(p["primary_topic"], p["primary_topic"])
+            p["link"] = _post_link(p["channel"], p["message_id"])
     return {"role": role, "is_full": is_full, "date": str(day) if day else None,
             "latest": daily[-1] if daily else None,
             "prev": daily[-2] if len(daily) > 1 else None,
-            "daily": daily, "monthly": monthly,
-            "topics": topics if is_full else [], "top": top}
+            "daily": daily, "monthly": monthly, "sentiment": sent,
+            "topics": topics, "top": top}
 
 
 # ------------------------------------------------------ Vercel entry point -----
