@@ -17,6 +17,7 @@ import requests
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 ADMIN_ID = os.getenv("BOT_ADMIN_ID", "").strip()
+WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()   # Mini App URL (Vercel root)
 DB_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL") or ""
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -34,6 +35,14 @@ TOPICS = {
 
 
 # ----------------------------------------------------------------- telegram ----
+def app_kb():
+    """Inline keyboard with a 'open Mini App' button (if WEBAPP_URL is set)."""
+    if not WEBAPP_URL:
+        return None
+    return {"inline_keyboard": [[{"text": "📊 Dashboard (Mini App)",
+                                  "web_app": {"url": WEBAPP_URL}}]]}
+
+
 def send(chat_id, text, **kw):
     try:
         requests.post(f"{API}/sendMessage", timeout=15, json={
@@ -192,6 +201,7 @@ HELP = ("🤖 <b>UZ Economic Index bot</b>\n\n"
         "/top — kunning top iqtisodiy postlari\n"
         "/topics — mavzular kesimi\n"
         "/topic &lt;nom&gt; — bitta mavzu (masalan: /topic currency_fx)\n"
+        "/app — Dashboard (Mini App)\n"
         "/me — mening rolim\n/help — yordam")
 
 ADMIN_HELP = ("\n\n<b>Admin:</b>\n/pending — kutayotganlar\n/approve &lt;id&gt; &lt;rol&gt;\n"
@@ -219,7 +229,7 @@ def handle_update(update):
                 send(int(ADMIN_ID), f"🔔 Yangi foydalanuvchi: {frm['id']} "
                                     f"@{frm.get('username','')} — /approve {frm['id']} economist")
         else:
-            send(chat_id, HELP + (ADMIN_HELP if is_admin else ""))
+            send(chat_id, HELP + (ADMIN_HELP if is_admin else ""), reply_markup=app_kb())
         return
     if cmd == "/help":
         send(chat_id, HELP + (ADMIN_HELP if is_admin else "")); return
@@ -237,8 +247,14 @@ def handle_update(update):
         send(chat_id, "⏳ Hisobingiz hali tasdiqlanmagan. Admin tasdig'ini kuting."); return
 
     # active users
+    if cmd == "/app":
+        if WEBAPP_URL:
+            send(chat_id, "📊 Dashboard'ni oching:", reply_markup=app_kb())
+        else:
+            send(chat_id, "Mini App hali ulanmagan.")
+        return
     if cmd == "/today" or cmd == "/index":
-        send(chat_id, fmt_index()); return
+        send(chat_id, fmt_index(), reply_markup=app_kb()); return
     if cmd == "/top":
         send(chat_id, fmt_top(8 if is_full else 3)); return
     if cmd == "/topics":

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>UZ Economic Index</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --sec: var(--tg-theme-secondary-bg-color, #f2f3f5);
+    --text: var(--tg-theme-text-color, #17212b);
+    --hint: var(--tg-theme-hint-color, #8894a0);
+    --accent: var(--tg-theme-button-color, #2f7bf6);
+    --pos:#1fa971; --neg:#e0533d; --neu:#8894a0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;padding:12px 12px 40px}
+  h1{font-size:16px;margin:0 0 2px}
+  .muted{color:var(--hint);font-size:12px}
+  .row{display:flex;gap:10px}
+  .card{background:var(--sec);border-radius:14px;padding:14px;margin-top:10px}
+  .kpi{flex:1;text-align:center}
+  .kpi .big{font-size:30px;font-weight:700;line-height:1.1}
+  .kpi .lbl{font-size:11px;color:var(--hint);margin-top:2px}
+  .chg{font-size:12px;margin-top:3px}
+  .badge{display:inline-block;padding:2px 9px;border-radius:20px;background:var(--accent);
+         color:#fff;font-size:11px;vertical-align:middle}
+  .sec-title{font-size:13px;font-weight:600;margin:0 0 8px}
+  .tbar{display:flex;align-items:center;gap:8px;margin:6px 0}
+  .tbar .n{font-size:12px;color:var(--hint);min-width:74px}
+  .tbar .track{flex:1;height:8px;background:rgba(136,148,160,.22);border-radius:6px;overflow:hidden}
+  .tbar .fill{height:100%;border-radius:6px;background:var(--accent)}
+  .post{padding:9px 0;border-top:1px solid rgba(136,148,160,.18)}
+  .post:first-child{border-top:none}
+  .post .meta{font-size:11px;color:var(--hint);margin-bottom:2px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+  .center{text-align:center;padding:40px 16px;color:var(--hint)}
+  .disc{font-size:11px;color:var(--hint);margin-top:14px;text-align:center}
+  canvas{margin-top:6px}
+</style>
+</head>
+<body>
+<div id="app"><div class="center" id="loading">Yuklanmoqda…</div></div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+try{ tg?.ready(); tg?.expand(); }catch(e){}
+const app = document.getElementById('app');
+const el = (h)=>{const d=document.createElement('div');d.innerHTML=h;return d.firstElementChild;};
+const moodColor = s => s>0.15?'var(--pos)':(s<-0.15?'var(--neg)':'var(--neu)');
+const ROLE = {admin:'Admin',cb_analyst:'MB analitigi',economist:'Iqtisodchi',public:'Ommaviy'};
+
+async function load(){
+  let r;
+  try{
+    r = await fetch('/api/data', {headers:{'X-Telegram-Init-Data': tg?.initData || ''}});
+  }catch(e){ return show(`<div class="center">Tarmoq xatosi.</div>`); }
+  if(r.status===401) return show(`<div class="center">Telegram orqali oching (initData topilmadi).</div>`);
+  const d = await r.json();
+  if(d.status && d.status!=='active')
+    return show(`<div class="center">⏳ Hisobingiz <b>tasdiq kutyapti</b>.<br>Botда /start yozing va admin tasdig'ini kuting.</div>`);
+  render(d);
+}
+
+function kpi(val, label, sub){
+  return `<div class="kpi"><div class="big">${val}</div><div class="lbl">${label}</div>
+          <div class="chg">${sub||''}</div></div>`;
+}
+function arrow(cur, prev){
+  if(prev==null) return '';
+  const dv = Math.round(cur-prev);
+  const c = dv>0?'var(--pos)':(dv<0?'var(--neg)':'var(--hint)');
+  return `<span style="color:${c}">${dv>0?'▲':dv<0?'▼':'▬'} ${Math.abs(dv)}</span>`;
+}
+
+function render(d){
+  app.innerHTML='';
+  const L=d.latest||{}, P=d.prev;
+  const esiColor = (L.esi_100>=55)?'var(--pos)':(L.esi_100<=45?'var(--neg)':'var(--text)');
+  app.appendChild(el(`<div>
+    <h1>UZ Iqtisodiy Yangiliklar Indeksi <span class="badge">${ROLE[d.role]||d.role}</span></h1>
+    <div class="muted">${d.date||''} · iqtisodiy xabarlar: ${L.economic_messages||0}/${L.total_messages||0}</div>
+  </div>`));
+  app.appendChild(el(`<div class="card row">
+    ${kpi(Math.round(L.eai_100||0), "E'tibor (EAI)", arrow(L.eai_100, P?.eai_100)+' <span class="muted">oʻrt=100</span>')}
+    ${kpi(`<span style="color:${esiColor}">${Math.round(L.esi_100||0)}</span>`, "Kayfiyat (ESI)", arrow(L.esi_100, P?.esi_100)+' <span class="muted">50=neytral</span>')}
+  </div>`));
+
+  // trend chart
+  const chartCard = el(`<div class="card"><div class="sec-title">Trend (kunlik)</div><canvas id="trend" height="150"></canvas></div>`);
+  app.appendChild(chartCard);
+  drawTrend(d.daily||[]);
+
+  // topics (full role only)
+  if(d.is_full && d.topics?.length){
+    const max = Math.max(...d.topics.map(t=>t.n));
+    const bars = d.topics.map(t=>`<div class="tbar"><div class="n">${t.name}</div>
+      <div class="track"><div class="fill" style="width:${Math.round(100*t.n/max)}%;background:${moodColor(t.s)}"></div></div>
+      <div class="n" style="min-width:34px;text-align:right">${t.n}</div></div>`).join('');
+    app.appendChild(el(`<div class="card"><div class="sec-title">Mavzular (kayfiyat rangda)</div>${bars}</div>`));
+  }
+
+  // top posts
+  if(d.top?.length){
+    const posts = d.top.map(p=>`<div class="post">
+      <div class="meta"><span class="dot" style="background:${moodColor(p.sentiment)}"></span>${p.channel} · 👁 ${p.views}</div>
+      ${escapeHtml(p.raw_text)}</div>`).join('');
+    app.appendChild(el(`<div class="card"><div class="sec-title">Top iqtisodiy postlar</div>${posts}</div>`));
+  }
+
+  app.appendChild(el(`<div class="disc">⚠️ Tajriba indeksi — rasmiy statistika emas.</div>`));
+}
+
+function drawTrend(daily){
+  const ctx = document.getElementById('trend');
+  const labels = daily.map(x=>x.d.slice(5));
+  const hint = getComputedStyle(document.body).getPropertyValue('--hint');
+  new Chart(ctx,{type:'line',
+    data:{labels,datasets:[
+      {label:'EAI (e\'tibor)',data:daily.map(x=>x.eai_100),borderColor:'#2f7bf6',tension:.3,pointRadius:0,borderWidth:2},
+      {label:'ESI (kayfiyat)',data:daily.map(x=>x.esi_100),borderColor:'#1fa971',tension:.3,pointRadius:0,borderWidth:2},
+    ]},
+    options:{responsive:true,plugins:{legend:{labels:{boxWidth:12,color:hint,font:{size:10}}}},
+      scales:{x:{ticks:{color:hint,maxTicksLimit:6,font:{size:9}},grid:{display:false}},
+              y:{ticks:{color:hint,font:{size:9}},grid:{color:'rgba(136,148,160,.15)'}}}}});
+}
+
+function escapeHtml(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function show(h){app.innerHTML=h;}
+load();
+</script>
+</body>
+</html>

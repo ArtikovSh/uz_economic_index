@@ -56,6 +56,7 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
    | `BOT_ADMIN_ID` | sizning Telegram ID'ingiz |
    | `SUPABASE_DB_URL` | 1-qismdagi pooler URI (parol bilan) |
    | `WEBHOOK_SECRET` | ixtiyoriy — istalgan tasodifiy satr |
+   | `WEBAPP_URL` | deploy'dan keyingi manzil, masalan `https://<app>.vercel.app` (Mini App tugmasi uchun) |
 5. **Deploy** bosing → app manzilini oling: `https://<app>.vercel.app`.
    Tekshirish: brauzerda `https://<app>.vercel.app/api/bot` → "bot is running" chiqadi.
 6. **Webhook o'rnating** (brauzerda bir marta oching, `<TOKEN>` va `<app>` ni almashtiring;
@@ -72,8 +73,29 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
 **Bot buyruqlari:** `/today` `/index` `/top` `/topics` `/topic <nom>` `/me` `/help`.
 Statistikalar 1-qismdagi Supabase ma'lumotidan olinadi (avval workflow sync qilgan bo'lsin).
 
-## 3-qism — Mini App (keyingi bosqich)
-React dashboard, Vercel'da statik. Kod keyingi bosqichda tayyorlanadi.
+## 3-qism — Mini App (TAYYOR: `app/public/index.html` + `app/api/data.py`)
+
+Mini App bir xil Vercel deploy'da keladi — **build shart emas** (statik HTML + Chart.js).
+Vercel uni ildizda beradi: `https://<app>.vercel.app/`.
+
+1. **Bot'ga `WEBAPP_URL` qo'shing** (2-qism env jadvaliga): `https://<app>.vercel.app`
+   (deploy manzili). Endi bot `/app` va `/today` da "Dashboard" tugmasini ko'rsatadi.
+2. **Menu tugmasi (ixtiyoriy, chiroyliroq):** @BotFather → `/setmenubutton` → botni tanlang →
+   *URL* → `https://<app>.vercel.app` → nomi "Dashboard". Endi bot chatida doim "Open App"
+   tugmasi turadi.
+3. **Xavfsizlik:** Mini App `/api/data` ga Telegram `initData` yuboradi; funksiya uni
+   bot-token bilan **HMAC** tekshiradi (soxta so'rov rad etiladi), rolni aniqlaydi va
+   faqat ruxsat etilgan ma'lumotni qaytaradi. `public` rol — sarlavha indeks + top 3;
+   to'liq rollar — mavzular + ko'proq postlar. Baza faqat backend orqali (RLS).
+
+**Mini App nima ko'rsatadi:** EAI/ESI kartalari (o'zgarish bilan), kunlik trend grafigi,
+mavzular kesimi (to'liq rol), top iqtisodiy postlar, "rasmiy emas" disclaimer'i.
+
+## Qanday tekshirish (hammasi ulangач)
+1. `SUPABASE_DB_URL` secret → workflow'ni ishga tushiring → DB to'ladi.
+2. Botga `/start` → admin → `/today` ishlayapti.
+3. `/app` yoki Menu tugmasi → Mini App ochiladi, dashboard ko'rinadi.
+4. Boshqa foydalanuvchini `/approve <id> economist` bilan tasdiqlang.
 
 ---
 
