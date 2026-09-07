@@ -65,6 +65,7 @@ def get_or_create_user(uid, user):
 def send(chat_id, text, **kw):
     if not BOT_TOKEN:
         print("SEND SKIPPED: TELEGRAM_BOT_TOKEN is empty"); return
+    kw = {k: v for k, v in kw.items() if v is not None}   # drop None (e.g. reply_markup)
     try:
         r = requests.post(f"{API}/sendMessage", timeout=15, json={
             "chat_id": chat_id, "text": text, "parse_mode": "HTML",
