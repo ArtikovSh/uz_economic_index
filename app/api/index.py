@@ -63,10 +63,14 @@ def get_or_create_user(uid, user):
 
 # ------------------------------------------------------------------- telegram --
 def send(chat_id, text, **kw):
+    if not BOT_TOKEN:
+        print("SEND SKIPPED: TELEGRAM_BOT_TOKEN is empty"); return
     try:
-        requests.post(f"{API}/sendMessage", timeout=15, json={
+        r = requests.post(f"{API}/sendMessage", timeout=15, json={
             "chat_id": chat_id, "text": text, "parse_mode": "HTML",
             "disable_web_page_preview": True, **kw})
+        if not r.ok:
+            print(f"Telegram sendMessage FAILED {r.status_code}: {r.text[:300]}")
     except Exception as e:
         print("send error:", e)
 
@@ -306,9 +310,16 @@ class handler(BaseHTTPRequestHandler):
             self.send_response(401); self.end_headers(); self.wfile.write(b"unauthorized"); return
         try:
             n = int(self.headers.get("content-length", 0))
-            handle_update(json.loads(self.rfile.read(n) or b"{}"))
+            update = json.loads(self.rfile.read(n) or b"{}")
+            msg = update.get("message") or {}
+            print(f"UPDATE from {msg.get('from', {}).get('id')}: {msg.get('text')!r} "
+                  f"| token={'set' if BOT_TOKEN else 'MISSING'} db={'set' if DB_URL else 'MISSING'} "
+                  f"admin={ADMIN_ID or 'MISSING'}")
+            handle_update(update)
         except Exception as e:
-            print("handle error:", e)
+            import traceback
+            print("HANDLE ERROR:", repr(e))
+            traceback.print_exc()
         self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
 
     def do_GET(self):
