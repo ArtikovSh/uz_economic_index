@@ -1927,3 +1927,13 @@ key,label_version,is_economic,primary_topic,relevance,sentiment,is_ad,is_digest,
 @uzdaily|84793,v2,0,non_economic,0.0,0.0,0,0,0
 @uzdaily|84794,v2,0,non_economic,0.0,0.0,0,0,0
 @uzdaily|84795,v2,1,trade,0.8,0.5,0,0,0
+@uzdaily|84733,v2,1,trade,0.9,0.0,0,0,0
+@uzdaily|84734,v2,1,banking_finance,0.8,0.0,0,0,0
+@uzdaily|84735,v2,1,banking_finance,0.8,-0.5,0,0,0
+@uzdaily|84736,v2,0,non_economic,0.0,0.0,0,0,0
+@uzdaily|84737,v2,1,business,0.7,0.5,0,0,0
+@uzdaily|84738,v2,0,non_economic,0.0,0.0,0,0,0
+@uzdaily|84739,v2,0,non_economic,0.0,0.0,0,0,0
+@uzdaily|84740,v2,1,banking_finance,0.8,0.0,0,0,0
+@uzdaily|84741,v2,1,trade,0.8,0.0,0,0,0
+@uzdaily|84742,v2,1,banking_finance,0.8,0.5,0,0,0
