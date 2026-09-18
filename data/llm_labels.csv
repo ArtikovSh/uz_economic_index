@@ -2272,3 +2272,13 @@ key,label_version,is_economic,primary_topic,relevance,sentiment,is_ad,is_digest,
 @uzdaily|84924,v2,0,non_economic,0.0,0.0,0,0,1
 @uzdaily|84925,v2,0,non_economic,0.0,0.0,0,0,1
 @uzdaily|84926,v2,0,non_economic,0.0,0.0,0,0,1
+@spotuz|40053,v2,1,business,0.8,0.3,0,0,0
+@spotuz|40054,v2,1,business,0.7,0.4,0,0,0
+@spotuz|40055,v2,1,prices_inflation,0.9,-0.5,0,0,0
+@spotuz|40056,v2,1,business,0.7,0.4,0,0,0
+@spotuz|40057,v2,1,business,0.7,0.4,0,0,0
+@spotuz|40058,v2,0,non_economic,0.0,0.0,1,0,0
+@spotuz|40059,v2,1,business,0.7,0.4,0,0,0
+@spotuz|40060,v2,1,banking_finance,0.6,0.4,0,0,0
+@spotuz|40061,v2,1,banking_finance,0.8,0.5,0,0,0
+@spotuz|40062,v2,1,construction_realty,0.8,0.4,0,0,0
