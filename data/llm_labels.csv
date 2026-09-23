@@ -3142,3 +3142,13 @@ key,label_version,is_economic,primary_topic,relevance,sentiment,is_ad,is_digest,
 @uzdaily|85244,v2,1,business,0.5,0.0,0,0,0
 @uzdaily|85245,v2,1,business,0.8,0.6,0,0,0
 @uzdaily|85246,v2,1,energy_utility,0.7,0.5,0,0,0
+@daryo|137001,v2,1,banking_finance,0.9,0.2,0,0,0
+@daryo|137002,v2,0,non_economic,0.0,0.0,0,0,0
+@daryo|137003,v2,0,non_economic,0.0,0.0,0,0,0
+@daryo|137004,v2,0,non_economic,0.0,0.0,0,0,0
+@daryo|137005,v2,0,non_economic,0.0,0.0,0,0,0
+@daryo|137006,v2,1,business,0.4,0.3,0,0,0
+@daryo|137007,v2,0,non_economic,0.0,0.0,0,0,0
+@daryo|137008,v2,0,non_economic,0.0,0.0,0,0,1
+@daryo|137009,v2,1,banking_finance,0.8,0.2,0,0,0
+@daryo|137010,v2,1,construction_realty,0.9,0.5,0,0,0
