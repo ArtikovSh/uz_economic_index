@@ -3881,3 +3881,13 @@ key,label_version,is_economic,primary_topic,relevance,sentiment,is_ad,is_digest,
 @uzdaily|85521,v2,1,prices_inflation,0.9,-0.6,0,0,0
 @uzdaily|85522,v2,0,non_economic,0.0,0.0,0,0,0
 @uzdaily|85523,v2,0,non_economic,0.0,0.0,0,0,0
+@daryo|137214,v2,1,energy_utility,0.9,0.6,0,0,0
+@daryo|137215,v2,0,non_economic,0.0,0.0,0,0,0
+@daryo|137216,v2,0,non_economic,0.0,0.0,0,0,0
+@daryo|137217,v2,1,prices_inflation,0.9,0.0,0,0,0
+@daryo|137218,v2,0,non_economic,0.0,0.0,0,0,0
+@daryo|137219,v2,1,labour_income,0.8,0.0,0,0,0
+@daryo|137221,v2,0,non_economic,0.0,0.0,0,0,0
+@daryo|137222,v2,0,non_economic,0.0,0.0,0,0,0
+@daryo|137223,v2,1,labour_income,0.8,0.5,0,0,0
+@daryo|137224,v2,0,non_economic,0.0,0.0,0,0,0
