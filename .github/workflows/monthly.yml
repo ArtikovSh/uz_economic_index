@@ -51,6 +51,15 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: python sync_to_db.py
 
+      - name: Sync to Google Sheets (no-op if secrets unset)
+        id: sheets
+        if: always()
+        continue-on-error: true
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GSHEET_ID: ${{ secrets.GSHEET_ID }}
+        run: python sheets_sync.py
+
       - name: Upload monthly artifact
         if: always()
         uses: actions/upload-artifact@v6
@@ -76,7 +85,7 @@ jobs:
           fi
 
       - name: Alert on Telegram
-        if: steps.pipeline.outcome == 'failure' || steps.sync.outcome == 'failure'
+        if: steps.pipeline.outcome == 'failure' || steps.sync.outcome == 'failure' || steps.sheets.outcome == 'failure'
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.BOT_ADMIN_ID }}
@@ -91,5 +100,5 @@ jobs:
           ${RUN_URL}"
 
       - name: Mark the job as failed
-        if: steps.pipeline.outcome == 'failure' || steps.sync.outcome == 'failure'
+        if: steps.pipeline.outcome == 'failure' || steps.sync.outcome == 'failure' || steps.sheets.outcome == 'failure'
         run: exit 1

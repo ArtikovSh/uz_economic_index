@@ -40,6 +40,7 @@ quvuri. To'liq metodologiya: [METHODOLOGY.md](METHODOLOGY.md).
 | `monthly.py`, `main_monthly.py` | Oylik indeks (to'liqlik nazorati bilan) |
 | `excel_exporter.py` | Excel hisobotlar (kunlik va oylik) |
 | `sync_to_db.py` | Supabase'ga sinxronlash (bot va Mini App uchun) |
+| `sheets_sync.py` | Natijalarni Google Sheets'ga yozish (jonli oyna) |
 | `llm_check.py` | Gemini diagnostikasi |
 | `export_session.py` | CI uchun Telegram sessiya satrini yaratish |
 | `app/` | Telegram bot + Mini App (Vercel) |
@@ -63,6 +64,7 @@ quvuri. To'liq metodologiya: [METHODOLOGY.md](METHODOLOGY.md).
 | `GEMINI_API_KEY` | https://aistudio.google.com/apikey |
 | `TELEGRAM_BOT_TOKEN`, `BOT_ADMIN_ID` | run yiqilsa botdan ogohlantirish (ixtiyoriy) |
 | `SUPABASE_DB_URL` | bot/Mini App bazasi (ixtiyoriy) |
+| `GOOGLE_SERVICE_ACCOUNT_JSON`, `GSHEET_ID` | Google Sheets oynasi (ixtiyoriy, pastga qarang) |
 
 **Variables** (ixtiyoriy): `GEMINI_MODEL` — modelni qat'iy belgilash. Bo'sh bo'lsa
 avtomatik tanlanadi va keyin o'sha model saqlanib qoladi. Qaysi modelda bepul
@@ -73,6 +75,42 @@ kvota borligini https://aistudio.google.com/rate-limit da ko'ring.
 - `uz-economic-index-monthly` — har oyning 3-kunida o'tgan oy uchun. Qo'lda
   ishga tushirganda `target_month` (YYYY-MM) bilan istalgan oyni qayta hisoblash mumkin.
 - `llm-check` — Gemini kaliti va modellarini tekshirish.
+
+## Google Sheets oynasi
+
+Hisob-kitob backend'da (GitHub Actions) bajariladi, jadvalga faqat natija yoziladi
+(formulalar yo'q). Har run'dan keyin jadval yangilanadi:
+
+| Varaq | Mazmuni |
+|-------|---------|
+| Kunlik indeks | kunlik EAI/ESI qatori |
+| Oylik indeks | oylik qator |
+| Xabarlar | har bir belgilangan post (mavzu, bayroqlar, ballar, havola), eng yangisi tepada |
+| Info | oxirgi yangilanish vaqti, belgilash holati |
+
+Jadvalga qo'lda yozmang: o'chirilgan yoki o'zgartirilgan qatorlarni keyingi run qayta tiklaydi.
+Tahlil uchun alohida varaq yoki nusxa oching.
+
+**Bir martalik sozlash (~20 daqiqa):**
+1. Google Sheets'da yangi jadval yarating. Uning manzilidagi ID'ni nusxalang:
+   `docs.google.com/spreadsheets/d/`**`<ID>`**`/edit`.
+2. https://console.cloud.google.com → yangi loyiha (masalan, `uz-economic-index`).
+3. *APIs & Services → Library* → **Google Sheets API** → *Enable*.
+4. *IAM & Admin → Service Accounts → Create service account* → nom (masalan,
+   `sheets-writer`) → *Create and continue* → *Done*. Rol berish shart emas.
+5. Yaratilgan akkauntni oching → *Keys → Add key → Create new key → JSON*.
+   Kompyuteringizga JSON fayl yuklanadi.
+6. Jadvalga qayting → *Share* → JSON ichidagi `client_email` manzilini kiriting
+   (`...@...iam.gserviceaccount.com`) → **Editor** → *Notify* belgisini olib tashlang → *Share*.
+7. GitHub → *Settings → Secrets and variables → Actions*:
+   - `GOOGLE_SERVICE_ACCOUNT_JSON` = JSON faylning **butun** matni;
+   - `GSHEET_ID` = 1-qadamdagi ID.
+
+   Shundan keyin JSON faylni kompyuterdan o'chiring.
+8. *Actions → uz-economic-index → Run workflow* — jadval darhol to'ladi.
+
+Xizmat akkaunti faqat o'ziga ulashilgan shu bitta jadvalni ko'radi. Google
+hisobingizdagi boshqa fayllarga kira olmaydi.
 
 ## Telegram sessiyasini yangilash
 

@@ -7,3 +7,4 @@ openpyxl==3.1.5
 PySocks==1.7.1
 requests>=2.31.0
 psycopg[binary]>=3.1              # Supabase/Postgres sync (sync_to_db.py)
+gspread==6.2.1                    # Google Sheets mirror (sheets_sync.py)
