@@ -69,8 +69,8 @@ async def fetch_channel_day(client, channel, start_utc, end_utc):
     return out
 
 
-async def run_scraper(channels, start_utc, end_utc):
-    """Collect `channels` for the window. Returns (DataFrame, {channel: error})."""
+async def open_client():
+    """A connected, authorized client — or SessionError with a clear reason."""
     if not API_ID or not API_HASH:
         raise SessionError("TG_API_ID / TG_API_HASH are not set.")
     if not API_ID.isdigit():
@@ -81,14 +81,20 @@ async def run_scraper(channels, start_utc, end_utc):
     session = StringSession(SESSION_STRING) if SESSION_STRING else LOCAL_SESSION
     print(f"Session: {'StringSession (env)' if SESSION_STRING else 'local file'} | "
           f"connection: {'SOCKS5 proxy ' + str(PROXY[1:]) if PROXY else 'direct'}")
-
     client = TelegramClient(session, int(API_ID), API_HASH, proxy=PROXY)
     await client.connect()
+    if not await client.is_user_authorized():
+        await client.disconnect()
+        raise SessionError(
+            "Telegram session is not authorized (expired or revoked). "
+            "Create a new TG_SESSION_STRING with export_session.py and update the secret.")
+    return client
+
+
+async def run_scraper(channels, start_utc, end_utc):
+    """Collect `channels` for the window. Returns (DataFrame, {channel: error})."""
+    client = await open_client()
     try:
-        if not await client.is_user_authorized():
-            raise SessionError(
-                "Telegram session is not authorized (expired or revoked). "
-                "Create a new TG_SESSION_STRING with export_session.py and update the secret.")
         rows, failures = [], {}
         for ch in channels:
             try:

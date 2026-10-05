@@ -41,7 +41,7 @@ quvuri. To'liq metodologiya: [METHODOLOGY.md](METHODOLOGY.md).
 | `excel_exporter.py` | Excel hisobotlar (kunlik va oylik) |
 | `sync_to_db.py` | Supabase'ga sinxronlash (bot va Mini App uchun) |
 | `sheets_sync.py` | Natijalarni Google Sheets'ga yozish (jonli oyna) |
-| `llm_check.py` | Gemini diagnostikasi |
+| `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, Gemini, Sheets, bot ogohlantirishi |
 | `export_session.py` | CI uchun Telegram sessiya satrini yaratish |
 | `app/` | Telegram bot + Mini App (Vercel) |
 
@@ -74,7 +74,7 @@ kvota borligini https://aistudio.google.com/rate-limit da ko'ring.
 - `uz-economic-index` — kunlik (00:05 va 02:05 Toshkent) + qo'lda.
 - `uz-economic-index-monthly` — har oyning 3-kunida o'tgan oy uchun. Qo'lda
   ishga tushirganda `target_month` (YYYY-MM) bilan istalgan oyni qayta hisoblash mumkin.
-- `llm-check` — Gemini kaliti va modellarini tekshirish.
+- `check` — post yig'masdan hamma narsani tekshiradi (Telegram, Gemini, Sheets) va natijani botga yuboradi. Kunlik run bilan bir vaqtda ishlamaydi (navbatga turadi).
 
 ## Google Sheets oynasi
 
