@@ -1,227 +1,175 @@
-# Metodologiya — O'zbekiston Iqtisodiy Yangiliklar Indeksi
+# Metodologiya — O'zbekiston Iqtisodiy Yangiliklar Indeksi (v3)
 
-Bu hujjat indeks **qanday hisoblanishini**, natijalarning **asl ma'nosini**,
-**formulalarni**, ularning **ilmiy manbalarini**, **ishonchlilik** darajasini va
-**cheklovlarni** to'liq bayon qiladi. v2 (sifat qayta qurilishi) real 1105 ta xabar
-korpusida o'tkazilgan **ko'p-agentli audit** natijalariga asoslanadi.
+Bu hujjatda indeks qanday hisoblanishi, formulalar, ularning manbalari va
+cheklovlar bayon qilingan. v3 da per-post tasnif to'liq **Gemini** ga o'tkazildi.
+Qoidaga asoslangan lug'at klassifikatori va LDA olib tashlandi. Indeks formulalari
+(5–6-bo'limlar) o'zgarmagan. Ularni nazariy jihatdan mustahkamlash — keyingi bosqich (10-bo'lim).
 
 ---
 
-## 1. Maqsad, chiqadigan natijalar
-
-Loyiha O'zbekiston Telegram yangiliklaridan uch xil natija beradi:
+## 1. Maqsad va natijalar
 
 | Natija | Nima | Diapazon |
 |--------|------|----------|
-| **primary_topic** (har xabar) | Xabar qaysi iqtisodiy kategoriyaga tegishli (10 tadan biri yoki `non_economic`) | kategoriya |
+| **primary_topic** (har post) | 10 iqtisodiy kategoriyadan biri yoki `non_economic` | kategoriya |
 | **EAI** — Economic **Attention** Index (kunlik) | Yangiliklarning qancha qismi iqtisodga oid (e'tibor bilan tortilgan) | 0…1 |
-| **ESI** — Economic **Sentiment** Index (kunlik) | Iqtisodiy yangiliklarning ohangi (ijobiy/salbiy) | −1…+1 |
+| **ESI** — Economic **Sentiment** Index (kunlik) | Iqtisodiy yangiliklarning ohangi | −1…+1 |
 
-EAI va ESI ataylab **ajratilgan** (biri hajm/diqqat, biri yo'nalish/ohang).
-
----
-
-## 2. Ma'lumot manbai va o'suvchi arxiv
-
-- **Kanallar:** umumiy + biznes/iqtisod media (`config.CHANNELS`). Scraper har kanal
-  uchun "collected N"/"skipped" log qiladi — noto'g'ri handle xavfsiz o'tkaziladi.
-- **Sana oralig'i bo'yicha yig'ish (T−2):** har run **bitta to'liq kalendar kun**ni
-  (Toshkent 00:00:00–23:59:59) yig'adi — "bugun"dan `SCRAPE_DAYS_BACK` (default **2**)
-  kun oldingisini. 2 kunlik kechikish (a) kun **to'liq** bo'lishini kafolatlaydi,
-  (b) ko'rish/forward'lar **yetilishiga** (view maturation) vaqt beradi — bu eski
-  "oxirgi N post" usulidagi noto'liq-kun va past-e'tibor xatosini bartaraf qiladi.
-  Xabarlar UTC'da saqlanadi, lekin kunlik indeks **Toshkent kuni** bo'yicha guruhlanadi
-  (`date_only = UTC + TZ_OFFSET_HOURS`). `TARGET_DATE=YYYY-MM-DD` bilan aniq kunni
-  qo'lda backfill qilish mumkin.
-- **O'suvchi master arxiv** `data/messages.csv`: har run yangi kunni qo'shadi,
-  `(kanal, message_id)` bo'yicha dublikatsiz → **haqiqiy, solishtiriladigan vaqt qatori**.
-- Til: rus + o'zbek (lotin) + o'zbek (kirill) — leksikonlar **uch tilli**.
+EAI va ESI ataylab ajratilgan: biri hajm va e'tiborni, ikkinchisi yo'nalish va ohangni o'lchaydi.
 
 ---
 
-## 3. Matnni qayta ishlash (`text_utils.py`)
+## 2. Ma'lumotlarni yig'ish
 
-- `normalize_text`: kichik harf, apostrof birlashtirish, **shablon** (footer/link/CTA:
-  telegram/obuna/batafsil/реклама…) olib tashlash → leksikon mosligi uchun.
-- `normalize_light`: shablon **saqlanadi** → flag aniqlash (reklama/aksiya) uchun.
-- `cyr_to_lat`: o'zbek kirill→lotin (faqat LDA tokenlari uchun).
-
-### 3.1. Muhim tuzatish — chegaralangan naqshlar (v2)
-
-v1 da leksikon bare o'zaklarni `\bstem` sifatida qidirardi va **polisemiya** tufayli
-xato ishlardi (audit isbotladi): `цен`→**центр/центральный**, `yevro`→**Yevropa**,
-`elektr`→**elektron**, `baho`→**baholash**, `dollar`→"$" birlik. Eng katta kategoriya
-~44% shovqin edi va ~7% "iqtisodiy" postlar soxta bo'lib, EAI'ni ham shishirardi.
-
-v2 da har atama **chegaralangan regex**: masalan `\bцен(?=а|ы|е|у|ой|ам|ах|н)` (narx,
-lekin центр emas), `\belektr(?!on|osh)`, `\bевро\b` (aniq so'z), FX faqat `курс/kurs/
-валют` kontekstida. Har o'zgarish real yuza-shakllarga qarab tekshirilgan.
+- **Kanallar:** umumiy va biznes/iqtisod media (`config.CHANNELS`).
+- **Bir kun — bir run:** run har kuni Toshkent vaqti bilan **00:05** da boshlanadi va
+  `SCRAPE_DAYS_BACK = 2` kun oldingi to'liq kalendar kunni (00:00:00–23:59:59) yig'adi.
+  Shu sababli o'lchov paytida kunning oxirgi posti **kamida 24 soat**, birinchi posti
+  ~48 soat auditoriyada bo'lgan bo'ladi. Run vaqti har kuni bir xil, shuning uchun
+  kunlar bir xil sharoitda o'lchanadi.
+- **Har post bir marta o'lchanadi:** ko'rishlar va forward'lar birinchi yig'ilgan
+  paytdagi qiymatda qoladi. Keyingi qayta yig'ish ularni yangilamaydi.
+  O'lchov vaqti `scraped_at` ustunida saqlanadi (post yoshini hisoblash uchun).
+- **Zaxira run (02:05):** faqat birinchi run yig'a olmagan kanallarni yig'adi.
+- **Bo'shliqlar to'ldirilmaydi:** yig'ilmay qolgan kun keyinroq yig'ilmaydi. Sabab —
+  kech yig'ilgan postlarning ko'rishlari boshqalarnikiga qaraganda ko'proq "yetilgan"
+  bo'lib qoladi. Oylik qatorda bu `days_covered` / `days_expected` sifatida ko'rinadi.
+- **Ishonchlilik:** Telegram sessiyasi yig'ishdan oldin tekshiriladi. Run yiqilsa
+  (sessiya, kanal yoki Gemini kaliti muammosi), bot administratorga xabar yuboradi.
+- Sanalar UTC'da saqlanadi, kunlik indeks esa **Toshkent kuni** bo'yicha guruhlanadi.
 
 ---
 
-## 4. Har xabar bo'yicha o'lchovlar (`indicator.py`, `categorizer.py`, `sentiment.py`)
+## 3. Tasniflash — Gemini (`llm_classifier.py`, `prompts.py`)
 
-### 4.1. Iqtisodiy relevantlik R
-`econ_hits` = chegaralangan leksikon mosliklarining umumiy soni.
-$$R = 1 - e^{-\text{econ\_hits}/\text{TAU}} \quad (\text{TAU}=2,\; 0..1)$$
-Post `econ_hits ≥ 2` bo'lsagina **iqtisodiy** (`is_economic`) deb belgilanadi — v1 dagi
-1 chegara "tanga tashlash" edi (audit: iqtisodiy postlarning 46% bitta moslikda hal
-bo'lardi, aynan shu yerda soxtaliklar). *Manba:* Baker–Bloom–Davis (2016) EPU.
+Har post bir marta belgilanadi va natija `data/llm_labels.csv` da keshlanadi.
 
-### 4.2. Kategoriya klassifikatori (LDA "topic"lar o'rniga)
-Buzuq, beqaror LDA o'rniga **deterministik** klassifikator (`categorizer.py`):
-10 kategoriya — `prices_inflation, currency_fx, fiscal, trade, macro, banking_finance,
-labour_income, energy_utility, business, construction_realty` (+ `non_economic`).
-Qoida: har kategoriya bo'yicha moslik sanaladi → `primary_topic = argmax`, tenglikда
-qat'iy **priority** tartibi (aniqroq kategoriya avval, `macro` oxirida). Shaffof: har
-yorliqni qaysi so'z keltirganini ko'rsatish mumkin. Bu — saralanadigan/guruhlanadigan
-qatlam (`Topic Breakdown` varag'i). *Manba:* mavzuli tasnif — kuzatiladigan taksonomiya.
+| Maydon | Ma'nosi |
+|--------|---------|
+| `economic` | post O'zbekiston ichki iqtisodiyotiga oidmi |
+| `topic` | `prices_inflation, currency_fx, fiscal, trade, macro, banking_finance, labour_income, energy_utility, business, construction_realty` yoki `non_economic` |
+| `relevance` | iqtisod postda qanchalik markaziy (0–1) |
+| `sentiment` | O'zbekiston iqtisodiyoti va aholisi uchun ohang (−1…+1) |
+| `is_ad`, `is_digest`, `is_foreign` | reklama, dayjest, xorijiy-makro bayroqlari |
 
-### 4.3. Filtrlar (indeksdan chiqariladi)
-- `is_ad` — reklama/aksiya/chegirma/ipoteka reklamalari (bank mahsulot reklamalari).
-- `is_digest` — "yangiliklar dayjesti" (bir postda ko'p voqea — baholab bo'lmaydi).
-- `is_foreign` — xorijiy davlat/rahbar bor **va** O'zbekiston obyekti (12 viloyat,
-  Markaziy bank, so'm…) **yo'q** → xorijiy makro (masalan "AQSH davlat qarzi"). UZ index
-  uchun chiqariladi. Bular `in_index=0` — EAI/ESI'ga kirmaydi.
+**Sentiment qoidalari (aspekt mantiqi):**
+- Narx, tarif, inflyatsiya yoki soliq stavkasi **oshsa — salbiy**, kamaysa — ijobiy.
+- YaIM, ishlab chiqarish, eksport, investitsiya, ish haqi yoki zaxiralar **oshsa — ijobiy**.
+- Dollar/yevro kursi oshsa (so'm zaiflashsa) — **salbiy**, kurs tushsa — ijobiy.
+- Inkor hisobga olinadi ("narx oshirilmaydi" salbiy emas).
+- **Protokol yangiliklari — 0:** uchrashuv, tashrif, forum, memorandum, reja yoki niyat
+  haqidagi postlar, agar ularda aniq o'lchanadigan o'zgarish bo'lmasa, neytral
+  baholanadi. Bu qoida v2 dagi ijobiy tomonga siljishni kamaytiradi.
 
-### 4.4. Sentiment (aspekt-asosli) s
-Oddiy pos/neg lug'at ~30% xato qiladi, chunki yo'nalish so'zi (o'sish/рост) ma'nosi
-**nimaga** tegishliligiga bog'liq. v2 yo'nalishni eng yaqin **aspekt** bilan bog'laydi
-(±45 belgi oynasi):
-$$\text{UP}\times\text{cost}=-,\;\;\text{DOWN}\times\text{cost}=+,\;\;\text{UP}\times\text{output}=+,\;\;\text{DOWN}\times\text{output}=-,\;\;\text{FX-rate UP}=-$$
-$$s = \frac{\sum \text{signals}}{|\text{signals}|} \in [-1,1]$$
-Masalan "*Курс доллара вырос*" → −1 (so'm zaiflashdi = salbiy); "*dollar kursi tushdi*"
-→ +1; "*рост себестоимости*" → − (xarajat o'sishi). Qo'shimcha: bir ma'noli qutb
-so'zlari (инqiroz/льгот…) + **inkor himoyasi** ("oshirmaslik"/"не повысить").
-Audit: iqtisodiy postlarda belgi-xatosi **30% → ~4%**.
-Ikki ortiqcha-tuzatish ataylab **cheklangan**: FX faqat *kurs* kontekstida (birlik "$"
-emas), va "domestic keyword gate" olib tashlangan (u Xorazm/prezident postlarini
-noto'g'ri neytrallagan). *Manba:* Loughran–McDonald (2011), Tetlock (2007).
+**Muhandislik qoidalari:**
+- **Kesh va versiya:** belgi `label_version` (hozir `v3`) va uni bergan `model` bilan
+  saqlanadi. Prompt ma'nosi o'zgarsa, versiya oshiriladi va hamma postlar qayta belgilanadi.
+- **Qat'iy model:** `GEMINI_MODEL` berilgan bo'lsa, faqat shu model ishlatiladi.
+  Aks holda keshdagi belgilarni bergan model saqlanadi. U ishlamay qolsagina boshqa
+  model tanlanadi va bu ogohlantirish sifatida qayd etiladi.
+- **Zaxira klassifikator yo'q:** Gemini javob bermasa yoki kvota tugasa, post
+  belgilanmay qoladi va keyingi run'da qayta yuboriladi. Indeks hech qachon ikki xil
+  usulda olingan belgilarni aralashtirmaydi.
+- **Kvota:** so'rovlar daqiqalik limitga moslab yuboriladi. Har run'da so'rovlar soni
+  cheklangan (`LLM_MAX_REQUESTS`). Eng yangi postlar birinchi belgilanadi.
 
-### 4.5. E'tibor og'irligi w
+---
+
+## 4. Filtrlar — indeksga nima kiradi
+
+`in_index` = post belgilangan **va** `economic` **va** reklama, dayjest yoki xorijiy-makro emas.
+
+**Kanal reklama belgisi — deterministik filtr.** Kanal o'zi reklama deb belgilagan post
+modelning javobidan qat'i nazar chiqariladi. Belgilar: matnning istalgan joyidagi
+`(реклама)`, `на правах рекламы`, `#реклама` yoki postning oxirgi so'zi sifatidagi
+`Reklama`/`Реклама` (Daryo va Kun.uz formati). Gap ichida kelgan "реклама" so'zi
+(reklama bozori haqidagi yangilik) filtrga tushmaydi.
+
+Sentabr 2026 ma'lumotida bunday belgili postlar 337 ta (8.7%) chiqdi. v2 modeli ulardan
+165 tasini reklama deb belgilamagan va **105 tasi indeksga kirib ketgan**.
+
+---
+
+## 5. Kunlik indekslar (`indicator.py`)
+
+**E'tibor vazni:**
 $$\text{engagement}=\ln(1+\text{views}+2\cdot\text{forwards}),\qquad w=\frac{\text{engagement}}{\text{kanal o'rtachasi}}$$
-`ln` — og'ir-dumli ko'rishlarni siqadi; forward×2 — kuchliroq signal; kanalga bo'lish —
-katta kanal bosib ketmasin. *Manba:* Antweiler–Frank (2004).
 
-### 4.6. LLM klassifikator — ixtiyoriy, yuqori sifat (`llm_classifier.py`)
-LLM til va kontekstni qoidalardan ancha yaxshi tushunadi (aspekt, reklama, geosiyosat).
-Har xabarni tasniflaydi: `economic`, `topic` (o'sha 10 kategoriya), `relevance` (0–1),
-`sentiment` (−1..1), `is_ad`/`is_digest`/`is_foreign` — majburiy JSON bilan. Prompt
-`prompts.py` da (kategoriyalar, aspekt-sentiment mantiqi, O'zbekiston domen fokusi).
-
-**Provayderlar** (`LLM_PROVIDER`):
-- **`openai`** (default, tavsiya) — **istalgan OpenAI-mos endpoint**: `OPENAI_API_KEY` +
-  `OPENAI_BASE_URL` + `OPENAI_MODEL`. Default endpoint — **Groq** (BEPUL, saxiy limit,
-  tez; **GPT-OSS** va Llama modellari). OpenRouter/OpenAI/lokal ham shu orqali.
-- **`gemini`** — Google Gemini API (`GEMINI_API_KEY`; bepul kvotasi past — pauza kerak).
-- **`github`** — GitHub Models. **Eskirgan:** GitHub bu xizmatni yopyapti (HTTP 410).
-
-Muhandislik jihatlari: (a) natijalar `data/llm_labels.csv` da **keshlanadi** — faqat
-yangi `(kanal, message_id)` chaqiriladi; (b) **partiyalab** (20 tadan), partiyalararo
-`LLM_SLEEP` (default 3s) pauza — RPM limitini hurmat qiladi; (c) har run `LLM_MAX_PER_RUN`
-(default 600) tadan ko'p chaqirilmaydi — katta backfill run'larga taqsimlanadi; (d)
-kvota/tarmoq/kalit xatosida o'sha partiya **qoida-asosli fallback** qiladi (quvur
-buzilmaydi); **410/401/403/404 kabi qattiq xatoda** o'sha run qolganini darhol qoidaga
-o'tkazadi (takroriy xatolarni bosmaydi). Faqat haqiqiy LLM yorliqlari keshlanadi.
-Diagnostika: `llm_check.py` / `llm-check` workflow aniq xatoni ko'rsatadi.
-
----
-
-## 5. Kunlik indekslar
-
-`in_index` = `is_economic` **va** reklama/dayjest/xorijiy emas. `relevance_eff` =
-in-index bo'lsa `relevance`, aks holda 0.
+**Samarali relevantlik:** `relevance_eff` = post indeksga kirsa `relevance`, aks holda 0.
 
 $$EAI_d=\frac{\sum_{\text{barcha}} w_i\cdot \text{relevance\_eff}_i}{\sum w_i}\qquad
 ESI_d=\frac{\sum_{\text{in\_index}} w_i\cdot s_i}{\sum_{\text{in\_index}} w_i}$$
 
-Normallashtirish: `x_z=(x-mean)/std`; `EAI_100=100·EAI/mean(EAI)` (o'rtacha kun=100);
-`ESI_100=50·(ESI+1)` (0…100, 50=neytral). *Manba:* FRBSF News Sentiment (Shapiro 2020);
-z-ball/diffuziya indekslari — standart iqtisodiy amaliyot.
+**Normallashtirish:**
+- `x_z = (x − mean) / std`;
+- `EAI_100 = 100·EAI / mean(EAI)` — o'rtacha kun = 100;
+- `ESI_100 = 50·(ESI + 1)` — 0…100, 50 = neytral.
 
-### 5.4. Oylik indeks (`monthly.py`)
-Oylik indeks kunlik agregatlardan emas, **xabar darajasidan** qayta hisoblanadi
-(kunlar har xil hajmda bo'lgani uchun kunlik EAI'larning oddiy o'rtachasi noto'g'ri
-bo'lardi): o'sha oy (Toshkent) barcha postlari bo'yicha $EAI_{oy}=\frac{\sum w R}{\sum w}$,
-$ESI_{oy}=\frac{\sum w s}{\sum w}$ (hisobga olingan postlar). `EAI_100` oylar bo'yicha
-(o'rtacha oy=100) normallashtiriladi. Har oyning **3-kunida** o'tgan oy uchun hisoblanadi —
-o'sha vaqtga kelib T−2 scraper o'tgan oyning oxirgi kunini ham yig'ib bo'lgan bo'ladi.
+Kunning **hamma posti belgilangandagina** indeks e'lon qilinadi. Aks holda qiymat bo'sh
+qoladi (`unlabeled_messages` > 0) va keyingi run'da to'ldiriladi.
+*Manbalar:* Baker–Bloom–Davis (2016); Shapiro–Sudhof–Wilson (2022); Antweiler–Frank (2004).
 
----
+## 6. Oylik indeks (`monthly.py`)
 
-## 6. Natijalarni o'qish
+Oylik indeks kunlik qiymatlarning o'rtachasi emas. U o'sha oy (Toshkent vaqti)
+postlari bo'yicha **post darajasida** qayta hisoblanadi:
 
-- `Daily Index` (grafik bilan): `economic_messages` (iqtisodiy), `counted_messages`
-  (indeksga kirgan = reklama/xorijiysiz), `EAI_100`, `ESI_100`.
-  `EAI_100=150` → o'rtachadan 1.5× ko'p iqtisodiy e'tibor. `ESI_100=63` → neytraldan ijobiy.
-- `Messages & Scores` — **muhimlik (relevance×e'tibor) bo'yicha saralangan**, topic +
-  sentiment + flaglar bilan. Yuqori qatorlar — kun indeksini haqiqatan qo'zg'agan postlar.
-- `Topic Breakdown` — har kategoriya: postlar soni, o'rtacha relevantlik/sentiment, ulush.
+$$EAI_{oy}=\frac{\sum w R}{\sum w},\qquad ESI_{oy}=\frac{\sum w s}{\sum w}$$
+
+`EAI_100` oylar bo'yicha normallashtiriladi (o'rtacha oy = 100). Hisob har oyning
+3-kunida o'tgan oy uchun bajariladi. Har qatorda `days_covered`, `days_expected`,
+`unlabeled_messages` va `complete` bor. To'liq bo'lmagan oy ogohlantirish bilan yoziladi.
 
 ---
 
-## 7. LDA — ikkilamchi diagnostika
+## 7. Natijalarni o'qish
 
-LDA (`Topic Glossary`) faqat "hozir qanday mavzular bor"ни ko'rsatuvchi **eksploratsiya**
-(coherence `u_mass`). Indeksni **hisoblamaydi** va `primary_topic` bilan almashtirilmaydi:
-qisqa matnlarda beqaror, til/shablon bo'yicha ajraladi, har run qayta o'rgatilgani uchun
-kunlar solishtirib bo'lmaydi. Ishlab chiqarish uchun: bir marta o'rgatib `model.save()`.
+- `Daily Index` (grafik bilan) ustunlari:
+  - `economic_messages` — iqtisodiy postlar soni;
+  - `counted_messages` — indeksga kirgan postlar;
+  - `EAI_100`, `ESI_100` — indeks qiymatlari;
+  - `unlabeled_messages` — hali belgilanmagan postlar.
+- `EAI_100 = 150` — iqtisodiy e'tibor o'rtachadan 1.5 baravar yuqori. `ESI_100 = 63` — neytraldan ijobiy.
+- `Messages & Scores` — postlar muhimlik bo'yicha (relevance × e'tibor) saralangan.
+  Ustunlar: `ad_marker` (kanal reklama belgisi), `label_model`, `scraped_at`.
+- `Topic Breakdown` — har kategoriya bo'yicha postlar soni, o'rtacha relevantlik va sentiment, ulush.
 
 ---
 
-## 8. Formulalar ishonchlimi?
+## 8. Cheklovlar (halol)
 
-**Uslub jihatidan — ha.** Har biri markaziy banklar/akademik iqtisodchilar ishlatadigan
-tan olingan usul (EPU kalit-so'z chastotasi, FRBSF news sentiment, lug'at/aspekt sentiment,
-log-e'tibor, z-normallashtirish). Muhimi — **shaffof va tekshiriladigan**: har son
-formuladan, har yorliq aniq so'zdan keladi (`Economic Lexicon` varag'i).
+1. **LLM aniqligi hali o'lchanmagan.** Inson belgilagan etalon to'plam (gold set) yo'q;
+   aniqlik foizi — ochiq savol.
+2. **E'tibor vazni amalda deyarli ishlamaydi.** Logarifm farqlarni juda siqadi.
+   Sentabr ma'lumotida vaznsiz indeks vaznli indeksdan o'rtacha atigi 0.3 punkt farq qildi.
+3. **Butun tarix bo'yicha normallashtirish.** `EAI_100` va z-ball har run'da qayta
+   hisoblanadi, shuning uchun o'tgan kunlar qiymati o'zgarib turadi.
+4. **Kanal tarkibi.** Posti ko'p kanal (@uzdaily) indeksga nisbatan ko'proq ta'sir qiladi.
+5. **Hafta kuni effekti.** Yakshanba kunlari EAI odatda past bo'ladi.
+6. **Sabab-oqibat emas.** Indeks yangiliklardagi aks-sadoni o'lchaydi, iqtisodiy voqelikni emas.
 
-**Lekin** aniqlik leksikon sifatiga bog'liq. v2 auditdan o'tdi (soxtaliklar ~7%→past,
-sentiment belgi-xatosi 30%→~4%), lekin bu hali **signal-indikator (proksi)**, rasmiy
-statistika emas — §11 validatsiyasigacha.
+2–5-bandlar keyingi bosqichda hal qilinadi (10-bo'lim).
 
 ---
 
 ## 9. Ilmiy manbalar
 
 1. Baker, Bloom, Davis (2016) *Measuring Economic Policy Uncertainty*, QJE — EAI asosi.
-2. Shapiro, Sudhof, Wilson (2020) *Measuring News Sentiment*, FRBSF/J.Econometrics — ESI asosi.
-3. Loughran, McDonald (2011) *…Textual Analysis, Dictionaries, and 10-Ks*, J.Finance — lug'at-sentiment.
-4. Tetlock (2007) *Giving Content to Investor Sentiment*, J.Finance.
-5. Antweiler, Frank (2004) *Is All That Talk Just Noise?*, J.Finance — e'tibor/hajm.
-6. Blei, Ng, Jordan (2003) *Latent Dirichlet Allocation*, JMLR — LDA.
-7. Röder, Both, Hinneburg (2015) *…Topic Coherence Measures*, WSDM.
+2. Shapiro, Sudhof, Wilson (2022) *Measuring News Sentiment*, J. of Econometrics — ESI asosi.
+3. Tetlock (2007) *Giving Content to Investor Sentiment*, J. of Finance.
+4. Antweiler, Frank (2004) *Is All That Talk Just Noise?*, J. of Finance — e'tibor/hajm.
+5. Barbaglia, Consoli, Manzan (2023) *Forecasting with Economic News*, JBES — aspektli sentiment.
 
 ---
 
-## 10. Cheklovlar va qolgan xatolik (halol)
+## 10. Keyingi bosqich — hisoblash texnikasini nazariy mustahkamlash
 
-**v2 tuzatgan:** stem-kolliziyalari (цен/yevro/elektr/baho), aspekt-sentiment,
-1-chegara, reklama/xorijiy shovqin.
-
-**Qolgan (auditda o'lchangan):**
-1. **Reklama over-flag:** ba'zi haqiqiy biznes yangiliklari reklama deb belgilanib
-   chiqarilishi mumkin (aksincha soxtalikdan afzal — precision).
-2. **Inkor/soya-iqtisod:** "narxni oshirmaslik", "soya iqtisod ВВПга nisbatan tushdi"
-   kabi noyob holatlar hali xato bo'lishi mumkin (residual ~4%).
-3. **Kanal handle'lari** shu mashinada tasdiqlanmadi (proxy) — CI logi haqiqat manbai.
-4. **Geosiyosiy "iqtisod"** ("иқтисодий операция") — foreign filtri ko'pini tutadi, hammasini emas.
-5. **Sabab-oqibat emas:** indeks yangiliklardagi aks-sadoni o'lchaydi, iqtisodiy voqelikni emas.
-
----
-
-## 11. Validatsiya rejasi
-
-Indeksni rasmiy ko'rsatkichlarga solishtirish: **ESI ↔ CPI / USD-UZS kursi**,
-**EAI ↔ yirik iqtisodiy e'lonlar** (stavka/byudjet qarorlari). Korrelyatsiya + lag-tahlil.
-
----
-
-## 12. Yaxshilanish yo'l xaritasi
-
-- **P2 (keyingi):** transformer ko'p tilli sentiment (aspekt darajasi), reklama flagini
-  aniqlashtirish, muzlatilgan LDA, real ko'rsatkichlarga backtest.
-- **P3:** dashboard + Markaziy bank tahlil platformasiga (tashqi-savdo) integratsiya.
-
-*Xulosa:* v2 — shaffof, chegaralangan naqshli, aspekt-sentimentli, auditdan o'tgan.
-Har xabar endi to'g'ri kategoriyaga tushadi va indeks domen shovqinidan tozalangan.
+- **Vazn:** postning ko'rishlarini o'sha kanalning o'sha kundagi medianasiga nisbati
+  sifatida o'lchash (chekka qiymatlar cheklanadi) va post yoshiga tuzatish kiritish
+  (`scraped_at` asosida).
+- **Kanallarni birlashtirish:** avval har kanal uchun alohida indeks, keyin
+  standartlashtirib birlashtirish (EPU usuli).
+- **Qat'iy bazaviy davr:** e'lon qilingan qiymatlar keyin o'zgarmasligi uchun.
+- **Me'yordan og'ish:** ESI uchun balans ko'rsatkichi va uzoq muddatli o'rtachaga
+  nisbatan normallashtirish; hafta kuni effektini tuzatish.
+- **Validatsiya:** etalon to'plam; rasmiy ko'rsatkichlar (CPI, MB inflyatsion kutilmalar so'rovi) bilan solishtirish.

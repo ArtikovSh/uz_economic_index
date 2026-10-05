@@ -15,3 +15,7 @@ session_string.txt
 # Output folder & Excel results
 output/
 *.xlsx
+
+# Per-run problem list read by the workflow alert step; atomic-write temp files
+run_problems.txt
+*.tmp

@@ -1,49 +1,73 @@
+"""
+Daily pipeline: collect one Tashkent day -> label new posts with Gemini ->
+rebuild the daily index -> Excel report.
+
+Exits non-zero when something needs a human (expired Telegram session, a failed
+channel, a Gemini key/model problem) — after saving everything it could, so the
+workflow still commits the progress and then sends an alert.
+"""
 import asyncio
+import sys
 
-from scraper import run_scraper
-from store import merge_master, save_daily
-from indicator import score_messages, build_daily_index
-from topic_model import run_topic_model
+from config import CHANNELS
 from excel_exporter import export_results
-from config import (MESSAGES_PER_CHANNEL, LLM_PROVIDER, USE_LLM, OPENAI_API_KEY,
-                    OPENAI_MODEL, GEMINI_API_KEY)
+from indicator import score_messages, build_daily_index
+from llm_classifier import label_messages
+from scraper import target_day_range, collected_channels, run_scraper, SessionError
+from store import load_master, merge_master, save_daily
+
+PROBLEMS_FILE = "run_problems.txt"     # read by the workflow's alert step
 
 
-def _llm_status():
-    if not USE_LLM:
-        return "classifier: RULE-BASED (no LLM provider — set OPENAI_API_KEY for GPT)"
-    if LLM_PROVIDER == "openai":
-        key = "set" if OPENAI_API_KEY else "MISSING"
-        return f"classifier: LLM openai model={OPENAI_MODEL} (OPENAI_API_KEY={key})"
-    if LLM_PROVIDER == "gemini":
-        return f"classifier: LLM gemini (GEMINI_API_KEY={'set' if GEMINI_API_KEY else 'MISSING'})"
-    return f"classifier: LLM {LLM_PROVIDER}"
+def main() -> int:
+    problems = []
+    master = load_master()
 
+    start_utc, end_utc, target = target_day_range()
+    print(f"--- STEP 1: Collect {target} (Tashkent) | UTC "
+          f"[{start_utc:%Y-%m-%d %H:%M} .. {end_utc:%Y-%m-%d %H:%M}) ---")
+    done = collected_channels(master, start_utc, end_utc)
+    todo = [ch for ch in CHANNELS if ch not in done]
+    if not todo:
+        print("All channels already collected for this day — nothing to scrape "
+              "(each post is measured once).")
+    else:
+        if done:
+            print(f"Already collected: {sorted(done)}; collecting: {todo}")
+        try:
+            new, failures = asyncio.run(run_scraper(todo, start_utc, end_utc))
+            master = merge_master(master, new)
+            problems += [f"{ch}: {err}" for ch, err in failures.items()]
+        except SessionError as e:
+            problems.append(f"Telegram: {e}")
 
-def main():
-    print(f">>> {_llm_status()}")
-    print("--- STEP 1: Scrape Telegram ---")
-    df_raw = asyncio.run(run_scraper(limit_per_channel=MESSAGES_PER_CHANNEL))
+    print("--- STEP 2: Label new posts with Gemini ---")
+    labels, status = label_messages(master)
+    print(f"  {status['new']} labelled this run, {status['pending']} still pending")
+    for w in status["warnings"]:
+        print(f"::warning::{w}")
+    if status["error"]:
+        problems.append(f"Gemini: {status['error']}")
 
-    print("--- STEP 2: Merge into master store ---")
-    master = merge_master(df_raw)
-
-    print("--- STEP 3: Score messages (relevance / sentiment / engagement) ---")
-    scored = score_messages(master)
-
-    print("--- STEP 4: Build daily EAI / ESI index ---")
+    print("--- STEP 3: Daily EAI / ESI index ---")
+    scored = score_messages(master, labels)
     daily = build_daily_index(scored)
     save_daily(daily)
 
-    print("--- STEP 5: Exploratory topic model ---")
-    topics, coherence = run_topic_model(scored)
+    print("--- STEP 4: Excel report ---")
+    export_results(scored, daily)
 
-    print("--- STEP 6: Export Excel report ---")
-    export_results(scored, daily, topics, coherence)
-
-    print("Pipeline finished. Latest day:")
-    print(daily.tail(1).to_string(index=False))
+    if len(daily):
+        print("Latest day:")
+        print(daily.tail(1).to_string(index=False))
+    if problems:
+        with open(PROBLEMS_FILE, "w", encoding="utf-8") as f:
+            f.write("\n".join(problems))
+        for p in problems:
+            print(f"::error::{p}")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

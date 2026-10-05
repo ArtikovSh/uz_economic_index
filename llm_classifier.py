@@ -1,212 +1,131 @@
 """
-Provider-agnostic LLM message classifier with caching and rule-based fallback.
+Gemini message classifier with a persistent label cache.
 
-Providers (config.LLM_PROVIDER):
-  * github — GitHub Models (OpenAI-compatible, free via GITHUB_TOKEN; GPT models)
-  * gemini — Google Gemini API
-
-Design:
-  * only NEW (channel, message_id) pairs are classified; results cached in
-    data/llm_labels.csv, so re-runs over the growing master are nearly free;
-  * at most LLM_MAX_PER_RUN new posts are sent to the LLM per run (rate limits) —
-    the rest use the rule-based classifier this run and are picked up next run,
-    so a big backfill spreads across runs and never blows the quota;
-  * messages go in batches; any batch error (quota, network, bad JSON, no creds)
-    falls back to the rule-based classifier for that batch, and only genuine LLM
-    labels are persisted (failed ones retry next run).
+* Only posts without a cached label for the current LLM_LABEL_VERSION are sent,
+  newest first (so the day just collected is labelled before any backlog).
+* Posts go in batches with a JSON response schema; requests are paced to the
+  free-tier per-minute limit and capped per run (LLM_MAX_REQUESTS).
+* No rule-based fallback: a post Gemini could not label stays unlabelled and is
+  retried on the next run, so the index never mixes labelling methods.
+* The model is "sticky": GEMINI_MODEL if set, else the model that produced the
+  cached labels, else the newest stable Flash model available to the key. Each
+  label records the model that produced it.
 """
 import json
+import os
 import re
 import time
-import numpy as np
+
 import pandas as pd
 import requests
 
-from config import (LLM_PROVIDER, OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL,
-                    GITHUB_TOKEN, GITHUB_MODEL, GEMINI_API_KEY, GEMINI_MODEL,
-                    LLM_BATCH_SIZE, LLM_MAX_CHARS, LLM_MAX_PER_RUN, LLM_SLEEP,
-                    LLM_LABELS_CSV, LLM_LABEL_VERSION, ECON_MIN_HITS)
-from prompts import SYSTEM_PROMPT, RESPONSE_SCHEMA, build_user_prompt, CATEGORIES
+from config import (GEMINI_API_KEY, GEMINI_MODEL, LLM_BATCH_SIZE, LLM_MAX_CHARS,
+                    LLM_RPM, LLM_MAX_REQUESTS, LLM_LABELS_CSV, LLM_LABEL_VERSION)
+from prompts import SYSTEM_PROMPT, RESPONSE_SCHEMA, CATEGORIES, build_user_prompt
+from store import write_csv
 
-GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
-GITHUB_BASE = "https://models.github.ai/inference"
+API = "https://generativelanguage.googleapis.com/v1beta"
 LABEL_COLS = ["is_economic", "primary_topic", "relevance", "sentiment",
               "is_ad", "is_digest", "is_foreign"]
-_resolved = {"gemini_model": None, "openai_model": None}
-_BAD_MODEL = ("whisper", "embedding", "tts", "guard", "moderation", "stt", "vision-only")
+CACHE_COLS = ["key", "label_version", "model"] + LABEL_COLS
+FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.1-flash-lite"]   # if /models can't be listed
+_STABLE_FLASH = re.compile(r"^gemini-(\d+(?:\.\d+)?)-flash(-lite)?$")
 
 
-def list_openai_models(base_url, api_key):
-    r = requests.get(f"{base_url}/models",
-                     headers={"Authorization": f"Bearer {api_key}"}, timeout=60)
-    r.raise_for_status()
-    return [m["id"] for m in r.json().get("data", [])]
+class ProviderError(Exception):
+    """Needs a human: bad/missing key, API disabled, no usable model."""
 
 
-def resolve_openai_model(base_url, api_key, preferred):
-    """Return a valid chat model id; auto-pick if the configured one 404s."""
+class ModelUnavailable(Exception):
+    """This model can't be used with this key (not found / no free quota)."""
+
+
+class QuotaExhausted(Exception):
+    """Daily quota used up — the rest is labelled on a later run."""
+
+
+class TransientError(Exception):
+    """Server/network trouble that outlasted the retries."""
+
+
+# ------------------------------------------------------------------ HTTP -------
+def _headers():
+    return {"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"}
+
+
+def _error_info(resp):
+    """(message, quota ids, retry delay seconds, quota limit is zero)."""
     try:
-        avail = list_openai_models(base_url, api_key)
-    except Exception as e:
-        print(f"  (could not list models: {e}); trying '{preferred}' as-is")
-        return preferred
-    if preferred in avail:
-        return preferred
-    chat = [m for m in avail if not any(b in m.lower() for b in _BAD_MODEL)]
-
-    def pick(sub):
-        return next((m for m in chat if sub in m.lower()), None)
-    choice = (pick("gpt-oss-120b") or pick("gpt-oss") or pick("llama-3.3-70b")
-              or pick("llama-3.1-8b") or pick("llama-3.3") or pick("llama")
-              or (chat[0] if chat else (avail[0] if avail else preferred)))
-    print(f"  model '{preferred}' unavailable -> using '{choice}'. "
-          f"Available chat models: {chat[:12]}")
-    return choice
+        err = resp.json().get("error", {})
+    except ValueError:
+        return resp.text[:300], [], None, False
+    msg = str(err.get("message", ""))[:300]
+    quota_ids, delay, limit_zero = [], None, "limit: 0" in msg
+    for d in err.get("details", []) or []:
+        for v in d.get("violations", []) or []:
+            quota_ids.append(str(v.get("quotaId", "")))
+            if str(v.get("quotaValue", "")) == "0":
+                limit_zero = True
+        m = re.fullmatch(r"([\d.]+)s", str(d.get("retryDelay", "")))
+        if m:
+            delay = float(m.group(1))
+    return msg, quota_ids, delay, limit_zero
 
 
-def _retry_wait(resp, attempt):
-    ra = resp.headers.get("Retry-After")
-    if ra and ra.isdigit():
-        return min(int(ra), 30)
-    return 2 * (attempt + 1)
-
-
-def _extract_json(text):
-    """Pull a JSON object out of a chat reply (may have ```json fences or prose)."""
-    text = (text or "").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text).strip()
-    i, j = text.find("{"), text.rfind("}")
-    if i != -1 and j != -1 and j > i:
-        text = text[i:j + 1]
-    return json.loads(text)
-
-
-def _parse_results(obj, n):
-    arr = obj["results"] if isinstance(obj, dict) and "results" in obj else obj
-    if not isinstance(arr, list) or len(arr) != n:
-        raise ValueError(f"expected {n} results, got {len(arr) if hasattr(arr,'__len__') else '?'}")
-    return arr
-
-
-# ----------------------------------------- OpenAI-compatible (Groq/OpenAI/...) -
-def _openai_body(texts, model, use_json_format):
-    body = {
-        "model": model,
-        "messages": [{"role": "system", "content": SYSTEM_PROMPT},
-                     {"role": "user", "content": build_user_prompt(texts)}],
-        "temperature": 0,
-        "max_tokens": 8000,                         # avoid truncated JSON on big batches
-    }
-    if use_json_format:
-        body["response_format"] = {"type": "json_object"}
-    if "gpt-oss" in model.lower():
-        body["reasoning_effort"] = "low"            # reasoning model: spend budget on the answer
-    return body
-
-
-def _call_openai(texts, base_url, api_key, model, label):
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    url = f"{base_url}/chat/completions"
-    use_json = True
-    last = None
-    for attempt in range(5):
-        r = requests.post(url, headers=headers,
-                          json=_openai_body(texts, model, use_json), timeout=120)
-        if r.status_code == 200:
-            content = r.json()["choices"][0]["message"]["content"]
-            return _parse_results(_extract_json(content), len(texts))
-        last = f"HTTP {r.status_code}: {r.text[:220]}"
-        if r.status_code == 400 and use_json:
-            use_json = False                        # strict json mode broke -> retry without it
-            continue
-        if r.status_code in (429, 500, 503):
-            time.sleep(_retry_wait(r, attempt))
-            continue
-        break
-    raise RuntimeError(f"{label} failed ({last})")
-
-
-# ------------------------------------------------------------------ Gemini -----
-def _gemini_models():
-    r = requests.get(f"{GEMINI_BASE}/models", params={"key": GEMINI_API_KEY}, timeout=60)
-    r.raise_for_status()
-    return [m["name"].replace("models/", "") for m in r.json().get("models", [])
+def list_models():
+    """Model ids this key can call with generateContent."""
+    r = requests.get(f"{API}/models", headers=_headers(), params={"pageSize": 1000}, timeout=60)
+    if r.status_code != 200:
+        raise ProviderError(f"cannot list models: HTTP {r.status_code}: {_error_info(r)[0]}")
+    return [m["name"].removeprefix("models/") for m in r.json().get("models", [])
             if "generateContent" in m.get("supportedGenerationMethods", [])]
 
 
-def resolve_gemini_model(preferred=None):
-    preferred = (preferred or GEMINI_MODEL).replace("models/", "")
+def _flash_rank(model):
+    m = _STABLE_FLASH.match(model)
+    version = tuple(int(x) for x in m.group(1).split("."))
+    return version, m.group(2) is None          # newer first, Flash before Flash-Lite
+
+
+def candidate_models(sticky=None):
+    """Models to try, in order. An explicit GEMINI_MODEL is the only candidate."""
+    if GEMINI_MODEL:
+        return [GEMINI_MODEL]
     try:
-        avail = _gemini_models()
-    except Exception as e:
-        print(f"  (could not list Gemini models: {e}); trying '{preferred}'")
-        return preferred
-    if preferred in avail:
-        return preferred
-
-    def pick(pred):
-        return next((m for m in avail if pred(m)), None)
-    choice = (pick(lambda m: "flash" in m and "2.5" in m) or pick(lambda m: "flash" in m)
-              or pick(lambda m: "pro" in m and "2.5" in m)
-              or pick(lambda m: m.startswith("gemini") and "embedding" not in m)
-              or (avail[0] if avail else preferred))
-    print(f"  Gemini model '{preferred}' unavailable -> '{choice}'. Available: {avail[:10]}")
-    return choice
+        flash = sorted((m for m in list_models() if _STABLE_FLASH.match(m)),
+                       key=_flash_rank, reverse=True)
+    except (ProviderError, requests.RequestException) as e:
+        print(f"  (model list unavailable: {e}); using defaults")
+        flash = list(FALLBACK_MODELS)
+    order = ([sticky] if sticky else []) + flash
+    return list(dict.fromkeys(order))           # dedupe, keep order
 
 
-def _call_gemini(texts):
-    if _resolved["gemini_model"] is None:
-        _resolved["gemini_model"] = resolve_gemini_model()
-    model = _resolved["gemini_model"]
-    url = f"{GEMINI_BASE}/models/{model}:generateContent"
-    use_schema = True
-    last = None
-    for attempt in range(5):
-        gen = {"temperature": 0, "responseMimeType": "application/json"}
-        if use_schema:
-            gen["responseSchema"] = RESPONSE_SCHEMA
-        payload = {
-            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-            "contents": [{"role": "user", "parts": [{"text": build_user_prompt(texts)}]}],
-            "generationConfig": gen,
-        }
-        r = requests.post(url, params={"key": GEMINI_API_KEY}, json=payload, timeout=120)
-        if r.status_code == 200:
-            text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-            return _parse_results(json.loads(text), len(texts))
-        last = f"HTTP {r.status_code}: {r.text[:220]}"
-        if r.status_code == 400 and use_schema:
-            use_schema = False
-            continue
-        if r.status_code in (429, 500, 503):
-            time.sleep(_retry_wait(r, attempt))
-            continue
-        break
-    raise RuntimeError(f"Gemini failed ({last})")
+# --------------------------------------------------------------- classify -----
+def _parse(data, n):
+    cands = data.get("candidates") or []
+    if not cands:
+        block = (data.get("promptFeedback") or {}).get("blockReason")
+        raise ValueError(f"no candidates (blockReason={block})")
+    parts = (cands[0].get("content") or {}).get("parts") or []
+    text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+    if not text:
+        raise ValueError(f"empty reply (finishReason={cands[0].get('finishReason')})")
+    text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text)
+    obj = json.loads(text)
+    arr = obj.get("results") if isinstance(obj, dict) else obj
+    if not isinstance(arr, list) or len(arr) != n:
+        raise ValueError(f"expected {n} results, got {len(arr) if isinstance(arr, list) else '?'}")
+    return [_to_label(x) for x in arr]
 
 
-def _classify_batch(texts):
-    if LLM_PROVIDER == "openai":
-        if _resolved["openai_model"] is None:
-            _resolved["openai_model"] = resolve_openai_model(
-                OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_MODEL)
-        raw = _call_openai(texts, OPENAI_BASE_URL, OPENAI_API_KEY,
-                           _resolved["openai_model"], "OpenAI-compatible")
-    elif LLM_PROVIDER == "github":
-        raw = _call_openai(texts, GITHUB_BASE, GITHUB_TOKEN, GITHUB_MODEL, "GitHub Models")
-    else:
-        raw = _call_gemini(texts)
-    return [_to_label(d) for d in raw]
+def _num(x, lo, hi):
+    try:
+        return max(lo, min(hi, float(x)))
+    except (TypeError, ValueError):
+        return 0.0
 
 
-def _active_model():
-    if LLM_PROVIDER == "openai":
-        return _resolved["openai_model"] or OPENAI_MODEL
-    return {"github": GITHUB_MODEL, "gemini": GEMINI_MODEL}.get(LLM_PROVIDER, "")
-
-
-# ------------------------------------------------------------------ mapping ----
 def _to_label(d):
     topic = d.get("topic", "non_economic")
     if topic not in CATEGORIES:
@@ -215,99 +134,182 @@ def _to_label(d):
     return {
         "is_economic": int(econ),
         "primary_topic": topic if econ else "non_economic",
-        "relevance": max(0.0, min(1.0, float(d.get("relevance", 0.0)))) if econ else 0.0,
-        "sentiment": max(-1.0, min(1.0, float(d.get("sentiment", 0.0)))),
+        "relevance": _num(d.get("relevance"), 0.0, 1.0) if econ else 0.0,
+        "sentiment": _num(d.get("sentiment"), -1.0, 1.0) if econ else 0.0,
         "is_ad": int(bool(d.get("is_ad"))),
         "is_digest": int(bool(d.get("is_digest"))),
         "is_foreign": int(bool(d.get("is_foreign"))),
     }
 
 
-def _rule_labels(texts):
-    from categorizer import classify
-    from sentiment import aspect_sentiment
-    out = []
-    for t in texts:
-        c = classify(t)
-        s, _ = aspect_sentiment(t)
-        econ = c["econ_hits"] >= ECON_MIN_HITS
-        out.append({
-            "is_economic": int(econ),
-            "primary_topic": c["primary_topic"],
-            "relevance": float(1 - np.exp(-c["econ_hits"] / 2.0)) if econ else 0.0,
-            "sentiment": s,
-            "is_ad": c["is_ad"], "is_digest": c["is_digest"], "is_foreign": c["is_foreign"],
-        })
-    return out
+def classify_batch(model, texts):
+    """Label one batch. Raises ValueError on unusable output, else a typed error."""
+    gen = {"responseMimeType": "application/json", "responseSchema": RESPONSE_SCHEMA}
+    if model.startswith("gemini-2"):
+        gen["temperature"] = 0      # Gemini 3+: Google advises keeping the default
+    last = ""
+    for attempt in range(4):
+        payload = {
+            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "contents": [{"role": "user", "parts": [{"text": build_user_prompt(texts)}]}],
+            "generationConfig": gen,
+        }
+        try:
+            r = requests.post(f"{API}/models/{model}:generateContent",
+                              headers=_headers(), json=payload, timeout=180)
+        except requests.RequestException as e:
+            time.sleep(10 * (attempt + 1))
+            last = str(e)
+            continue
+        if r.status_code == 200:
+            return _parse(r.json(), len(texts))
+        msg, quota_ids, delay, limit_zero = _error_info(r)
+        last = f"HTTP {r.status_code}: {msg}"
+        if r.status_code == 400 and "responseSchema" in gen and "schema" in msg.lower():
+            gen.pop("responseSchema")               # schema rejected -> plain JSON mode
+            continue
+        if r.status_code == 429:
+            if limit_zero:
+                raise ModelUnavailable(f"{model}: no free quota ({msg})")
+            if any("PerDay" in q for q in quota_ids):
+                raise QuotaExhausted(f"{model}: daily quota reached")
+            time.sleep(min(delay or 20 * (attempt + 1), 90))
+            continue
+        if r.status_code in (500, 502, 503, 504):
+            time.sleep(10 * (attempt + 1))
+            continue
+        if r.status_code == 404:
+            raise ModelUnavailable(f"{model}: {msg}")
+        raise ProviderError(last)                   # 400 bad key, 403 API disabled, ...
+    raise TransientError(f"{model}: {last}")
 
 
 # ------------------------------------------------------------------ cache ------
-def _load_cache():
-    import os
+def load_cache():
     if not os.path.exists(LLM_LABELS_CSV):
-        return {}
+        return pd.DataFrame(columns=CACHE_COLS)
     df = pd.read_csv(LLM_LABELS_CSV)
-    if "label_version" in df.columns:
-        df = df[df["label_version"].astype(str) == LLM_LABEL_VERSION]
-    return {str(r["key"]): {c: r[c] for c in LABEL_COLS if c in df.columns}
-            for _, r in df.iterrows()}
+    for c in CACHE_COLS:
+        if c not in df.columns:
+            df[c] = pd.NA
+    df["key"] = df["key"].astype(str)
+    df["label_version"] = df["label_version"].astype(str)
+    return df[CACHE_COLS]
 
 
-def _append_cache(rows):
-    import os
-    if not rows:
-        return
-    new = pd.DataFrame(rows)
-    if os.path.exists(LLM_LABELS_CSV):
-        new = pd.concat([pd.read_csv(LLM_LABELS_CSV), new], ignore_index=True)
-    new.drop_duplicates(subset=["key"], keep="last").to_csv(LLM_LABELS_CSV, index=False, encoding="utf-8")
+def _save_cache(cache, new_rows):
+    if not new_rows:
+        return cache
+    cache = pd.concat([cache, pd.DataFrame(new_rows, columns=CACHE_COLS)], ignore_index=True)
+    cache = cache.drop_duplicates(subset=["key"], keep="last")
+    write_csv(cache, LLM_LABELS_CSV)
+    return cache
 
 
 # --------------------------------------------------------------- public --------
-def label_messages(df: pd.DataFrame) -> pd.DataFrame:
-    key = (df["channel"].astype(str) + "|" + df["message_id"].astype(str)).tolist()
-    cache = _load_cache()
-    result = dict(cache)
+def post_keys(df):
+    return df["channel"].astype(str) + "|" + df["message_id"].astype(str)
 
-    todo = [(i, k) for i, k in zip(df.index, key) if k not in cache]
-    if todo:
-        cap = LLM_MAX_PER_RUN if LLM_MAX_PER_RUN > 0 else len(todo)   # 0 = no cap
-        capped = todo[:cap]
-        deferred = todo[cap:]
-        print(f"  LLM ({LLM_PROVIDER}/{_active_model()}): {len(capped)} new posts this "
-              f"run ({len(cache)} cached, {len(deferred)} deferred)")
-        idxs = [i for i, _ in capped]
-        keys = [k for _, k in capped]
-        texts = (df.loc[idxs, "raw_text"].fillna("").astype(str)
-                 .str.slice(0, LLM_MAX_CHARS).tolist())
-        to_persist = []
-        llm_dead = False   # once the provider hard-fails, stop hammering it this run
-        for start in range(0, len(texts), LLM_BATCH_SIZE):
-            bt, bk = texts[start:start + LLM_BATCH_SIZE], keys[start:start + LLM_BATCH_SIZE]
-            if llm_dead:
-                labels, src = _rule_labels(bt), "rules"
-            else:
-                try:
-                    labels = _classify_batch(bt)
-                    src = "llm"
-                except Exception as e:
-                    print(f"    batch {start // LLM_BATCH_SIZE}: {e} -> rule fallback")
-                    labels, src = _rule_labels(bt), "rules"
-                    if any(c in str(e) for c in ("410", "401", "403", "404")):
-                        print("    provider unavailable -> using rules for the rest of this run")
-                        llm_dead = True
-            for k, lab in zip(bk, labels):
-                result[k] = lab
-                if src == "llm":
-                    to_persist.append({"key": k, "label_version": LLM_LABEL_VERSION, **lab})
-            print(f"    {min(start + LLM_BATCH_SIZE, len(texts))}/{len(texts)} ({src})")
-            if src == "llm" and start + LLM_BATCH_SIZE < len(texts) and LLM_SLEEP > 0:
-                time.sleep(LLM_SLEEP)          # pace to respect RPM limits
-        _append_cache(to_persist)
 
-        # deferred posts: rule-based for THIS run (not persisted -> LLM next run)
-        for i, k in deferred:
-            if k not in result:
-                result[k] = _rule_labels([str(df.loc[i, "raw_text"])])[0]
+def label_messages(df, allow_calls=True):
+    """Label every post in df that has no cached label yet.
 
-    return pd.DataFrame([result[k] for k in key], index=df.index)[LABEL_COLS]
+    Returns (labels, status): labels is indexed like df with LABEL_COLS plus
+    'label_model' (NaN where still unlabelled); status = {"error", "warnings",
+    "new", "pending"} where "error" is set only for problems that need a human.
+    """
+    status = {"error": None, "warnings": [], "new": 0, "pending": 0}
+    keys = post_keys(df)
+    cache = load_cache()
+    current = cache[cache["label_version"] == LLM_LABEL_VERSION]
+    done = set(current["key"])
+
+    todo = df.loc[~keys.isin(done)].sort_values("date", ascending=False)
+    if len(todo) and allow_calls:
+        cache = _label(todo, cache, current, status)
+        current = cache[cache["label_version"] == LLM_LABEL_VERSION]
+
+    lab = current.set_index("key")[["model"] + LABEL_COLS]
+    out = lab.reindex(keys.values)
+    out.index = df.index
+    out = out.rename(columns={"model": "label_model"})
+    status["pending"] = int(out["is_economic"].isna().sum())
+    return out, status
+
+
+def _label(todo, cache, current, status):
+    if not GEMINI_API_KEY:
+        status["error"] = "GEMINI_API_KEY is not set"
+        return cache
+    sticky = None
+    if len(current) and current["model"].notna().any():
+        sticky = str(current["model"].dropna().iloc[-1])
+    try:
+        models = candidate_models(sticky)
+    except ProviderError as e:
+        status["error"] = str(e)
+        return cache
+    model = models.pop(0)
+    print(f"  Gemini model: {model} | {len(todo)} posts to label "
+          f"(batch {LLM_BATCH_SIZE}, max {LLM_MAX_REQUESTS} requests this run)")
+
+    texts = todo["raw_text"].fillna("").astype(str).str.slice(0, LLM_MAX_CHARS).tolist()
+    keys = post_keys(todo).tolist()
+    batches = [(keys[i:i + LLM_BATCH_SIZE], texts[i:i + LLM_BATCH_SIZE])
+               for i in range(0, len(texts), LLM_BATCH_SIZE)]
+    interval = 60.0 / LLM_RPM if LLM_RPM > 0 else 0.0
+    requests_used, last_call, pending_rows = 0, 0.0, []
+
+    def call(batch_texts):
+        nonlocal requests_used, last_call
+        wait = interval - (time.time() - last_call)
+        if wait > 0:
+            time.sleep(wait)                       # pace to the per-minute limit
+        last_call = time.time()
+        requests_used += 1
+        return classify_batch(model, batch_texts)
+
+    queue = list(batches)
+    try:
+        while queue:
+            if requests_used >= LLM_MAX_REQUESTS:
+                status["warnings"].append(
+                    f"request cap ({LLM_MAX_REQUESTS}) reached — the rest is labelled next run")
+                break
+            bkeys, btexts = queue.pop(0)
+            try:
+                labels = call(btexts)
+            except ModelUnavailable as e:
+                if not models:
+                    status["error"] = f"no usable Gemini model ({e})"
+                    break
+                old, model = model, models.pop(0)
+                status["warnings"].append(f"model switched {old} -> {model} ({e})")
+                print(f"  !! {e} -> switching model {old} -> {model}")
+                queue.insert(0, (bkeys, btexts))
+                continue
+            except ValueError as e:                # bad output: retry as two halves
+                if len(bkeys) > 1:
+                    half = len(bkeys) // 2
+                    queue[:0] = [(bkeys[:half], btexts[:half]), (bkeys[half:], btexts[half:])]
+                    print(f"  batch of {len(bkeys)} unusable ({e}) -> split")
+                else:
+                    status["warnings"].append(f"post {bkeys[0]} could not be labelled ({e})")
+                continue
+            for k, lab in zip(bkeys, labels):
+                pending_rows.append({"key": k, "label_version": LLM_LABEL_VERSION,
+                                     "model": model, **lab})
+            status["new"] += len(labels)
+            print(f"    labelled {status['new']}/{len(texts)}")
+            if len(pending_rows) >= 5 * LLM_BATCH_SIZE:   # flush often: survive timeouts
+                cache = _save_cache(cache, pending_rows)
+                pending_rows = []
+    except QuotaExhausted as e:
+        status["warnings"].append(f"{e} — the rest is labelled next run")
+    except TransientError as e:
+        status["warnings"].append(f"Gemini temporarily unavailable ({e}) — retry next run")
+    except ProviderError as e:
+        status["error"] = str(e)
+    finally:
+        cache = _save_cache(cache, pending_rows)
+    return cache

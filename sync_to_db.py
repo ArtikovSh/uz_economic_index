@@ -83,7 +83,8 @@ def sync_daily(conn):
     cols = ["date_only", "total_messages", "economic_messages", "counted_messages",
             "econ_share", "eai", "eai_z", "eai_100", "esi", "esi_z", "esi_100",
             "avg_engagement"]
-    df = df.reindex(columns=cols)
+    # days still waiting for labels have no index yet — keep the DB's last good row
+    df = df[df["eai"].notna()].reindex(columns=cols)
     rows = [tuple(None if pd.isna(v) else v for v in row) for row in df.itertuples(index=False)]
     _upsert(conn, f"""
         insert into daily_index ({','.join(cols)})

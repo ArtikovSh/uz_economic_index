@@ -2,18 +2,20 @@
 Monthly economic index: aggregate the already-collected daily data into a
 per-month EAI/ESI series.
 
-Run on the 3rd of each month for the PREVIOUS calendar month. By the 3rd the
-daily T-2 scraper has collected the whole previous month (its last day, e.g.
-Aug 31, is scraped on Sep 2), so the month is complete. No scraping and (if the
-daily runs kept the LLM cache warm) no new LLM calls — it re-uses cached labels.
+Run on the 3rd of each month for the PREVIOUS calendar month. By then the daily
+run has collected the whole previous month (its last day is collected two days
+later). Days that were never collected stay missing (no late backfill); the row
+records how complete the month is (days_covered vs days_expected).
 """
+import calendar
 import os
 from datetime import datetime, timedelta, timezone
 
-import numpy as np
 import pandas as pd
 
-from config import DATA_DIR, TZ_OFFSET_HOURS, MONTHLY_CSV
+from config import TZ_OFFSET_HOURS, MONTHLY_CSV
+from indicator import wmean
+from store import write_csv
 
 TASHKENT = timezone(timedelta(hours=TZ_OFFSET_HOURS))
 
@@ -30,35 +32,39 @@ def target_month(override=""):
     return y, m, f"{y:04d}-{m:02d}"
 
 
-def _wmean(v, w):
-    v, w = np.asarray(v, float), np.asarray(w, float)
-    s = w.sum()
-    return float((v * w).sum() / s) if s > 0 else (float(v.mean()) if len(v) else 0.0)
-
-
 def build_monthly(scored, y, m, label):
     """Aggregate the scored messages of one Tashkent month into an index row."""
     dt = pd.to_datetime(scored["date_only"])
     d = scored[(dt.dt.year == y) & (dt.dt.month == m)]
     if d.empty:
         return None, d
-    counted = d[d["in_index"] == 1]
-    eai = _wmean(d["relevance_eff"], d["eng_weight"])
-    esi = _wmean(counted["sentiment"], counted["eng_weight"]) if len(counted) else 0.0
+    labeled = d[d["labeled"] == 1]
+    counted = labeled[labeled["in_index"] == 1]
+    days_expected = calendar.monthrange(y, m)[1]
+    days_covered = int(d["date_only"].nunique())
+    unlabeled = int(len(d) - len(labeled))
+    eai = wmean(labeled["relevance_eff"], labeled["eng_weight"])
+    esi = wmean(counted["sentiment"], counted["eng_weight"]) if len(counted) else 0.0
     topics = counted["primary_topic"].value_counts().head(5).to_dict()
     row = {
         "month": label,
-        "days_covered": int(d["date_only"].nunique()),
+        "days_covered": days_covered,
         "total_messages": int(len(d)),
-        "economic_messages": int(d["is_economic"].sum()),
+        "economic_messages": int(labeled["is_economic"].sum()),
         "counted_messages": int(len(counted)),
-        "econ_share": round(float(d["is_economic"].mean()), 4),
+        "econ_share": round(float(labeled["is_economic"].mean()), 4) if len(labeled) else 0.0,
         "EAI": round(eai, 4),
         "ESI": round(esi, 4),
         "ESI_100": round(50.0 * (esi + 1.0), 2),
         "avg_engagement": round(float(d["engagement"].mean()), 3),
         "top_topics": ";".join(f"{k}:{v}" for k, v in topics.items()),
+        "days_expected": days_expected,
+        "unlabeled_messages": unlabeled,
+        "complete": int(days_covered == days_expected and unlabeled == 0),
     }
+    if not row["complete"]:
+        print(f"::warning::Month {label} is incomplete: {days_covered}/{days_expected} days "
+              f"collected, {unlabeled} posts unlabelled.")
     return row, d
 
 
@@ -68,8 +74,10 @@ def save_monthly(row):
     if os.path.exists(MONTHLY_CSV):
         new = pd.concat([pd.read_csv(MONTHLY_CSV), new], ignore_index=True)
     new = new.drop_duplicates(subset=["month"], keep="last").sort_values("month").reset_index(drop=True)
+    ints = [c for c in ("days_expected", "unlabeled_messages", "complete") if c in new.columns]
+    new[ints] = new[ints].astype("Int64")         # older rows predate these columns
     mean_eai = new["EAI"].mean() or 1.0
     new["EAI_100"] = (100.0 * new["EAI"] / mean_eai).round(2)     # avg month = 100
-    new.to_csv(MONTHLY_CSV, index=False, encoding="utf-8")
+    write_csv(new, MONTHLY_CSV)
     print(f"Monthly index: {len(new)} months -> {MONTHLY_CSV}")
     return new

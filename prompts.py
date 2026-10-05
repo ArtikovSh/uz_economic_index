@@ -1,11 +1,10 @@
 """
 The Gemini classification prompt + structured-output schema.
 
-This is the single place to tune how the LLM labels posts. The system prompt
-encodes exactly the domain rules the rule-based classifier tried to approximate
-(domestic UZ economy focus, 10 categories, ad/digest/foreign exclusion, aspect
-sentiment) but the model applies them with real language understanding across
-Uzbek-Latin, Uzbek-Cyrillic and Russian.
+This is the single place to tune how posts are labelled: domestic UZ economy
+focus, 10 categories, ad/digest/foreign exclusion and aspect sentiment, applied
+with real language understanding across Uzbek-Latin, Uzbek-Cyrillic and Russian.
+Changing the meaning of any rule here requires bumping LLM_LABEL_VERSION.
 """
 
 CATEGORIES = [
@@ -62,6 +61,11 @@ FIELDS
      - crisis, default, deficit, unemployment, shortage, bankruptcy -> NEGATIVE
      - subsidies, tax relief, stability, records, recovery, support -> POSITIVE
      - respect NEGATION ("prices asked NOT to be raised" is not negative).
+     - ROUTINE / PROTOCOL news -> 0.0: meetings, visits, delegations, forums,
+       presentations, awards, memoranda or agreements signed, plans and intentions
+       — unless the post reports a concrete, measurable change that already
+       happened or was decided (a new price, rate, volume, money amount, a
+       launched plant). Optimistic wording alone is NOT positive news.
 
    *** EXCHANGE RATE — READ CAREFULLY (a frequent mistake) ***
    The unit is the SOM. What matters is the som's strength, which is the OPPOSITE
@@ -79,6 +83,9 @@ FIELDS
    discounts (chegirma/skidka), "aksiya", installment offers, telecom promos, and
    REAL-ESTATE SALES pitches ("Продаются апартаменты", "sotiladi", "для дополнительного
    дохода", listings with price/contact). If the post is selling something, is_ad=true.
+   A post the channel itself marks as advertising — "(реклама)", "на правах
+   рекламы", "#реклама", or "Реклама"/"Reklama" as its last word — is ALWAYS
+   is_ad=true, even if it reads like ordinary news.
 
 6. is_digest (boolean): true for a news DIGEST that bundles many separate stories
    into ONE post — e.g. the title contains "dayjest" / "дайджест" / "yangiliklar
