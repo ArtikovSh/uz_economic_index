@@ -1,5 +1,7 @@
 # Telegram Bot + Mini App — Reja va Chuqur Tahlil
 
+> **Eslatma (2026-10, v4):** bu dastlabki reja. Indekslar endi `indices` jadvalida (kun / hafta / oy / chorak / yil), EAI foizda va ESI balansda (−100…+100) hisoblanadi — METHODOLOGY.md ga qarang.
+
 O'zbekiston Iqtisodiy Yangiliklar Indeksi (EAI/ESI) uchun **Telegram bot** va
 **Telegram Mini App** ishlab chiqish rejasi. Auditoriya: iqtisodchilar va Markaziy
 bank (MB) xodimlari.

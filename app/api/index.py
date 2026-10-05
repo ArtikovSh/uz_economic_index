@@ -6,6 +6,9 @@ method:
   * GET   /api/index  -> Mini App data JSON (needs X-Telegram-Init-Data header),
                           or a health message in a plain browser.
 
+Index figures come from the `indices` table (one row per closed day / week / month /
+quarter / year): EAI = % of non-ad posts that are economic, ESI = 100*(pos-neg)/econ.
+
 Env: TELEGRAM_BOT_TOKEN, BOT_ADMIN_ID, SUPABASE_DB_URL, [WEBAPP_URL], [WEBHOOK_SECRET].
 Roles: admin / cb_analyst / economist / public (full = the first three).
 """
@@ -14,6 +17,8 @@ import hashlib
 import hmac
 import json
 import os
+import time
+from html import escape
 from urllib.parse import parse_qsl, quote
 
 import psycopg
@@ -26,6 +31,7 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 TZ = "5 hours"
+INIT_DATA_MAX_AGE = 24 * 3600          # Mini App initData older than this is rejected
 FULL_ROLES = {"admin", "cb_analyst", "economist"}
 ROLE_NAMES = {"admin": "Admin", "cb_analyst": "MB analitigi", "economist": "Iqtisodchi",
               "public": "Ommaviy"}
@@ -35,6 +41,7 @@ TOPICS = {
     "banking_finance": "Bank/moliya", "labour_income": "Mehnat/daromad",
     "energy_utility": "Energetika", "business": "Biznes", "construction_realty": "Qurilish",
 }
+COUNTED = "is_economic and not is_ad and not is_foreign and not is_digest"
 
 
 # ------------------------------------------------------------------ database ---
@@ -61,6 +68,17 @@ def get_or_create_user(uid, user):
     return "public", "pending"
 
 
+def index_rows(ptype, n):
+    """Latest n rows of one period type, oldest first ([] until the table exists)."""
+    try:
+        rows = q("""select period, start_date::text s, end_date::text e, days, days_expected,
+                           nonad, econ, pos, neg, eai, esi, note
+                    from indices where period_type=%s order by end_date desc limit %s""", (ptype, n)) or []
+    except psycopg.errors.UndefinedTable:
+        return []                          # created by the pipeline's first DB sync
+    return list(reversed(rows))
+
+
 # ------------------------------------------------------------------- telegram --
 def send(chat_id, text, **kw):
     if not BOT_TOKEN:
@@ -76,7 +94,7 @@ def send(chat_id, text, **kw):
         print("send error:", e)
 
 
-def main_kb(is_admin=False):
+def main_kb():
     """Interactive navigation keyboard shown under bot messages."""
     rows = [
         [{"text": "📊 Bugun", "callback_data": "nav:today"},
@@ -87,10 +105,6 @@ def main_kb(is_admin=False):
     if WEBAPP_URL:
         rows.append([{"text": "📱 Dashboard (Mini App)", "web_app": {"url": WEBAPP_URL}}])
     return {"inline_keyboard": rows}
-
-
-def app_kb():
-    return main_kb()
 
 
 def edit(chat_id, mid, text, kb=None):
@@ -141,51 +155,71 @@ def sparkline(vals):
 
 
 def quickchart_url(n=30):
-    d = q("select date_only::text d, eai_100, esi_100 from daily_index order by date_only desc limit %s", (n,)) or []
-    d = list(reversed(d))
+    d = index_rows("kun", n)
     cfg = {"type": "line",
-           "data": {"labels": [x["d"][5:] for x in d],
+           "data": {"labels": [x["period"][5:] for x in d],
                     "datasets": [
-                        {"label": "E'tibor (EAI)", "data": [round(x["eai_100"] or 0) for x in d],
-                         "borderColor": "#3b82f6", "backgroundColor": "rgba(59,130,246,.15)", "fill": True, "tension": 0.35, "pointRadius": 0},
-                        {"label": "Kayfiyat (ESI)", "data": [round(x["esi_100"] or 0) for x in d],
+                        {"label": "E'tibor (EAI, %)", "data": [x["eai"] for x in d], "yAxisID": "y",
+                         "borderColor": "#3b82f6", "backgroundColor": "rgba(59,130,246,.15)",
+                         "fill": True, "tension": 0.35, "pointRadius": 0},
+                        {"label": "Kayfiyat (ESI)", "data": [x["esi"] for x in d], "yAxisID": "y1",
                          "borderColor": "#22c55e", "fill": False, "tension": 0.35, "pointRadius": 0}]},
-           "options": {"plugins": {"title": {"display": True, "text": f"UZ Economic Index — {n} kun"}},
-                       "scales": {"y": {"min": 0}}}}
-    return "https://quickchart.io/chart?w=640&h=360&bkg=white&c=" + quote(json.dumps(cfg))
+           "options": {"plugins": {"title": {"display": True, "text": f"UZ Economic Index — {len(d)} kun"}},
+                       "scales": {"y": {"min": 0, "max": 100, "position": "left",
+                                        "title": {"display": True, "text": "EAI, %"}},
+                                  "y1": {"min": -100, "max": 100, "position": "right",
+                                         "grid": {"drawOnChartArea": False},
+                                         "title": {"display": True, "text": "ESI"}}}}}
+    return "https://quickchart.io/chart?v=4&w=640&h=360&bkg=white&c=" + quote(json.dumps(cfg))
 
 
 # --------------------------------------------------------------------- stats ---
 def _day():
-    r = q("select max(date_only) as d from daily_index", one=True)
-    return r["d"] if r else None
+    rows = index_rows("kun", 1)
+    return rows[-1]["period"] if rows else None
 
 
 def _arrow(v):
     return "▲" if v > 0 else ("▼" if v < 0 else "▬")
 
 
+def _mood(esi):
+    if esi is None:
+        return "⚪"
+    return "🟢 ijobiy" if esi >= 10 else ("🔴 salbiy" if esi <= -10 else "🟡 neytral")
+
+
+def _num(v, fmt):
+    return "—" if v is None else format(v, fmt)
+
+
 def fmt_index():
-    rows = q("""select date_only, eai_100, esi_100, economic_messages, total_messages
-                from daily_index order by date_only desc limit 14""")
-    if not rows:
-        return "Hozircha ma'lumot yo'q. Quvur birinchi kunni yig'ishini kuting."
-    d = rows[0]
-    prev = rows[1] if len(rows) > 1 else None
-    hist = list(reversed(rows))
-    de = ds = 0
-    if prev:
-        de = (d["eai_100"] or 0) - (prev["eai_100"] or 0)
-        ds = (d["esi_100"] or 0) - (prev["esi_100"] or 0)
-    mood = "🟢 ijobiy" if (d["esi_100"] or 50) >= 55 else ("🔴 salbiy" if (d["esi_100"] or 50) <= 45 else "🟡 neytral")
-    return (f"📊 <b>Iqtisodiy manzara — {d['date_only']}</b> <i>(Toshkent)</i>\n"
-            f"<i>2 kun oldingi to'liq kun</i>\n\n"
-            f"🎯 <b>E'tibor (EAI): {d['eai_100']:.0f}</b>  {_arrow(de)}{abs(de):.0f}  <i>(o'rtacha=100)</i>\n"
-            f"   <code>{sparkline([r['eai_100'] for r in hist])}</code>\n"
-            f"💬 <b>Kayfiyat (ESI): {d['esi_100']:.0f}</b>  {_arrow(ds)}{abs(ds):.0f}  <i>({mood})</i>\n"
-            f"   <code>{sparkline([r['esi_100'] for r in hist])}</code>\n\n"
-            f"📰 Iqtisodiy xabarlar: <b>{d['economic_messages']}</b> / {d['total_messages']}\n"
-            f"<i>50=neytral · so'nggi 14 kun trendi</i>")
+    hist = index_rows("kun", 14)
+    if not hist:
+        return "Hozircha ma'lumot yo'q. Quvur birinchi kunni yakunlashini kuting."
+    d = hist[-1]
+    prev = hist[-2] if len(hist) > 1 else None
+    de = (d["eai"] - prev["eai"]) if prev and d["eai"] is not None and prev["eai"] is not None else 0
+    ds = (d["esi"] - prev["esi"]) if prev and d["esi"] is not None and prev["esi"] is not None else 0
+    week = (index_rows("hafta", 1) or [None])[-1]
+    month = (index_rows("oy", 1) or [None])[-1]
+    lines = [f"📊 <b>Iqtisodiy manzara — {d['period']}</b> <i>(Toshkent)</i>",
+             "<i>2 kun oldingi to'liq kun</i>", "",
+             f"🎯 <b>E'tibor (EAI): {_num(d['eai'], '.1f')}%</b>  {_arrow(de)}{abs(de):.1f}",
+             "   <i>iqtisodiy xabarlar ulushi</i>",
+             f"   <code>{sparkline([r['eai'] for r in hist])}</code>",
+             f"💬 <b>Kayfiyat (ESI): {_num(d['esi'], '+.0f')}</b>  {_arrow(ds)}{abs(ds):.0f}  <i>({_mood(d['esi'])})</i>",
+             "   <i>ijobiy − salbiy, foiz punkt</i>",
+             f"   <code>{sparkline([r['esi'] for r in hist])}</code>", "",
+             f"📰 Iqtisodiy xabarlar: <b>{d['econ']}</b> / {d['nonad']}"]
+    if week:
+        lines.append(f"📅 Hafta {week['s'][5:]}–{week['e'][5:]}: EAI {_num(week['eai'], '.1f')}%, "
+                     f"ESI {_num(week['esi'], '+.0f')}")
+    if month:
+        lines.append(f"🗓 Oy {month['period']}: EAI {_num(month['eai'], '.1f')}%, "
+                     f"ESI {_num(month['esi'], '+.0f')} ({month['days']}/{month['days_expected']} kun)")
+    lines.append("<i>ESI: 0 = neytral · so'nggi 14 kun trendi</i>")
+    return "\n".join(lines)
 
 
 def fmt_top(n):
@@ -193,46 +227,45 @@ def fmt_top(n):
     if not day:
         return "Ma'lumot yo'q."
     rows = q(f"""select channel, sentiment, views, raw_text from posts
-                 where (date_utc + interval '{TZ}')::date=%s
-                   and is_economic and not is_ad and not is_foreign and not is_digest
+                 where (date_utc + interval '{TZ}')::date=%s and {COUNTED}
                  order by relevance*ln(1+views+2*forwards) desc limit %s""", (day, n))
     if not rows:
         return "Bu kun uchun iqtisodiy post topilmadi."
     out = [f"🔝 <b>Top {len(rows)} iqtisodiy post — {day}</b>\n"]
     for i, r in enumerate(rows, 1):
-        t = " ".join(str(r["raw_text"]).split())[:160]
+        t = escape(" ".join(str(r["raw_text"]).split())[:160])
         mood = "🟢" if r["sentiment"] > 0.15 else ("🔴" if r["sentiment"] < -0.15 else "⚪")
-        out.append(f"{i}. {mood} <i>{r['channel']}</i> · 👁{r['views']}\n{t}\n")
+        out.append(f"{i}. {mood} <i>{escape(str(r['channel']))}</i> · 👁{r['views']}\n{t}\n")
     return "\n".join(out)
 
 
 def fmt_topics():
     day = _day()
     rows = q(f"""select primary_topic, count(*) n, round(avg(sentiment)::numeric,2) s
-                 from posts where (date_utc + interval '{TZ}')::date=%s
-                   and is_economic and not is_ad and not is_foreign and not is_digest
+                 from posts where (date_utc + interval '{TZ}')::date=%s and {COUNTED}
                  group by primary_topic order by n desc""", (day,))
     if not rows:
         return "Ma'lumot yo'q."
     out = [f"🗂 <b>Mavzular — {day}</b>\n"]
     for r in rows:
         mood = "🟢" if r["s"] > 0.15 else ("🔴" if r["s"] < -0.15 else "⚪")
-        out.append(f"{mood} {TOPICS.get(r['primary_topic'], r['primary_topic'])}: "
+        out.append(f"{mood} {escape(TOPICS.get(r['primary_topic'], str(r['primary_topic'])))}: "
                    f"<b>{r['n']}</b> post (kayfiyat {r['s']:+.2f})")
     return "\n".join(out)
 
 
 def fmt_topic(key):
     day = _day()
+    name = escape(TOPICS.get(key, key))
     rows = q(f"""select channel, raw_text from posts
-                 where (date_utc + interval '{TZ}')::date=%s and primary_topic=%s
-                   and is_economic and not is_ad and not is_foreign and not is_digest
+                 where (date_utc + interval '{TZ}')::date=%s and primary_topic=%s and {COUNTED}
                  order by relevance*ln(1+views+2*forwards) desc limit 5""", (day, key))
     if not rows:
-        return f"'{TOPICS.get(key, key)}' bo'yicha bu kun post topilmadi."
-    out = [f"🗂 <b>{TOPICS.get(key, key)} — {day}</b>\n"]
+        return f"'{name}' bo'yicha bu kun post topilmadi."
+    out = [f"🗂 <b>{name} — {day}</b>\n"]
     for r in rows:
-        out.append(f"• <i>{r['channel']}</i>: {' '.join(str(r['raw_text']).split())[:150]}\n")
+        out.append(f"• <i>{escape(str(r['channel']))}</i>: "
+                   f"{escape(' '.join(str(r['raw_text']).split())[:150])}\n")
     return "\n".join(out)
 
 
@@ -244,11 +277,14 @@ def admin_cmd(text):
         rows = q("select telegram_id, username, full_name from app_users where status='pending'")
         return ("Kutayotgan foydalanuvchi yo'q." if not rows else
                 "⏳ <b>Tasdiq kutayotganlar:</b>\n" + "\n".join(
-                    f"{r['telegram_id']} — {r.get('full_name') or ''} @{r.get('username') or ''}" for r in rows))
+                    f"{r['telegram_id']} — {escape(r.get('full_name') or '')} "
+                    f"@{escape(r.get('username') or '')}" for r in rows))
     if c == "/users":
         rows = q("select telegram_id, role, status from app_users order by created_at desc limit 30")
         return "👥 <b>Foydalanuvchilar:</b>\n" + "\n".join(
             f"{r['telegram_id']} — {ROLE_NAMES.get(r['role'], r['role'])} ({r['status']})" for r in rows)
+    if c in ("/approve", "/setrole", "/block") and len(p) >= 2 and not p[1].isdigit():
+        return "ID raqam bo'lishi kerak, masalan: /approve 123456789 economist"
     if c in ("/approve", "/setrole") and len(p) >= 3 and p[2] in ROLE_NAMES:
         q("""insert into app_users (telegram_id, role, status, approved_at)
              values (%s,%s,'active', now())
@@ -284,7 +320,7 @@ def handle_callback(cq):
     if status != "active":
         return
     is_full = role in FULL_ROLES
-    kb = main_kb(role == "admin")
+    kb = main_kb()
     if data == "nav:today":
         edit(chat_id, mid, fmt_index(), kb)
     elif data == "nav:top":
@@ -292,7 +328,7 @@ def handle_callback(cq):
     elif data == "nav:topics":
         edit(chat_id, mid, fmt_topics() if is_full else "🔒 Mavzular kesimi to'liq rol uchun.", kb)
     elif data == "nav:chart":
-        send_photo(chat_id, quickchart_url(), "📈 <b>EAI/ESI — 30 kunlik trend</b>", kb)
+        send_photo(chat_id, quickchart_url(), "📈 <b>EAI va ESI — 30 kunlik trend</b>", kb)
 
 
 def handle_update(update):
@@ -309,16 +345,18 @@ def handle_update(update):
     is_full = role in FULL_ROLES
     cmd = text.split()[0].lower().split("@")[0]
 
+    if status == "blocked":
+        send(chat_id, "🚫 Kirish bloklangan."); return
     if cmd == "/start":
         if status == "pending":
             send(chat_id, "👋 Xush kelibsiz! Arizangiz qabul qilindi — admin tasdig'ini kuting.\n\n" + HELP)
             if ADMIN_ID:
-                send(int(ADMIN_ID), f"🔔 Yangi foydalanuvchi: {frm['id']} @{frm.get('username','')} "
+                send(int(ADMIN_ID), f"🔔 Yangi foydalanuvchi: {frm['id']} @{escape(frm.get('username', ''))} "
                                     f"— /approve {frm['id']} economist")
         else:
             send(chat_id, "🇺🇿 <b>UZ Economic Index</b>\nO'zbekiston iqtisodiy yangiliklar indeksi.\n"
                  "Quyidagi tugmalar orqali indeks, mavzular va top yangiliklarni ko'ring 👇"
-                 + (ADMIN_HELP if is_admin else ""), reply_markup=app_kb())
+                 + (ADMIN_HELP if is_admin else ""), reply_markup=main_kb())
         return
     if cmd == "/help":
         send(chat_id, HELP + (ADMIN_HELP if is_admin else "")); return
@@ -330,15 +368,13 @@ def handle_update(update):
         if r is not None:
             send(chat_id, r); return
 
-    if status == "blocked":
-        send(chat_id, "🚫 Kirish bloklangan."); return
     if status == "pending":
         send(chat_id, "⏳ Hisobingiz hali tasdiqlanmagan. Admin tasdig'ini kuting."); return
 
     if cmd == "/app":
-        send(chat_id, "📊 Dashboard:" if WEBAPP_URL else "Mini App hali ulanmagan.", reply_markup=app_kb()); return
+        send(chat_id, "📊 Dashboard:" if WEBAPP_URL else "Mini App hali ulanmagan.", reply_markup=main_kb()); return
     if cmd in ("/today", "/index"):
-        send(chat_id, fmt_index(), reply_markup=app_kb()); return
+        send(chat_id, fmt_index(), reply_markup=main_kb()); return
     if cmd == "/top":
         send(chat_id, fmt_top(8 if is_full else 3)); return
     if cmd == "/topics":
@@ -369,8 +405,10 @@ def verify_init_data(init_data):
     if not hmac.compare_digest(calc, recv):
         return None
     try:
+        if time.time() - int(pairs.get("auth_date", "0")) > INIT_DATA_MAX_AGE:
+            return None                            # stale: a replayed old initData
         return json.loads(pairs.get("user", "{}"))
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 
@@ -380,33 +418,32 @@ def _post_link(channel, mid):
 
 def build_payload(role):
     is_full = role in FULL_ROLES
-    daily = q("""select date_only::text d, eai_100, esi_100, econ_share,
-                        economic_messages, counted_messages, total_messages
-                 from daily_index order by date_only desc limit 90""") or []
-    daily = list(reversed(daily))
-    monthly = q("""select month, eai_100, esi_100, economic_messages, total_messages
-                   from monthly_index order by month""") or []
+    daily = [{"d": r["period"], "eai": r["eai"], "esi": r["esi"], "econ": r["econ"],
+              "nonad": r["nonad"]} for r in index_rows("kun", 90)]
+    weekly = [{"s": r["s"], "e": r["e"], "eai": r["eai"], "esi": r["esi"]} for r in index_rows("hafta", 12)]
+    monthly = [{"month": r["period"], "eai": r["eai"], "esi": r["esi"], "days": r["days"],
+                "days_expected": r["days_expected"]} for r in index_rows("oy", 24)]
     day = _day()
     topics, top, sent = [], [], {"pos": 0, "neu": 0, "neg": 0}
-    cond = ("is_economic and not is_ad and not is_foreign and not is_digest")
     if day:
-        topics = q(f"""select primary_topic, count(*) n, round(avg(sentiment)::numeric,2) s,
-                              round(avg(relevance)::numeric,2) r
-                       from posts where (date_utc + interval '{TZ}')::date=%s and {cond}
-                       group by primary_topic order by n desc""", (day,)) or []
-        for t in topics:
-            t["name"] = TOPICS.get(t["primary_topic"], t["primary_topic"])
-            t["s"] = float(t["s"]); t["r"] = float(t["r"])
+        if is_full:
+            topics = q(f"""select primary_topic, count(*) n, round(avg(sentiment)::numeric,2) s,
+                                  round(avg(relevance)::numeric,2) r
+                           from posts where (date_utc + interval '{TZ}')::date=%s and {COUNTED}
+                           group by primary_topic order by n desc""", (day,)) or []
+            for t in topics:
+                t["name"] = TOPICS.get(t["primary_topic"], t["primary_topic"])
+                t["s"] = float(t["s"]); t["r"] = float(t["r"])
         sd = q(f"""select
                      count(*) filter (where sentiment > 0.15) pos,
                      count(*) filter (where sentiment < -0.15) neg,
                      count(*) filter (where sentiment between -0.15 and 0.15) neu
-                   from posts where (date_utc + interval '{TZ}')::date=%s and {cond}""",
+                   from posts where (date_utc + interval '{TZ}')::date=%s and {COUNTED}""",
                (day,), one=True) or {}
         sent = {"pos": sd.get("pos", 0), "neu": sd.get("neu", 0), "neg": sd.get("neg", 0)}
         top = q(f"""select channel, message_id, primary_topic, sentiment, relevance,
                            views, forwards, raw_text
-                    from posts where (date_utc + interval '{TZ}')::date=%s and {cond}
+                    from posts where (date_utc + interval '{TZ}')::date=%s and {COUNTED}
                     order by relevance*ln(1+views+2*forwards) desc limit %s""",
                 (day, 25 if is_full else 5)) or []
         for p in top:
@@ -417,7 +454,8 @@ def build_payload(role):
     return {"role": role, "is_full": is_full, "date": str(day) if day else None,
             "latest": daily[-1] if daily else None,
             "prev": daily[-2] if len(daily) > 1 else None,
-            "daily": daily, "monthly": monthly, "sentiment": sent,
+            "week": weekly[-1] if weekly else None,
+            "daily": daily, "weekly": weekly, "monthly": monthly, "sentiment": sent,
             "topics": topics, "top": top}
 
 
@@ -438,9 +476,9 @@ class handler(BaseHTTPRequestHandler):
             n = int(self.headers.get("content-length", 0))
             update = json.loads(self.rfile.read(n) or b"{}")
             msg = update.get("message") or {}
-            print(f"UPDATE from {msg.get('from', {}).get('id')}: {msg.get('text')!r} "
+            print(f"UPDATE from {msg.get('from', {}).get('id')} "
                   f"| token={'set' if BOT_TOKEN else 'MISSING'} db={'set' if DB_URL else 'MISSING'} "
-                  f"admin={ADMIN_ID or 'MISSING'}")
+                  f"admin={'set' if ADMIN_ID else 'MISSING'}")
             handle_update(update)
         except Exception as e:
             import traceback

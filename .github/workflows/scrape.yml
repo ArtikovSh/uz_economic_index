@@ -2,10 +2,11 @@ name: uz-economic-index
 
 # Collects one full Tashkent day (2 days back) right after Tashkent midnight, so
 # every post has been public >= 24h when measured; labels new posts with Gemini,
-# rebuilds the daily index and commits the results. The 02:05 run is a backup: it
-# only collects channels the 00:05 run missed (posts are never re-measured) and
-# continues any unfinished labelling. If anything needs a human, the job fails
-# and the bot sends an alert (secrets TELEGRAM_BOT_TOKEN + BOT_ADMIN_ID).
+# appends final days to the posts table and closed periods (day / week / month /
+# quarter / year) to the indices table, and commits the results. The 02:05 run is
+# a backup: it only collects channels the 00:05 run missed (posts are never
+# re-measured) and continues any unfinished labelling. If anything needs a human,
+# the job fails and the bot sends an alert (secrets TELEGRAM_BOT_TOKEN + BOT_ADMIN_ID).
 
 on:
   workflow_dispatch:            # manual "Run workflow" button
@@ -81,7 +82,7 @@ jobs:
         run: |
           git config user.name "ArtikovSh"
           git config user.email "ortikovshokhrukh@gmail.com"
-          git add data/                          # messages + daily_index + label cache
+          git add data/                          # posts table + indices table + pending
           git add -f output/economic_index_latest.xlsx || true
           if git diff --cached --quiet; then
             echo "Nothing new to commit."

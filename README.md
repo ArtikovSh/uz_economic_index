@@ -3,55 +3,57 @@
 O'zbekiston Telegram yangilik kanallaridan **ikkita iqtisodiy indeks** quruvchi Python
 quvuri. To'liq metodologiya: [METHODOLOGY.md](METHODOLOGY.md).
 
-| Indeks | Nimani o'lchaydi | Diapazon |
-|--------|------------------|----------|
-| **EAI** — Economic Attention Index | Yangiliklar oqimining qancha qismi iqtisodga oid (e'tibor bilan tortilgan) | 0…1 |
-| **ESI** — Economic Sentiment Index | Iqtisodiy yangiliklarning ohangi (ijobiy/salbiy) | −1…+1 |
+| Indeks | Formula | Shkala |
+|--------|---------|--------|
+| **EAI** — Economic Attention Index | 100 · iqtisodiy / reklama emas | 0–100% |
+| **ESI** — Economic Sentiment Index | 100 · (ijobiy − salbiy) / iqtisodiy | −100…+100, 0 = neytral |
+
+Ikkalasi ham barcha kanallar bo'yicha birga, oddiy sanoq bilan hisoblanadi. Kun, hafta,
+oy, chorak va yil uchun formula bir xil.
 
 ## Jarayon
 
 1. **Yig'ish** — har kuni Toshkent vaqti bilan 00:05 da 2 kun oldingi to'liq kun
-   (00:00–23:59) yig'iladi. Shu sababli har bir post ko'rishlari o'lchanayotganda
-   kamida 24 soat ochiq turgan bo'ladi. Har post **bir marta** o'lchanadi.
+   yig'iladi (6-oktabr 00:05 → 4-oktabr postlari). Har post **bir marta** o'lchanadi.
    02:05 dagi zaxira run faqat birinchi run yig'a olmagan kanallarni yig'adi.
-   Yig'ilmay qolgan kunlar keyinroq to'ldirilmaydi.
-2. **Tasniflash** — har yangi post **Gemini** bilan bir marta belgilanadi: iqtisodiymi,
-   mavzu (10 kategoriya), relevantlik, sentiment, reklama/dayjest/xorijiy bayroqlari.
-   Natija `data/llm_labels.csv` da keshlanadi. Qoidaga asoslangan zaxira
-   klassifikator yo'q: belgilanmay qolgan post keyingi run'da qayta yuboriladi.
-3. **Filtrlar** — reklama, dayjest va xorijiy-makro postlar indeksga kirmaydi. Kanal
-   o'zi reklama deb belgilagan post (`(реклама)`, oxirida `Reklama`) Gemini javobidan
-   qat'i nazar chiqariladi.
-4. **Indeks** — kunlik EAI/ESI (`data/daily_index.csv`) va Excel hisobot.
-   Postlari to'liq belgilanmagan kun indekssiz qoladi (`unlabeled_messages` > 0)
-   va keyingi run'da avtomatik to'ldiriladi.
+   Yig'ilmay qolgan kunlar keyinroq to'ldirilmaydi. Ko'rishlar va forward'lar indeksda
+   ishlatilmaydi, lekin yig'ib boriladi.
+2. **Tasniflash** — har post **Gemini** bilan bir marta belgilanadi: iqtisodiymi, mavzu,
+   sentiment, reklama/dayjest/xorijiy bayroqlari. Zaxira klassifikator yo'q: belgilanmay
+   qolgan post keyingi run'da qayta yuboriladi.
+3. **Filtrlar** — kanal o'zi reklama deb belgilagan post (`(реклама)`, oxirida `Reklama`)
+   Gemini javobidan qat'i nazar reklama hisoblanadi.
+4. **Ikki jadval** — kun yakunlangach (barcha postlari belgilangach) uning postlari
+   **Xabarlar** jadvaliga, kun qatori **Indekslar** jadvaliga qo'shiladi. Hafta, oy,
+   chorak va yil qatori davrning oxirgi kuni yakunlanganda qo'shiladi. Qo'shilgan qator
+   keyin hech qachon o'zgartirilmaydi.
 
 ## Modullar
 
 | Fayl | Vazifasi |
 |------|----------|
-| `main.py` | Kunlik quvur: yig'ish → Gemini → indeks → Excel |
+| `main.py` | Kunlik quvur: yig'ish → Gemini → kunni yakunlash → indekslar → Excel |
 | `config.py` | Sozlamalar: kanallar, yig'ish oynasi, Gemini, proxy |
 | `scraper.py` | Telethon orqali kunni yig'ish; sessiyani oldindan tekshiradi |
-| `store.py` | O'suvchi, dublikatsiz arxiv (`data/messages.csv`) |
-| `llm_classifier.py` | Gemini klassifikatori: kesh, partiyalar, kvota nazorati |
+| `store.py` | Ikki jadval va kutish fayli (faqat qo'shish) |
+| `llm_classifier.py` | Gemini klassifikatori: partiyalar, kvota nazorati |
 | `prompts.py` | Gemini prompti va JSON sxema |
-| `indicator.py` | Filtrlar va EAI/ESI hisobi |
-| `monthly.py`, `main_monthly.py` | Oylik indeks (to'liqlik nazorati bilan) |
-| `excel_exporter.py` | Excel hisobotlar (kunlik va oylik) |
+| `indicator.py` | Reklama filtri, kunni yakunlash, EAI/ESI sanog'i |
+| `excel_exporter.py` | Excel hisobot ("Indekslar", "Xabarlar", "Metodika") |
 | `sync_to_db.py` | Supabase'ga sinxronlash (bot va Mini App uchun) |
-| `sheets_sync.py` | Natijalarni Google Sheets'ga yozish (jonli oyna) |
+| `sheets_sync.py` | Jadvallarni Google Sheets'ga qo'shish |
 | `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, Gemini, Sheets, bot ogohlantirishi |
 | `export_session.py` | CI uchun Telegram sessiya satrini yaratish |
 | `app/` | Telegram bot + Mini App (Vercel) |
 
 ## Natijalar
 
-- `data/messages.csv` — xom arxiv (har postning `scraped_at` o'lchov vaqti bilan)
-- `data/llm_labels.csv` — Gemini belgilari keshi (versiya va model bilan)
-- `data/daily_index.csv` — kunlik EAI/ESI qatori
-- `data/monthly_index.csv` — oylik qator (`days_covered` / `days_expected`, `complete`)
-- `output/economic_index_latest.xlsx` — kunlik hisobot; oylik hisobot Actions artifact'da
+- `data/messages.csv` — **Xabarlar**: har bir yakunlangan post, Gemini belgilari va indeks
+  bayroqlari (`nonad`, `econ`, `tone`) bilan, sana tartibida
+- `data/indices.csv` — **Indekslar**: har bir yopilgan kun, hafta, oy, chorak va yil
+  (sanoqlar, EAI, ESI, izoh)
+- `data/pending.csv` — kuni hali yakunlanmagan postlar (odatda bo'sh)
+- `output/economic_index_latest.xlsx` — Excel hisobot (Actions artifact sifatida ham)
 
 ## GitHub sozlamalari
 
@@ -71,25 +73,22 @@ avtomatik tanlanadi va keyin o'sha model saqlanib qoladi. Qaysi modelda bepul
 kvota borligini https://aistudio.google.com/rate-limit da ko'ring.
 
 **Workflow'lar:**
-- `uz-economic-index` — kunlik (00:05 va 02:05 Toshkent) + qo'lda.
-- `uz-economic-index-monthly` — har oyning 3-kunida o'tgan oy uchun. Qo'lda
-  ishga tushirganda `target_month` (YYYY-MM) bilan istalgan oyni qayta hisoblash mumkin.
+- `uz-economic-index` — kunlik (00:05 va 02:05 Toshkent) + qo'lda. Barcha davrlar
+  (kun, hafta, oy, chorak, yil) shu run'da yopiladi.
 - `check` — post yig'masdan hamma narsani tekshiradi (Telegram, Gemini, Sheets) va natijani botga yuboradi. Kunlik run bilan bir vaqtda ishlamaydi (navbatga turadi).
 
 ## Google Sheets oynasi
 
 Hisob-kitob backend'da (GitHub Actions) bajariladi, jadvalga faqat natija yoziladi
-(formulalar yo'q). Har run'dan keyin jadval yangilanadi:
+(formulalar yo'q). Har run'dan keyin yangi qatorlar pastdan qo'shiladi:
 
 | Varaq | Mazmuni |
 |-------|---------|
-| Kunlik indeks | kunlik EAI/ESI qatori |
-| Oylik indeks | oylik qator |
-| Xabarlar | har bir belgilangan post (mavzu, bayroqlar, ballar, havola), eng yangisi tepada |
-| Info | oxirgi yangilanish vaqti, belgilash holati |
+| Indekslar | har bir yopilgan kun / hafta / oy / chorak / yil |
+| Xabarlar | har bir yakunlangan post (mavzu, bayroqlar, ohang, havola), sana tartibida |
+| Info | oxirgi yangilanish vaqti, qatorlar soni, kutayotgan postlar |
 
-Jadvalga qo'lda yozmang: o'chirilgan yoki o'zgartirilgan qatorlarni keyingi run qayta tiklaydi.
-Tahlil uchun alohida varaq yoki nusxa oching.
+Jadvalga qo'lda yozmang. Tahlil uchun alohida varaq yoki nusxa oching.
 
 **Bir martalik sozlash (~20 daqiqa):**
 1. Google Sheets'da yangi jadval yarating. Uning manzilidagi ID'ni nusxalang:

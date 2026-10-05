@@ -45,6 +45,27 @@ create or replace view posts as
     from messages m left join labels l
       on m.channel = l.channel and m.message_id = l.message_id;
 
+-- ---------- index table (written by sync_to_db.py; one row per closed period) ----
+create table if not exists indices (
+    period_type    text    not null,          -- kun | hafta | oy | chorak | yil
+    period         text    not null,          -- 2026-10-04 | 2026-W40 | 2026-10 | 2026-Q4 | 2026
+    start_date     date    not null,
+    end_date       date    not null,
+    days           integer,
+    days_expected  integer,
+    posts          integer,
+    nonad          integer,
+    econ           integer,
+    pos            integer,
+    neu            integer,
+    neg            integer,
+    eai            real,                      -- % of non-ad posts that are economic
+    esi            real,                      -- 100 * (pos - neg) / econ
+    note           text,
+    primary key (period_type, period)
+);
+
+-- ---------- legacy daily/monthly tables (pre-v4; no longer written) --------
 -- ---------- daily index time series ----------------------------------
 create table if not exists daily_index (
     date_only          date primary key,
@@ -109,5 +130,6 @@ alter table messages       enable row level security;
 alter table labels         enable row level security;
 alter table daily_index    enable row level security;
 alter table monthly_index  enable row level security;
+alter table indices        enable row level security;
 alter table app_users      enable row level security;
 alter table subscriptions  enable row level security;

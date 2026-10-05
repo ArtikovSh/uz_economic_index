@@ -29,7 +29,7 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
    *New repository secret* → nomi **`SUPABASE_DB_URL`** → qiymati yuqoridagi URI.
 5. **Sinang:** *Actions → uz-economic-index → Run workflow*. Log'da
    `Sync to Supabase ... synced N rows` chiqadi. Supabase → *Table Editor* da
-   `daily_index`, `messages`, `labels` to'lganini ko'rasiz.
+   `indices`, `messages`, `labels` to'lganini ko'rasiz (`indices` jadvalini sinxronlash o'zi yaratadi).
 
 > `SUPABASE_DB_URL` qo'yilmasa — sync bosqichi **no-op** (hech narsa buzilmaydi).
 > Sxema xavfsiz: RLS yoqilgan, anon kalit hech narsa o'qiy olmaydi — faqat backend

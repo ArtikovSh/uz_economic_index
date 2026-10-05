@@ -4,7 +4,7 @@ import socks
 # =============================================================================
 # Telegram access — from env only (GitHub secrets TG_API_ID / TG_API_HASH /
 # TG_SESSION_STRING; get the API pair at my.telegram.org). Validated where used,
-# so scripts that never touch Telegram (monthly index, DB sync) run without them.
+# so scripts that never touch Telegram (DB and Sheets sync) run without them.
 # =============================================================================
 API_ID = os.getenv("TG_API_ID", "").strip()
 API_HASH = os.getenv("TG_API_HASH", "").strip()
@@ -29,22 +29,22 @@ SCRAPE_DAYS_BACK = int(os.getenv("SCRAPE_DAYS_BACK", "2"))
 TZ_OFFSET_HOURS = int(os.getenv("TZ_OFFSET_HOURS", "5"))          # Tashkent = UTC+5
 
 # =============================================================================
-# Paths / storage
+# Paths / storage (see store.py). Both tables are append-only: a row is added once
+# it is final and is never changed afterwards.
 # =============================================================================
-OUTPUT_DIR = "output"          # rendered Excel reports
-DATA_DIR = "data"              # persistent master store + time series
+OUTPUT_DIR = "output"          # rendered Excel report
+DATA_DIR = "data"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-MASTER_CSV = os.path.join(DATA_DIR, "messages.csv")        # raw, deduped, growing
-DAILY_CSV = os.path.join(DATA_DIR, "daily_index.csv")      # the daily time series
-MONTHLY_CSV = os.path.join(DATA_DIR, "monthly_index.csv")  # the monthly time series
-LLM_LABELS_CSV = os.path.join(DATA_DIR, "llm_labels.csv")  # cached Gemini labels
+MASTER_CSV = os.path.join(DATA_DIR, "messages.csv")    # "Xabarlar": every final post with its labels
+INDICES_CSV = os.path.join(DATA_DIR, "indices.csv")    # "Indekslar": day/week/month/quarter/year rows
+PENDING_CSV = os.path.join(DATA_DIR, "pending.csv")    # posts whose day is not final yet
 
 # =============================================================================
-# Gemini classifier. Every post is labelled once and cached in llm_labels.csv.
-# There is no rule-based fallback: a post Gemini could not label stays unlabelled
-# and is retried on the next run, so the index never mixes labelling methods.
+# Gemini classifier. Every post is labelled once. There is no rule-based fallback:
+# a post Gemini could not label waits in pending.csv and is retried on the next
+# run, so the index never mixes labelling methods.
 # =============================================================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 # Empty = automatic and "sticky": keep the model that produced the cached labels,
@@ -60,7 +60,7 @@ LLM_LABEL_VERSION = "v3"     # bump to re-label everything (v3: Gemini + protoco
 # =============================================================================
 # Index parameters (see METHODOLOGY.md)
 # =============================================================================
-FORWARD_WEIGHT = 2.0     # a forward counts as N views inside the engagement log
+TONE_THRESHOLD = 0.15    # sentiment above +0.15 is positive, below -0.15 negative
 
 # =============================================================================
 # Proxy (local runs only — e.g. export_session.py). Telegram is DPI-reset on some

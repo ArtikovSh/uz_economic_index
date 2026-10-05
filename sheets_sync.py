@@ -1,15 +1,14 @@
 """
-Mirror the pipeline's results into a Google Sheet, so the data is always
-up to date in one place that can be viewed and shared from any device.
+Mirror the two tables into a Google Sheet, so they can be viewed and shared from
+any device. Everything is computed by the pipeline; the sheet only receives values.
 
-The backend stays the single source of truth: everything is computed in Python
-from data/*.csv and only WRITTEN to the sheet (no formulas). Tabs:
-  * Kunlik indeks – the daily EAI/ESI series (rewritten each run, small)
-  * Oylik indeks  – the monthly series (rewritten each run, tiny)
-  * Xabarlar      – every labelled post with its topic/flags/scores; append-only
-                    (a post is written once it has a label), newest first. Fully
-                    rewritten only when LLM_LABEL_VERSION changes.
-  * Info          – last update time, label version, coverage
+  * Indekslar – data/indices.csv, append-only
+  * Xabarlar  – data/messages.csv, append-only
+  * Info      – last update, rows, posts still waiting
+
+Only rows not yet in the sheet are appended at the bottom, in the same order as the
+CSV; nothing already in the sheet is rewritten. A tab whose header does not match
+the current layout is rebuilt once.
 
 Credentials (GitHub secrets): GOOGLE_SERVICE_ACCOUNT_JSON (the service account's
 JSON key) and GSHEET_ID (from the sheet URL). The sheet must be shared with the
@@ -23,21 +22,23 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from config import DAILY_CSV, MONTHLY_CSV, LLM_LABEL_VERSION, TZ_OFFSET_HOURS
-from indicator import score_messages
-from llm_classifier import label_messages, post_keys
-from store import load_master
+from config import TZ_OFFSET_HOURS, LLM_LABEL_VERSION
+from store import load_ledger, load_indices, load_pending, post_keys
 
 SA_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
 SHEET_ID = os.getenv("GSHEET_ID", "").strip()
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]     # this sheet only
+LEGACY_TABS = ["Kunlik indeks", "Oylik indeks"]
+CHUNK = 2000                                                   # rows per append request
 
-TAB_DAILY, TAB_MONTHLY, TAB_POSTS, TAB_INFO = "Kunlik indeks", "Oylik indeks", "Xabarlar", "Info"
-POST_HEADER = ["sana (Toshkent)", "kanal", "havola", "mavzu", "iqtisodiy", "indeksda",
-               "reklama", "dayjest", "xorijiy", "relevance", "sentiment", "views",
-               "forwards", "matn", "model", "o'lchangan (UTC)", "post_id"]
-ID_COL = len(POST_HEADER)                # post_id is the last column
-CHUNK = 2000                             # rows per append request
+INDEX_HEADER = ["davr turi", "davr", "boshlanish", "tugash", "kunlar", "kunlar (jami)",
+                "jami xabarlar", "reklama emas", "iqtisodiy", "ijobiy", "neytral", "salbiy",
+                "EAI, %", "ESI (balans)", "izoh"]
+INDEX_FIELDS = ["period_type", "period", "start", "end", "days", "days_expected", "posts",
+                "nonad", "econ", "pos", "neu", "neg", "EAI", "ESI", "note"]
+POST_HEADER = ["sana (Toshkent)", "kanal", "havola", "mavzu", "iqtisodiy (LLM)", "reklama",
+               "dayjest", "xorijiy", "indeksda", "ohang", "sentiment", "relevance",
+               "ko'rishlar", "forwardlar", "matn", "model", "o'lchangan (UTC)", "post_id"]
 
 
 def _cell(v):
@@ -53,73 +54,54 @@ def _cell(v):
     return str(v)
 
 
-def _col_letter(n):
-    s = ""
-    while n:
-        n, r = divmod(n - 1, 26)
-        s = chr(65 + r) + s
-    return s
+def index_rows(indices):
+    """Sheet rows for the indices table; the key (type|period) is columns 1-2."""
+    return [[_cell(v) for v in r] for r in indices[INDEX_FIELDS].itertuples(index=False)]
 
 
-def post_rows(scored):
-    """Sheet rows for labelled posts, newest first."""
-    df = scored[scored["labeled"] == 1].copy()
-    local = pd.to_datetime(df["date"], errors="coerce") + pd.Timedelta(hours=TZ_OFFSET_HOURS)
-    df["_local"] = local.dt.strftime("%Y-%m-%d %H:%M")
+def post_rows(ledger):
+    """Sheet rows for the posts table; the key is the last column."""
+    df = ledger.copy()
     df["_link"] = ("https://t.me/" + df["channel"].astype(str).str.lstrip("@")
                    + "/" + df["message_id"].astype(str))
     df["_id"] = post_keys(df)
-    df = df.sort_values("_local", ascending=False)
-    cols = ["_local", "channel", "_link", "primary_topic", "is_economic", "in_index",
-            "is_ad", "is_digest", "is_foreign", "relevance", "sentiment", "views",
+    cols = ["date_local", "channel", "_link", "primary_topic", "is_economic", "is_ad",
+            "is_digest", "is_foreign", "econ", "tone", "sentiment", "relevance", "views",
             "forwards", "raw_text", "label_model", "scraped_at", "_id"]
-    return [[_cell(v) for v in row] for row in df[cols].itertuples(index=False)]
-
-
-def table_rows(df):
-    return [list(df.columns)] + [[_cell(v) for v in row] for row in df.itertuples(index=False)]
+    return [[_cell(v) for v in r] for r in df[cols].itertuples(index=False)]
 
 
 # ------------------------------------------------------------------ sheet ops -
-def _tab(sh, title, header=None, index=None):
+def _tab(sh, title, header, index):
+    """The tab with this header; created, or rebuilt once if its header changed."""
     import gspread
     try:
-        return sh.worksheet(title)
+        ws = sh.worksheet(title)
     except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title=title, rows=100, cols=max(len(header or []), 2), index=index)
-        if header:
-            ws.update([header], range_name="A1")
-            ws.freeze(rows=1)
-        return ws
-
-
-def _rewrite(ws, rows):
-    """Replace a whole tab with rows (header first)."""
-    ws.clear()
-    ws.resize(rows=max(len(rows), 2), cols=max(len(rows[0]), 2))
-    ws.update(rows, range_name="A1")
-    ws.freeze(rows=1)
-
-
-def sync_posts(ws, rows, full):
-    """Append posts not yet in the tab (or rewrite all). Returns rows written."""
-    if full:
+        ws = sh.add_worksheet(title=title, rows=100, cols=len(header), index=index)
+    first = ws.row_values(1)
+    if first != header:
         ws.clear()
-        ws.resize(rows=2, cols=len(POST_HEADER))
-        ws.update([POST_HEADER], range_name="A1")
+        ws.resize(rows=2, cols=len(header))
+        ws.update([header], range_name="A1")
         ws.freeze(rows=1)
-        new = rows
-        existing = 0
-    else:
-        ids = ws.col_values(ID_COL)[1:]
-        known = set(ids)
-        existing = len(ids)
-        new = [r for r in rows if r[-1] not in known]
+    return ws
+
+
+def append_missing(ws, rows, key_cols):
+    """Append the rows that come after the last row already in the tab.
+
+    key_cols: 1-based sheet columns that together identify a row."""
+    cols = [ws.col_values(c)[1:] for c in key_cols]
+    present = ["|".join(map(str, k)) for k in zip(*cols)]
+    start = 0
+    if present:
+        pos = {"|".join(str(r[c - 1]) for c in key_cols): i for i, r in enumerate(rows)}
+        last = next((pos[k] for k in reversed(present) if k in pos), None)
+        start = 0 if last is None else last + 1
+    new = rows[start:]
     for i in range(0, len(new), CHUNK):
         ws.append_rows(new[i:i + CHUNK], value_input_option="RAW")
-    total = existing + len(new)
-    if new and total > 1:
-        ws.sort((1, "des"), range=f"A2:{_col_letter(ID_COL)}{total + 1}")
     return len(new)
 
 
@@ -128,11 +110,6 @@ def main() -> int:
         print("GOOGLE_SERVICE_ACCOUNT_JSON / GSHEET_ID not set -> skipping Google Sheets sync.")
         return 0
     import gspread
-
-    master = load_master()
-    labels, status = label_messages(master, allow_calls=False)    # cache only
-    scored = score_messages(master, labels)
-    rows = post_rows(scored)
 
     try:
         creds = json.loads(SA_JSON)
@@ -148,33 +125,35 @@ def main() -> int:
         return 1
     print(f"--- Sync to Google Sheet '{sh.title}' ---")
 
-    tabs = {title: _tab(sh, title, header, index=i) for i, (title, header) in enumerate(
-        [(TAB_DAILY, None), (TAB_MONTHLY, None), (TAB_POSTS, POST_HEADER), (TAB_INFO, None)])}
-    info, posts = tabs[TAB_INFO], tabs[TAB_POSTS]
-    stored_version = (info.acell("B2").value or "").strip()
-    full = stored_version != LLM_LABEL_VERSION
-    n = sync_posts(posts, rows, full)
-    print(f"  {TAB_POSTS}: {'rewrote' if full else 'appended'} {n} posts")
+    ledger, indices, pending = load_ledger(), load_indices(), load_pending()
+    idx_ws = _tab(sh, "Indekslar", INDEX_HEADER, 0)
+    n = append_missing(idx_ws, index_rows(indices), [1, 2])      # key: type + period
+    print(f"  Indekslar: +{n} rows")
+    post_ws = _tab(sh, "Xabarlar", POST_HEADER, 1)
+    n = append_missing(post_ws, post_rows(ledger), [len(POST_HEADER)])   # key: post_id
+    print(f"  Xabarlar: +{n} rows")
 
-    for title, path in ((TAB_DAILY, DAILY_CSV), (TAB_MONTHLY, MONTHLY_CSV)):
-        if os.path.exists(path):
-            _rewrite(tabs[title], table_rows(pd.read_csv(path)))
-            print(f"  {title}: updated")
+    for title in LEGACY_TABS:                       # tabs of the old layout
+        try:
+            sh.del_worksheet(sh.worksheet(title))
+            print(f"  removed old tab '{title}'")
+        except gspread.WorksheetNotFound:
+            pass
 
-    daily = pd.read_csv(DAILY_CSV) if os.path.exists(DAILY_CSV) else pd.DataFrame()
-    last_full = (str(daily.loc[daily["EAI"].notna(), "date_only"].max())
-                 if len(daily) and "EAI" in daily else "")
+    info = _tab(sh, "Info", ["Ko'rsatkich", "Qiymat"], 2)
     now = datetime.now(timezone(timedelta(hours=TZ_OFFSET_HOURS))).strftime("%Y-%m-%d %H:%M")
-    _rewrite(info, [
-        ["Ko'rsatkich", "Qiymat"],
-        ["Label versiyasi", LLM_LABEL_VERSION],          # read back as B2 next run
+    last_day = indices.loc[indices["period_type"] == "kun", "period"]
+    info.resize(rows=20, cols=2)
+    info.batch_clear(["A2:B20"])
+    info.update([
         ["Oxirgi yangilanish (Toshkent)", now],
-        ["Jami postlar", len(master)],
-        ["Belgilangan postlar", len(rows)],
-        ["Belgilash kutilmoqda", status["pending"]],
-        ["Indeksi bor oxirgi kun", last_full],
+        ["Indekslar qatorlari", len(indices)],
+        ["Xabarlar qatorlari", len(ledger)],
+        ["Oxirgi yakunlangan kun", last_day.iloc[-1] if len(last_day) else ""],
+        ["Kun yakunlanishini kutayotgan xabarlar", len(pending)],
+        ["Label versiyasi", LLM_LABEL_VERSION],
         ["Manba", "https://github.com/ArtikovSh/uz_economic_index"],
-    ])
+    ], range_name="A2")
     print("Google Sheets sync done.")
     return 0
 

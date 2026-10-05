@@ -1,33 +1,28 @@
 """
-Gemini message classifier with a persistent label cache.
+Gemini message classifier for the posts waiting in pending.csv.
 
-* Only posts without a cached label for the current LLM_LABEL_VERSION are sent,
-  newest first (so the day just collected is labelled before any backlog).
+* Posts without a label for the current LLM_LABEL_VERSION are sent oldest first,
+  so days can be finalised in date order.
 * Posts go in batches with a JSON response schema; requests are paced to the
   free-tier per-minute limit and capped per run (LLM_MAX_REQUESTS).
-* No rule-based fallback: a post Gemini could not label stays unlabelled and is
+* No rule-based fallback: a post Gemini could not label keeps waiting and is
   retried on the next run, so the index never mixes labelling methods.
-* The model is "sticky": GEMINI_MODEL if set, else the model that produced the
-  cached labels, else the newest stable Flash model available to the key. Each
-  label records the model that produced it.
+* The model is "sticky": GEMINI_MODEL if set, else the model of the latest labels,
+  else the newest stable Flash model available to the key. Each label records the
+  model that produced it.
 """
 import json
-import os
 import re
 import time
 
-import pandas as pd
 import requests
 
 from config import (GEMINI_API_KEY, GEMINI_MODEL, LLM_BATCH_SIZE, LLM_MAX_CHARS,
-                    LLM_RPM, LLM_MAX_REQUESTS, LLM_LABELS_CSV, LLM_LABEL_VERSION)
+                    LLM_RPM, LLM_MAX_REQUESTS, LLM_LABEL_VERSION)
 from prompts import SYSTEM_PROMPT, RESPONSE_SCHEMA, CATEGORIES, build_user_prompt
-from store import write_csv
+from store import LABEL_COLS, post_keys
 
 API = "https://generativelanguage.googleapis.com/v1beta"
-LABEL_COLS = ["is_economic", "primary_topic", "relevance", "sentiment",
-              "is_ad", "is_digest", "is_foreign"]
-CACHE_COLS = ["key", "label_version", "model"] + LABEL_COLS
 FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.1-flash-lite"]   # if /models can't be listed
 _STABLE_FLASH = re.compile(r"^gemini-(\d+(?:\.\d+)?)-flash(-lite)?$")
 
@@ -184,81 +179,38 @@ def classify_batch(model, texts):
     raise TransientError(f"{model}: {last}")
 
 
-# ------------------------------------------------------------------ cache ------
-def load_cache():
-    if not os.path.exists(LLM_LABELS_CSV):
-        return pd.DataFrame(columns=CACHE_COLS)
-    df = pd.read_csv(LLM_LABELS_CSV)
-    for c in CACHE_COLS:
-        if c not in df.columns:
-            df[c] = pd.NA
-    df["key"] = df["key"].astype(str)
-    df["label_version"] = df["label_version"].astype(str)
-    return df[CACHE_COLS]
-
-
-def _save_cache(cache, new_rows):
-    if not new_rows:
-        return cache
-    cache = pd.concat([cache, pd.DataFrame(new_rows, columns=CACHE_COLS)], ignore_index=True)
-    cache = cache.drop_duplicates(subset=["key"], keep="last")
-    write_csv(cache, LLM_LABELS_CSV)
-    return cache
-
-
 # --------------------------------------------------------------- public --------
-def post_keys(df):
-    return df["channel"].astype(str) + "|" + df["message_id"].astype(str)
+def label_pending(pending, save=None, sticky=None):
+    """Label every post in `pending` without a current-version label, oldest first.
 
-
-def label_messages(df, allow_calls=True):
-    """Label every post in df that has no cached label yet.
-
-    Returns (labels, status): labels is indexed like df with LABEL_COLS plus
-    'label_model' (NaN where still unlabelled); status = {"error", "warnings",
-    "new", "pending"} where "error" is set only for problems that need a human.
+    Labels are written into pending's LABEL_COLS (+ label_version, label_model);
+    `save(pending)` is called every few batches and at the end, so progress survives
+    a timeout. Returns (pending, status) with status = {"error", "warnings", "new"},
+    where "error" is set only for problems that need a human.
     """
-    status = {"error": None, "warnings": [], "new": 0, "pending": 0}
-    keys = post_keys(df)
-    cache = load_cache()
-    current = cache[cache["label_version"] == LLM_LABEL_VERSION]
-    done = set(current["key"])
-
-    todo = df.loc[~keys.isin(done)].sort_values("date", ascending=False)
-    if len(todo) and allow_calls:
-        cache = _label(todo, cache, current, status)
-        current = cache[cache["label_version"] == LLM_LABEL_VERSION]
-
-    lab = current.set_index("key")[["model"] + LABEL_COLS]
-    out = lab.reindex(keys.values)
-    out.index = df.index
-    out = out.rename(columns={"model": "label_model"})
-    status["pending"] = int(out["is_economic"].isna().sum())
-    return out, status
-
-
-def _label(todo, cache, current, status):
+    status = {"error": None, "warnings": [], "new": 0}
+    todo = pending[pending["label_version"].astype(str) != LLM_LABEL_VERSION]
+    if todo.empty:
+        return pending, status
     if not GEMINI_API_KEY:
         status["error"] = "GEMINI_API_KEY is not set"
-        return cache
-    sticky = None
-    if len(current) and current["model"].notna().any():
-        sticky = str(current["model"].dropna().iloc[-1])
+        return pending, status
     try:
         models = candidate_models(sticky)
     except ProviderError as e:
         status["error"] = str(e)
-        return cache
+        return pending, status
     model = models.pop(0)
+    todo = todo.sort_values("date")
     print(f"  Gemini model: {model} | {len(todo)} posts to label "
           f"(batch {LLM_BATCH_SIZE}, max {LLM_MAX_REQUESTS} requests this run)")
 
     texts = todo["raw_text"].fillna("").astype(str).str.slice(0, LLM_MAX_CHARS).tolist()
-    keys = post_keys(todo).tolist()
-    batches = [(keys[i:i + LLM_BATCH_SIZE], texts[i:i + LLM_BATCH_SIZE])
-               for i in range(0, len(texts), LLM_BATCH_SIZE)]
+    idx = todo.index.tolist()
+    queue = [(idx[i:i + LLM_BATCH_SIZE], texts[i:i + LLM_BATCH_SIZE])
+             for i in range(0, len(texts), LLM_BATCH_SIZE)]
     interval = 60.0 / LLM_RPM if LLM_RPM > 0 else 0.0
-    requests_used, last_call, pending_rows = 0, 0.0, []
+    requests_used, last_call, since_save = 0, 0.0, 0
 
     def call(batch_texts):
         nonlocal requests_used, last_call
@@ -269,14 +221,13 @@ def _label(todo, cache, current, status):
         requests_used += 1
         return classify_batch(model, batch_texts)
 
-    queue = list(batches)
     try:
         while queue:
             if requests_used >= LLM_MAX_REQUESTS:
                 status["warnings"].append(
                     f"request cap ({LLM_MAX_REQUESTS}) reached — the rest is labelled next run")
                 break
-            bkeys, btexts = queue.pop(0)
+            bidx, btexts = queue.pop(0)
             try:
                 labels = call(btexts)
             except ModelUnavailable as e:
@@ -286,24 +237,28 @@ def _label(todo, cache, current, status):
                 old, model = model, models.pop(0)
                 status["warnings"].append(f"model switched {old} -> {model} ({e})")
                 print(f"  !! {e} -> switching model {old} -> {model}")
-                queue.insert(0, (bkeys, btexts))
+                queue.insert(0, (bidx, btexts))
                 continue
             except ValueError as e:                # bad output: retry as two halves
-                if len(bkeys) > 1:
-                    half = len(bkeys) // 2
-                    queue[:0] = [(bkeys[:half], btexts[:half]), (bkeys[half:], btexts[half:])]
-                    print(f"  batch of {len(bkeys)} unusable ({e}) -> split")
+                if len(bidx) > 1:
+                    half = len(bidx) // 2
+                    queue[:0] = [(bidx[:half], btexts[:half]), (bidx[half:], btexts[half:])]
+                    print(f"  batch of {len(bidx)} unusable ({e}) -> split")
                 else:
-                    status["warnings"].append(f"post {bkeys[0]} could not be labelled ({e})")
+                    key = post_keys(pending.loc[bidx]).iloc[0]
+                    status["warnings"].append(f"post {key} could not be labelled ({e})")
                 continue
-            for k, lab in zip(bkeys, labels):
-                pending_rows.append({"key": k, "label_version": LLM_LABEL_VERSION,
-                                     "model": model, **lab})
+            for i, lab in zip(bidx, labels):
+                for c in LABEL_COLS:
+                    pending.at[i, c] = lab[c]
+                pending.at[i, "label_version"] = LLM_LABEL_VERSION
+                pending.at[i, "label_model"] = model
             status["new"] += len(labels)
+            since_save += len(labels)
             print(f"    labelled {status['new']}/{len(texts)}")
-            if len(pending_rows) >= 5 * LLM_BATCH_SIZE:   # flush often: survive timeouts
-                cache = _save_cache(cache, pending_rows)
-                pending_rows = []
+            if save and since_save >= 5 * LLM_BATCH_SIZE:   # flush often: survive timeouts
+                save(pending)
+                since_save = 0
     except QuotaExhausted as e:
         status["warnings"].append(f"{e} — the rest is labelled next run")
     except TransientError as e:
@@ -311,5 +266,6 @@ def _label(todo, cache, current, status):
     except ProviderError as e:
         status["error"] = str(e)
     finally:
-        cache = _save_cache(cache, pending_rows)
-    return cache
+        if save and status["new"]:
+            save(pending)
+    return pending, status

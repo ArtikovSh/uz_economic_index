@@ -1,6 +1,7 @@
 """
-Daily pipeline: collect one Tashkent day -> label new posts with Gemini ->
-rebuild the daily index -> Excel report.
+Daily pipeline: collect one Tashkent day -> label new posts with Gemini -> append
+final days to the posts table -> append closed periods to the indices table ->
+Excel report.
 
 Exits non-zero when something needs a human (expired Telegram session, a failed
 channel, a Gemini key/model problem) — after saving everything it could, so the
@@ -9,24 +10,29 @@ workflow still commits the progress and then sends an alert.
 import asyncio
 import sys
 
-from config import CHANNELS
+import pandas as pd
+
+from config import CHANNELS, MASTER_CSV, INDICES_CSV
 from excel_exporter import export_results
-from indicator import score_messages, build_daily_index
-from llm_classifier import label_messages
+from indicator import finalize_days, new_index_rows
+from llm_classifier import label_pending
 from scraper import target_day_range, collected_channels, run_scraper, SessionError
-from store import load_master, merge_master, save_daily
+from store import (RAW_COLS, LEDGER_COLS, INDEX_COLS, load_ledger, load_pending, load_indices,
+                   save_pending, add_to_pending, append_rows, migrate_legacy)
 
 PROBLEMS_FILE = "run_problems.txt"     # read by the workflow's alert step
 
 
 def main() -> int:
     problems = []
-    master = load_master()
+    migrate_legacy()
+    ledger, pending, indices = load_ledger(), load_pending(), load_indices()
 
     start_utc, end_utc, target = target_day_range()
     print(f"--- STEP 1: Collect {target} (Tashkent) | UTC "
           f"[{start_utc:%Y-%m-%d %H:%M} .. {end_utc:%Y-%m-%d %H:%M}) ---")
-    done = collected_channels(master, start_utc, end_utc)
+    seen = pd.concat([ledger[RAW_COLS], pending[RAW_COLS]], ignore_index=True)
+    done = collected_channels(seen, start_utc, end_utc)
     todo = [ch for ch in CHANNELS if ch not in done]
     if not todo:
         print("All channels already collected for this day — nothing to scrape "
@@ -36,30 +42,38 @@ def main() -> int:
             print(f"Already collected: {sorted(done)}; collecting: {todo}")
         try:
             new, failures = asyncio.run(run_scraper(todo, start_utc, end_utc))
-            master = merge_master(master, new)
+            pending = add_to_pending(pending, ledger, new)
+            save_pending(pending)
             problems += [f"{ch}: {err}" for ch, err in failures.items()]
         except SessionError as e:
             problems.append(f"Telegram: {e}")
 
-    print("--- STEP 2: Label new posts with Gemini ---")
-    labels, status = label_messages(master)
-    print(f"  {status['new']} labelled this run, {status['pending']} still pending")
+    print("--- STEP 2: Label waiting posts with Gemini ---")
+    used = pending["label_model"].dropna().tolist() or ledger["label_model"].dropna().tolist()
+    pending, status = label_pending(pending, save=save_pending, sticky=used[-1] if used else None)
+    print(f"  {status['new']} labelled this run")
     for w in status["warnings"]:
         print(f"::warning::{w}")
     if status["error"]:
         problems.append(f"Gemini: {status['error']}")
 
-    print("--- STEP 3: Daily EAI / ESI index ---")
-    scored = score_messages(master, labels)
-    daily = build_daily_index(scored)
-    save_daily(daily)
+    print("--- STEP 3: Finalise days and append to the posts table ---")
+    rows, pending, days = finalize_days(pending, ledger, target, CHANNELS)
+    ledger = append_rows(MASTER_CSV, ledger, rows, LEDGER_COLS)    # ledger first, then pending
+    save_pending(pending)
+    print(f"  finalised {len(days)} day(s): {', '.join(map(str, days)) or '-'} | "
+          f"{len(pending)} posts still waiting")
 
-    print("--- STEP 4: Excel report ---")
-    export_results(scored, daily)
+    print("--- STEP 4: Append closed periods to the indices table ---")
+    idx_new = new_index_rows(ledger, indices, pending, target, CHANNELS)
+    indices = append_rows(INDICES_CSV, indices, idx_new, INDEX_COLS)
+    for r in idx_new.itertuples(index=False):
+        print(f"  {r.period_type:6} {r.period:10}  EAI {r.EAI:5}%  ESI {r.ESI:+6}  "
+              f"({r.econ}/{r.nonad}) {r.note}")
 
-    if len(daily):
-        print("Latest day:")
-        print(daily.tail(1).to_string(index=False))
+    print("--- STEP 5: Excel report ---")
+    export_results(indices, ledger, len(pending))
+
     if problems:
         with open(PROBLEMS_FILE, "w", encoding="utf-8") as f:
             f.write("\n".join(problems))

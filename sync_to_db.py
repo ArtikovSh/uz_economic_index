@@ -1,6 +1,10 @@
 """
-Push the pipeline's CSV outputs to the Supabase (Postgres) database, so the bot
-and mini app can serve them. Run after the daily/monthly pipeline.
+Push the pipeline's tables to the Supabase (Postgres) database, so the bot and the
+Mini App can serve them. Run after the daily pipeline.
+
+  * messages / labels – posts of the posts table not yet in the DB (or labelled
+                        differently there); labels carry the FINAL flags (ad marker incl.)
+  * indices           – the indices table (created here if missing)
 
 Connection string comes from env SUPABASE_DB_URL (or DATABASE_URL) — use the
 Supabase "Connection pooler" URI (Transaction mode, port 6543). If neither is
@@ -11,9 +15,31 @@ import sys
 
 import pandas as pd
 
-from config import MASTER_CSV, DAILY_CSV, MONTHLY_CSV, LLM_LABELS_CSV
+from store import load_ledger, load_indices
 
 DB_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL") or ""
+
+INDICES_DDL = """
+create table if not exists indices (
+    period_type    text    not null,          -- kun | hafta | oy | chorak | yil
+    period         text    not null,          -- 2026-10-04 | 2026-W40 | 2026-10 | 2026-Q4 | 2026
+    start_date     date    not null,
+    end_date       date    not null,
+    days           integer,
+    days_expected  integer,
+    posts          integer,
+    nonad          integer,
+    econ           integer,
+    pos            integer,
+    neu            integer,
+    neg            integer,
+    eai            real,                      -- % of non-ad posts that are economic
+    esi            real,                      -- 100 * (pos - neg) / econ
+    note           text,
+    primary key (period_type, period)
+);
+alter table indices enable row level security;
+"""
 
 
 def _connect():
@@ -26,107 +52,84 @@ def _connect():
     return conn
 
 
-def _upsert(conn, sql, rows, label):
-    if not rows:
-        print(f"  {label}: nothing to sync")
+def _py(v):
+    """Plain Python value for psycopg (None for missing, no numpy scalars)."""
+    if v is None or v is pd.NA or (isinstance(v, float) and pd.isna(v)):
+        return None
+    return v.item() if hasattr(v, "item") else v
+
+
+def sync_posts(conn, ledger):
+    if ledger.empty:
+        print("  messages/labels: nothing to sync")
         return
     with conn.cursor() as cur:
-        cur.executemany(sql, rows)
+        cur.execute("select channel, message_id, label_version from labels")
+        db = {(c, int(m)): v for c, m, v in cur.fetchall()}
+    keys = list(zip(ledger["channel"].astype(str), ledger["message_id"].astype(int)))
+    todo = ledger[[db.get(k) != v for k, v in zip(keys, ledger["label_version"].astype(str))]]
+    if todo.empty:
+        print("  messages/labels: up to date")
+        return
+    msg = [(_py(r.channel), int(r.message_id), _py(r.date), int(r.views), int(r.forwards),
+            _py(r.raw_text)) for r in todo.itertuples()]
+    lab = [(_py(r.channel), int(r.message_id), bool(r.is_economic), _py(r.primary_topic),
+            _py(r.relevance), _py(r.sentiment), bool(r.is_ad), bool(r.is_digest),
+            bool(r.is_foreign), _py(r.label_version)) for r in todo.itertuples()]
+    with conn.cursor() as cur:
+        cur.executemany("""
+            insert into messages (channel, message_id, date_utc, views, forwards, raw_text)
+            values (%s,%s,%s,%s,%s,%s)
+            on conflict (channel, message_id) do update set
+              date_utc=excluded.date_utc, views=excluded.views,
+              forwards=excluded.forwards, raw_text=excluded.raw_text""", msg)
+        cur.executemany("""
+            insert into labels (channel, message_id, is_economic, primary_topic, relevance,
+                                sentiment, is_ad, is_digest, is_foreign, label_version)
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            on conflict (channel, message_id) do update set
+              is_economic=excluded.is_economic, primary_topic=excluded.primary_topic,
+              relevance=excluded.relevance, sentiment=excluded.sentiment,
+              is_ad=excluded.is_ad, is_digest=excluded.is_digest,
+              is_foreign=excluded.is_foreign, label_version=excluded.label_version""", lab)
     conn.commit()
-    print(f"  {label}: synced {len(rows)} rows")
+    print(f"  messages/labels: synced {len(todo)} posts")
 
 
-def sync_messages(conn):
-    if not os.path.exists(MASTER_CSV):
+def sync_indices(conn, indices):
+    with conn.cursor() as cur:
+        cur.execute(INDICES_DDL)
+    conn.commit()
+    if indices.empty:
+        print("  indices: nothing to sync")
         return
-    df = pd.read_csv(MASTER_CSV)
-    rows = [(r.channel, int(r.message_id), r.date, int(r.views or 0),
-             int(r.forwards or 0), str(r.raw_text))
-            for r in df.itertuples()]
-    _upsert(conn, """
-        insert into messages (channel, message_id, date_utc, views, forwards, raw_text)
-        values (%s,%s,%s,%s,%s,%s)
-        on conflict (channel, message_id) do update set
-          date_utc=excluded.date_utc, views=excluded.views,
-          forwards=excluded.forwards, raw_text=excluded.raw_text
-    """, rows, "messages")
+    rows = [(r.period_type, str(r.period), r.start, r.end, _py(r.days), _py(r.days_expected),
+             _py(r.posts), _py(r.nonad), _py(r.econ), _py(r.pos), _py(r.neu), _py(r.neg),
+             _py(r.EAI), _py(r.ESI), _py(r.note)) for r in indices.itertuples()]
+    with conn.cursor() as cur:
+        cur.executemany("""
+            insert into indices (period_type, period, start_date, end_date, days, days_expected,
+                                 posts, nonad, econ, pos, neu, neg, eai, esi, note)
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            on conflict (period_type, period) do nothing""", rows)
+    conn.commit()
+    print(f"  indices: {len(rows)} rows checked")
 
 
-def sync_labels(conn):
-    if not os.path.exists(LLM_LABELS_CSV):
-        return
-    df = pd.read_csv(LLM_LABELS_CSV)
-    rows = []
-    for r in df.itertuples():
-        ch, _, mid = str(r.key).partition("|")
-        rows.append((ch, int(mid), bool(r.is_economic), str(r.primary_topic),
-                     float(r.relevance), float(r.sentiment), bool(r.is_ad),
-                     bool(r.is_digest), bool(r.is_foreign),
-                     getattr(r, "label_version", None)))
-    _upsert(conn, """
-        insert into labels (channel, message_id, is_economic, primary_topic, relevance,
-                            sentiment, is_ad, is_digest, is_foreign, label_version)
-        values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        on conflict (channel, message_id) do update set
-          is_economic=excluded.is_economic, primary_topic=excluded.primary_topic,
-          relevance=excluded.relevance, sentiment=excluded.sentiment,
-          is_ad=excluded.is_ad, is_digest=excluded.is_digest,
-          is_foreign=excluded.is_foreign, label_version=excluded.label_version
-    """, rows, "labels")
-
-
-def sync_daily(conn):
-    if not os.path.exists(DAILY_CSV):
-        return
-    df = pd.read_csv(DAILY_CSV)
-    df.columns = [c.lower() for c in df.columns]
-    cols = ["date_only", "total_messages", "economic_messages", "counted_messages",
-            "econ_share", "eai", "eai_z", "eai_100", "esi", "esi_z", "esi_100",
-            "avg_engagement"]
-    # days still waiting for labels have no index yet — keep the DB's last good row
-    df = df[df["eai"].notna()].reindex(columns=cols)
-    rows = [tuple(None if pd.isna(v) else v for v in row) for row in df.itertuples(index=False)]
-    _upsert(conn, f"""
-        insert into daily_index ({','.join(cols)})
-        values ({','.join(['%s']*len(cols))})
-        on conflict (date_only) do update set
-          {','.join(f'{c}=excluded.{c}' for c in cols[1:])}
-    """, rows, "daily_index")
-
-
-def sync_monthly(conn):
-    if not os.path.exists(MONTHLY_CSV):
-        return
-    df = pd.read_csv(MONTHLY_CSV)
-    df.columns = [c.lower() for c in df.columns]
-    cols = ["month", "days_covered", "total_messages", "economic_messages",
-            "counted_messages", "econ_share", "eai", "eai_100", "esi", "esi_100",
-            "avg_engagement", "top_topics"]
-    df = df.reindex(columns=cols)
-    rows = [tuple(None if pd.isna(v) else v for v in row) for row in df.itertuples(index=False)]
-    _upsert(conn, f"""
-        insert into monthly_index ({','.join(cols)})
-        values ({','.join(['%s']*len(cols))})
-        on conflict (month) do update set
-          {','.join(f'{c}=excluded.{c}' for c in cols[1:])}
-    """, rows, "monthly_index")
-
-
-def main():
+def main() -> int:
     if not DB_URL:
         print("SUPABASE_DB_URL not set -> skipping DB sync.")
-        return
+        return 0
     print("--- Sync to Supabase ---")
     conn = _connect()
     try:
-        sync_messages(conn)
-        sync_labels(conn)
-        sync_daily(conn)
-        sync_monthly(conn)
+        sync_posts(conn, load_ledger())
+        sync_indices(conn, load_indices())
     finally:
         conn.close()
     print("DB sync done.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
