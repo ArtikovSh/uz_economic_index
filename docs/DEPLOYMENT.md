@@ -87,9 +87,16 @@ Vercel uni ildizda beradi: `https://<app>.vercel.app/`.
    holatini aniqlaydi. Ma'lumot faqat kirgan foydalanuvchiga beriladi. Baza faqat backend
    orqali (RLS).
 
-**Mini App nima ko'rsatadi:** kirish ekrani (o'zbek, rus, ingliz tillarida), administratorga
-murojaat, admin paneli; dashboard — EAI/ESI kartalari, kunlik trend, mavzular kesimi, top
-iqtisodiy postlar.
+**Mini App nima ko'rsatadi** (o'zbek, rus, ingliz tillarida):
+- kirish ekrani, administratorga murojaat, admin paneli;
+- **Asosiy:** kun / hafta / oy / chorak / yil uchun EAI va ESI, oldingi davr bilan farq,
+  dinamika grafigi, ohang taqsimoti, qamrov, asosiy mavzular;
+- **Mavzular:** har mavzu bo'yicha ohang va ESI, mavzularning ESI'ga hissasi;
+- **Xabarlar:** iqtisodiy postlar — sana yoki oraliq, mavzu, ohang, kanal bo'yicha filtr va saralash;
+- **Metodika.**
+
+Davr raqamlari `indices` jadvalidagi kunlik qatorlardan `indicator.py` dagi kabi yig'iladi —
+Indekslar jadvali bilan bir xil chiqadi; hali yopilmagan davr "Yakunlanmagan" deb belgilanadi.
 
 ## Qanday tekshirish (hammasi ulangach)
 1. `SUPABASE_DB_URL` secret → workflow'ni ishga tushiring → DB to'ladi.

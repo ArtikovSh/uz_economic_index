@@ -50,7 +50,6 @@ def fresh_db(monkeypatch):
     index._SCHEMA_READY = False
     sent = []
     monkeypatch.setattr(index, "send", lambda chat, text, **kw: sent.append((chat, text, kw)) or True)
-    monkeypatch.setattr(index, "build_payload", lambda role: {"role": role, "daily": []})
     return sent
 
 
@@ -268,3 +267,60 @@ def test_bot_gate(fresh_db, monkeypatch):
     index.handle_update(upd(502, "/logout"))
     assert "Kirish uchun" in fresh_db[-1][1]
     assert _auth.principal(index.q, 502, OWNER)[0] == "login"
+
+
+# ---------------------------------------------------------- dashboard data --
+DATA_TABLES = ("drop view if exists posts; drop table if exists labels, messages, indices, daily_index, "
+               "monthly_index, subscriptions, app_users cascade")
+
+
+def test_posts_need_a_signed_in_user(server):
+    body = {"from": "2026-09-01", "to": "2026-09-30", "tone": "neg", "topics": ["trade"]}
+    assert call(server, U(130), "posts", body)[0] == 403            # not signed in
+    acc = admin_create(server)
+    call(server, U(131), "login", {"login": acc["account"]["login"], "password": acc["password"]})
+    code, r = call(server, U(131), "posts", body)
+    assert code == 200 and r["ok"] and r["total"] >= 0
+    assert call(server, U(131), "posts", {"from": "x", "to": "2026-09-30"})[0] == 400
+
+
+def test_dashboard_stats_and_posts(server):
+    # (channel, id, UTC time, views, topic, sentiment, economic, ad)
+    posts = [
+        ("@daryo", 1, "2026-09-01 20:30+00", 100, "trade", 0.5, True, False),     # 2 Sep 01:30 in Tashkent
+        ("@daryo", 2, "2026-09-02 10:00+00", 300, "trade", 0.15, True, False),    # on the threshold: neutral
+        ("@kunuzofficial", 3, "2026-09-02 11:00+00", 200, "fiscal", -0.4, True, False),
+        ("@daryo", 4, "2026-09-02 12:00+00", 50, "non_economic", 0.0, False, False),
+        ("@daryo", 5, "2026-09-02 13:00+00", 10, "business", 0.9, True, True),    # an ad is not counted
+        ("@daryo", 6, "2026-09-03 09:00+00", 10, "trade", 0.9, True, False),      # a day not final yet
+    ]
+    schema = (Path(REPO_API).parents[1] / "db" / "schema.sql").read_text(encoding="utf-8")
+    try:
+        with psycopg.connect(DB, autocommit=True) as c:
+            c.execute(DATA_TABLES)
+            c.execute(schema)
+            for ch, mid, at, views, topic, s, econ, ad in posts:
+                c.execute("insert into messages values (%s,%s,%s,%s,0,%s)", (ch, mid, at, views, f"**Post {mid}**\nText."))
+                c.execute("insert into labels values (%s,%s,%s,%s,0.5,%s,%s,false,false,'v4')", (ch, mid, econ, topic, s, ad))
+            c.execute("""insert into indices (period_type, period, start_date, end_date, posts, nonad, econ, pos, neg)
+                         values ('kun', '2026-09-02', '2026-09-02', '2026-09-02', 5, 4, 3, 1, 1)""")
+        acc = admin_create(server)
+        call(server, U(140), "login", {"login": acc["account"]["login"], "password": acc["password"]})
+
+        stats = call(server, U(140))[1]["stats"]
+        assert stats["days"] == [["2026-09-02", 5, 4, 3, 1, 1, 2]]         # two channels collected
+        assert sorted(stats["topics"]) == [[0, "fiscal", 1, 0, 1], [0, "trade", 2, 1, 0]]
+        assert stats["channels_total"] == 2
+
+        page = lambda **kw: call(server, U(140), "posts", {"from": "2026-09-01", "to": "2026-09-30", **kw})[1]
+        r = page()
+        assert r["total"] == 3 and [p["link"][-1] for p in r["items"]] == ["3", "2", "1"]
+        assert r["items"][2]["at"] == "2026-09-02T01:30" and r["items"][2]["text"] == "Post 1. Text."
+        assert [p["s"] for p in r["items"]] == [-1, 0, 1]
+        assert page(tone="neu")["total"] == 1 and page(tone="pos")["total"] == 1
+        assert page(sort="views")["items"][0]["v"] == 300
+        assert page(channels=["@kunuzofficial"])["total"] == 1
+        assert page(topics=["trade"], count_only=True) == {"ok": True, "total": 2}
+    finally:
+        with psycopg.connect(DB, autocommit=True) as c:
+            c.execute(DATA_TABLES)

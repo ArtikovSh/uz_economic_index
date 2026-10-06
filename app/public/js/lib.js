@@ -33,6 +33,18 @@ const PATHS = {
   news: '<path d="M4 5h12v14H6a2 2 0 0 1-2-2V5Z"/><path d="M16 9h4v8a2 2 0 0 1-2 2h-2"/><path d="M7 9h6M7 13h6M7 16h4"/>',
   up: '<path d="M7 17 17 7M9 7h8v8"/>',
   down: '<path d="M7 7l10 10M17 9v8H9"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z"/>',
+  sort: '<path d="M7 4v16M3.5 16.5 7 20l3.5-3.5"/><path d="M17 20V4M13.5 7.5 17 4l3.5 3.5"/>',
+  sliders: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+  external: '<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  chevronDown: '<path d="m6 9 6 6 6-6"/>',
+  chevronRight: '<path d="m9 5 7 7-7 7"/>',
+  target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8"/>',
+  pulse: '<path d="M3 12h4l2.5-6 5 12 2.5-6H21"/>',
+  trendUp: '<path d="M3 17 9.5 10.5l4 4L21 7"/><path d="M15 7h6v6"/>',
+  trendDown: '<path d="M3 7l6.5 6.5 4-4L21 17"/><path d="M15 17h6v-6"/>',
+  minus: '<path d="M5 12h14"/>',
+  book: '<path d="M5 4h13v14H7a2 2 0 0 0-2 2V4Z"/><path d="M5 20a2 2 0 0 1 2-2h11v3H7a2 2 0 0 1-2-1Z"/>',
 };
 export const icon = (name, size = 20, width = 1.8) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[name] || ''}</svg>`;
@@ -86,6 +98,46 @@ const D = {
     roles: { analyst: 'Analitik', economist: 'Iqtisodchi', admin: 'Admin' },
     time: { today: 'bugun, {hm}', yesterday: 'kecha, {hm}' },
     dash: { title: 'Iqtisodiy indeks', sub: 'Ma’lumot 2 kun kechikish bilan', users: 'Foydalanuvchilar', account: 'Hisob', logout: 'Hisobdan chiqish' },
+    tabs: { home: 'Asosiy', topics: 'Mavzular', posts: 'Xabarlar', method: 'Metodika' },
+    period: { kun: 'Kun', hafta: 'Hafta', oy: 'Oy', chorak: 'Chorak', yil: 'Yil', open: 'Yakunlanmagan',
+              prev: 'Oldingi davr', next: 'Keyingi davr', pick: 'Davrni tanlash' },
+    ov: {
+      eai: 'E’tibor · EAI', eaiHint: 'iqtisodiy xabarlar ulushi', esi: 'Kayfiyat · ESI', esiHint: 'ijobiy − salbiy, 0 = neytral',
+      pp: 'f.b.', noPrev: 'Oldingi davr kuzatilmagan', dynamics: 'Dinamika',
+      by: { oy: 'Kunlar bo‘yicha', chorak: 'Haftalar bo‘yicha', yil: 'Oylar bo‘yicha' },
+      lastN: { kun: 'So‘nggi {n} kun', hafta: 'So‘nggi {n} hafta', oy: 'So‘nggi {n} oy', chorak: 'So‘nggi {n} chorak', yil: 'So‘nggi {n} yil' },
+      legEai: 'E’tibor, %', legEsi: 'Kayfiyat', legGap: 'Ma’lumot yo‘q', chartEai: 'E’tibor indeksi', chartEsi: 'Kayfiyat indeksi',
+      tone: 'Ohang taqsimoti', econN: '{n} iqtisodiy xabar', pos: 'Ijobiy', neu: 'Neytral', neg: 'Salbiy',
+      coverage: 'Qamrov', posts: 'Xabarlar', ads: 'Reklama chiqarildi', channels: '{a}/{b} kanal', days: '{a}/{b} kun', daysOpen: '{a} kun',
+      top: 'Asosiy mavzular', all: 'Barchasi', empty: 'Hozircha ma’lumot yo‘q',
+    },
+    tp: {
+      sub: '{period} · {n} iqtisodiy xabar', byTone: 'Mavzular bo‘yicha kayfiyat', head: 'Mavzu · xabarlar soni',
+      how: 'ESI qanday shakllandi', total: 'Jami = ESI',
+      howText: 'Mavzu ulushi = (ijobiy − salbiy) ÷ {n} iqtisodiy xabar × 100. Barcha ulushlar yig‘indisi ESI ga teng.',
+    },
+    ps: {
+      count: '{n} ta iqtisodiy xabar', sort: 'Saralash', filters: 'Filtrlar', topic: 'Mavzu', tone: 'Ohang', channel: 'Kanal',
+      all: 'Hammasi', clear: 'Tozalash', show: 'Ko‘rsatish ({n})', source: 'Manba', more: 'Yana yuklash', views: 'Ko‘rishlar',
+      empty: 'Tanlangan davr va filtr bo‘yicha xabar yo‘q.', remove: '{x} filtrini olib tashlash',
+      sortNew: 'Avval yangilari', sortNewSub: 'Sana bo‘yicha: yangi → eski', sortOld: 'Avval eskilari',
+      sortOldSub: 'Sana bo‘yicha: eski → yangi', sortViews: 'Ko‘p ko‘rilganlar', sortViewsSub: 'Ko‘rishlar soni bo‘yicha',
+      date: 'Sana', range: 'Oraliq', day: 'Bir kun', last7: 'So‘nggi 7 kun', last30: 'So‘nggi 30 kun',
+      grey: 'Kulrang', greyTail: ' kunlarda ma’lumot yo‘q', apply: 'Qo‘llash', nDays: '{n} kun',
+      prevMonth: 'Oldingi oy', nextMonth: 'Keyingi oy',
+    },
+    md: {
+      sub: 'Indekslar qanday hisoblanadi', eai: 'E’tibor indeksi · EAI', eaiF: 'EAI = 100 × iqtisodiy ÷ reklama emas',
+      eaiText: 'Reklama bo‘lmagan xabarlarning necha foizi O‘zbekiston iqtisodiyotiga oid. Shkala 0–100%.',
+      esi: 'Kayfiyat indeksi · ESI', esiF: 'ESI = 100 × (ijobiy − salbiy) ÷ iqtisodiy',
+      esiText: 'Iqtisodiy xabarlardagi yaxshi va yomon yangiliklar balansi. Shkala −100 dan +100 gacha, 0 — neytral.',
+    },
+    topics: {
+      prices_inflation: 'Narx va inflatsiya', currency_fx: 'Valyuta kursi', fiscal: 'Byudjet va soliq', trade: 'Tashqi savdo',
+      macro: 'Makroiqtisodiyot', banking_finance: 'Bank va moliya', labour_income: 'Mehnat va daromad',
+      energy_utility: 'Energetika', business: 'Biznes', construction_realty: 'Qurilish',
+    },
+    langTitle: 'Til',
   },
   ru: {
     auth: {
@@ -132,6 +184,46 @@ const D = {
     roles: { analyst: 'Аналитик', economist: 'Экономист', admin: 'Админ' },
     time: { today: 'сегодня, {hm}', yesterday: 'вчера, {hm}' },
     dash: { title: 'Экономический индекс', sub: 'Данные с задержкой 2 дня', users: 'Пользователи', account: 'Аккаунт', logout: 'Выйти из аккаунта' },
+    tabs: { home: 'Главная', topics: 'Темы', posts: 'Новости', method: 'Методика' },
+    period: { kun: 'День', hafta: 'Неделя', oy: 'Месяц', chorak: 'Квартал', yil: 'Год', open: 'Не завершён',
+              prev: 'Предыдущий период', next: 'Следующий период', pick: 'Выбрать период' },
+    ov: {
+      eai: 'Внимание · EAI', eaiHint: 'доля экономических новостей', esi: 'Настроение · ESI', esiHint: 'позитив − негатив, 0 = нейтрально',
+      pp: 'п.п.', noPrev: 'Нет данных за прошлый период', dynamics: 'Динамика',
+      by: { oy: 'По дням', chorak: 'По неделям', yil: 'По месяцам' },
+      lastN: { kun: 'Последние {n} дн.', hafta: 'Последние {n} нед.', oy: 'Последние {n} мес.', chorak: 'Последние {n} кв.', yil: 'Последние {n} г.' },
+      legEai: 'Внимание, %', legEsi: 'Настроение', legGap: 'Нет данных', chartEai: 'Индекс внимания', chartEsi: 'Индекс настроения',
+      tone: 'Тональность', econN: 'экономических новостей: {n}', pos: 'Позитив', neu: 'Нейтрально', neg: 'Негатив',
+      coverage: 'Охват', posts: 'Новости', ads: 'Реклама исключена', channels: '{a}/{b} каналов', days: '{a}/{b} дн.', daysOpen: '{a} дн.',
+      top: 'Главные темы', all: 'Все', empty: 'Данных пока нет',
+    },
+    tp: {
+      sub: '{period} · экономических новостей: {n}', byTone: 'Настроение по темам', head: 'Тема · число новостей',
+      how: 'Как сложился ESI', total: 'Итого = ESI',
+      howText: 'Вклад темы = (позитив − негатив) ÷ {n} экономических новостей × 100. Сумма вкладов равна ESI.',
+    },
+    ps: {
+      count: 'экономических новостей: {n}', sort: 'Сортировка', filters: 'Фильтры', topic: 'Тема', tone: 'Тональность', channel: 'Канал',
+      all: 'Все', clear: 'Сбросить', show: 'Показать ({n})', source: 'Источник', more: 'Показать ещё', views: 'Просмотры',
+      empty: 'За выбранный период и по фильтрам новостей нет.', remove: 'Убрать фильтр «{x}»',
+      sortNew: 'Сначала новые', sortNewSub: 'По дате: новые → старые', sortOld: 'Сначала старые',
+      sortOldSub: 'По дате: старые → новые', sortViews: 'Самые просматриваемые', sortViewsSub: 'По числу просмотров',
+      date: 'Дата', range: 'Период', day: 'Один день', last7: 'Последние 7 дней', last30: 'Последние 30 дней',
+      grey: 'Серые', greyTail: ' дни — без данных', apply: 'Применить', nDays: '{n} дн.',
+      prevMonth: 'Предыдущий месяц', nextMonth: 'Следующий месяц',
+    },
+    md: {
+      sub: 'Как рассчитываются индексы', eai: 'Индекс внимания · EAI', eaiF: 'EAI = 100 × экономические ÷ нерекламные',
+      eaiText: 'Какой процент нерекламных новостей посвящён экономике Узбекистана. Шкала 0–100%.',
+      esi: 'Индекс настроения · ESI', esiF: 'ESI = 100 × (позитив − негатив) ÷ экономические',
+      esiText: 'Баланс хороших и плохих новостей среди экономических. Шкала от −100 до +100, 0 — нейтрально.',
+    },
+    topics: {
+      prices_inflation: 'Цены и инфляция', currency_fx: 'Валютный курс', fiscal: 'Бюджет и налоги', trade: 'Внешняя торговля',
+      macro: 'Макроэкономика', banking_finance: 'Банки и финансы', labour_income: 'Труд и доходы',
+      energy_utility: 'Энергетика', business: 'Бизнес', construction_realty: 'Строительство',
+    },
+    langTitle: 'Язык',
   },
   en: {
     auth: {
@@ -178,6 +270,46 @@ const D = {
     roles: { analyst: 'Analyst', economist: 'Economist', admin: 'Admin' },
     time: { today: 'today, {hm}', yesterday: 'yesterday, {hm}' },
     dash: { title: 'Economic index', sub: 'Data with a 2-day lag', users: 'Users', account: 'Account', logout: 'Sign out' },
+    tabs: { home: 'Overview', topics: 'Topics', posts: 'News', method: 'Method' },
+    period: { kun: 'Day', hafta: 'Week', oy: 'Month', chorak: 'Quarter', yil: 'Year', open: 'In progress',
+              prev: 'Previous period', next: 'Next period', pick: 'Choose period' },
+    ov: {
+      eai: 'Attention · EAI', eaiHint: 'share of economic news', esi: 'Sentiment · ESI', esiHint: 'positive − negative, 0 = neutral',
+      pp: 'pp', noPrev: 'No data for the previous period', dynamics: 'Trend',
+      by: { oy: 'By day', chorak: 'By week', yil: 'By month' },
+      lastN: { kun: 'Last {n} days', hafta: 'Last {n} weeks', oy: 'Last {n} months', chorak: 'Last {n} quarters', yil: 'Last {n} years' },
+      legEai: 'Attention, %', legEsi: 'Sentiment', legGap: 'No data', chartEai: 'Attention index', chartEsi: 'Sentiment index',
+      tone: 'Tone', econN: '{n} economic news', pos: 'Positive', neu: 'Neutral', neg: 'Negative',
+      coverage: 'Coverage', posts: 'Posts', ads: 'Ads excluded', channels: '{a}/{b} channels', days: '{a}/{b} days', daysOpen: '{a} days',
+      top: 'Main topics', all: 'All', empty: 'No data yet',
+    },
+    tp: {
+      sub: '{period} · {n} economic news', byTone: 'Sentiment by topic', head: 'Topic · number of news',
+      how: 'How ESI is made up', total: 'Total = ESI',
+      howText: 'Topic share = (positive − negative) ÷ {n} economic news × 100. The shares add up to ESI.',
+    },
+    ps: {
+      count: '{n} economic news', sort: 'Sort', filters: 'Filters', topic: 'Topic', tone: 'Tone', channel: 'Channel',
+      all: 'All', clear: 'Clear', show: 'Show ({n})', source: 'Source', more: 'Load more', views: 'Views',
+      empty: 'No news for the selected period and filters.', remove: 'Remove the {x} filter',
+      sortNew: 'Newest first', sortNewSub: 'By date: new → old', sortOld: 'Oldest first',
+      sortOldSub: 'By date: old → new', sortViews: 'Most viewed', sortViewsSub: 'By number of views',
+      date: 'Date', range: 'Range', day: 'Single day', last7: 'Last 7 days', last30: 'Last 30 days',
+      grey: 'Grey', greyTail: ' days have no data', apply: 'Apply', nDays: '{n} days',
+      prevMonth: 'Previous month', nextMonth: 'Next month',
+    },
+    md: {
+      sub: 'How the indices are calculated', eai: 'Attention index · EAI', eaiF: 'EAI = 100 × economic ÷ non-ad',
+      eaiText: 'The share of non-advertising news that is about Uzbekistan’s economy. Scale 0–100%.',
+      esi: 'Sentiment index · ESI', esiF: 'ESI = 100 × (positive − negative) ÷ economic',
+      esiText: 'The balance of good and bad economic news. Scale −100 to +100, 0 is neutral.',
+    },
+    topics: {
+      prices_inflation: 'Prices & inflation', currency_fx: 'Exchange rate', fiscal: 'Budget & taxes', trade: 'Foreign trade',
+      macro: 'Macroeconomy', banking_finance: 'Banking & finance', labour_income: 'Labour & income',
+      energy_utility: 'Energy', business: 'Business', construction_realty: 'Construction',
+    },
+    langTitle: 'Language',
   },
 };
 export const LANGS = [['uz', 'O‘zbekcha'], ['ru', 'Русский'], ['en', 'English']];
@@ -281,4 +413,30 @@ export async function copy(text) {
 export function segHTML(items, current, attr) {
   return items.map(([id, label]) =>
     `<button type="button" data-${attr}="${esc(id)}" aria-pressed="${String(id) === String(current)}">${esc(label)}</button>`).join('');
+}
+
+/** Bottom sheet over the page; returns close(). The Telegram back button closes it too. */
+export function openSheet(root, title, html, mount) {
+  const wrap = document.createElement('div');
+  wrap.className = 'sheet-wrap';
+  wrap.setAttribute('role', 'dialog');
+  wrap.setAttribute('aria-modal', 'true');
+  wrap.setAttribute('aria-label', title);
+  wrap.innerHTML = `
+    <button class="backdrop" data-close aria-label="${esc(t('close'))}"></button>
+    <div class="sheet">
+      <span class="grip"></span>
+      <div class="head"><h2>${esc(title)}</h2>
+        <button class="icon-btn" data-close aria-label="${esc(t('close'))}">${icon('close', 16, 2.2)}</button></div>
+      <div class="sheet-body"></div>
+    </div>`;
+  const prevBack = backFn;
+  const close = () => { wrap.remove(); setBack(prevBack); };
+  const body = wrap.querySelector('.sheet-body');
+  const fill = (markup) => { body.innerHTML = markup; if (mount) mount(body, close, fill); };
+  wrap.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => { haptic(); close(); }));
+  root.appendChild(wrap);
+  setBack(close);
+  fill(html);
+  return close;
 }
