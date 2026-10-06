@@ -140,3 +140,13 @@ $env:USE_PROXY=1; $env:PROXY_PORT=10808     # Telegram bloklangan tarmoqda
 Hosil bo'lgan `session_string.txt` ichidagini `TG_SESSION_STRING` secret'iga qo'ying va
 faylni o'chiring. Bu sessiyani **faqat CI'da** ishlating va Telegram → Sozlamalar →
 Qurilmalar ro'yxatidagi "Telethon" seansini o'chirmang.
+
+## Testlar
+
+`tests/api` kirish tizimi, admin amallari va Mini App API'ni lokal Postgres bilan tekshiradi.
+Testlar uchun alohida, bo'sh Postgres bazasidan foydalaning: jadvallar qayta yaratiladi.
+`pip install -r requirements-dev.txt` bilan test paketlarini o'rnating.
+`TEST_DATABASE_URL` ni shu bazaning ulanish manziliga o'rnating.
+Keyin `python -m pytest -q tests/api` buyrug'ini ishga tushiring.
+`TEST_DATABASE_URL` berilmasa, test moduli o'tkazib yuboriladi.
+GitHub Actions `app/` yoki `tests/` o'zgargan push va pull request'larda testlarni ishga tushiradi.
