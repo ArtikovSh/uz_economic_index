@@ -47,7 +47,7 @@ oy, chorak va yil uchun formula bir xil.
 | `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, ishlatilayotgan LLM (nazorat to'plami bilan), Sheets, bot ogohlantirishi |
 | `evaluate.py` | LLM belgilarini 200 ta haqiqiy postda baholash; natija `eval/` papkasiga yoziladi |
 | `export_session.py` | CI uchun Telegram sessiya satrini yaratish |
-| `app/` | Telegram bot + Mini App (Vercel) |
+| `app/` | Telegram bot + Mini App (Vercel): login va parol bilan kirish, admin paneli — `docs/DEPLOYMENT.md` |
 
 ## Natijalar
 

@@ -1,28 +1,38 @@
 """
 Single Vercel Python entrypoint (api/index.py) — the new Vercel runtime looks for
 a default entrypoint name, so both endpoints live here and are dispatched by HTTP
-method:
-  * POST  /api/index  -> Telegram webhook (the bot)
-  * GET   /api/index  -> Mini App data JSON (needs X-Telegram-Init-Data header),
-                          or a health message in a plain browser.
+method and header:
+  * POST  /api/index             -> Telegram webhook (the bot)
+  * POST  /api/index?action=...  -> Mini App actions: sign in, access request, admin panel
+                                    (needs the X-Telegram-Init-Data header)
+  * GET   /api/index             -> Mini App data JSON (needs X-Telegram-Init-Data),
+                                    or a health message in a plain browser.
 
 Index figures come from the `indices` table (one row per closed day / week / month /
 quarter / year): EAI = % of non-ad posts that are economic, ESI = 100*(pos-neg)/econ.
 
+Access: only accounts an admin created (login + password, see _auth.py) can use the bot
+and the Mini App; BOT_ADMIN_ID is always the owner-admin. Roles: analyst / economist / admin.
+
 Env: TELEGRAM_BOT_TOKEN, BOT_ADMIN_ID, SUPABASE_DB_URL, [WEBAPP_URL], [WEBHOOK_SECRET].
-Roles: admin / cb_analyst / economist / public (full = the first three).
 """
 from http.server import BaseHTTPRequestHandler
 import hashlib
 import hmac
 import json
 import os
+import sys
 import time
+from datetime import date, datetime
+from decimal import Decimal
 from html import escape
-from urllib.parse import parse_qsl, quote
+from urllib.parse import parse_qs, parse_qsl, quote, urlparse
 
 import psycopg
 import requests
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import _auth as auth  # noqa: E402  (helper module next to this file, not an endpoint)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 ADMIN_ID = os.getenv("BOT_ADMIN_ID", "").strip()
@@ -32,9 +42,9 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 TZ = "5 hours"
 INIT_DATA_MAX_AGE = 24 * 3600          # Mini App initData older than this is rejected
-FULL_ROLES = {"admin", "cb_analyst", "economist"}
-ROLE_NAMES = {"admin": "Admin", "cb_analyst": "MB analitigi", "economist": "Iqtisodchi",
-              "public": "Ommaviy"}
+FULL_ROLES = {"admin", "analyst", "economist"}
+ROLE_NAMES = {"admin": "Admin", "analyst": "Analitik", "economist": "Iqtisodchi"}
+REASON_NAMES = {"access": "Kirish olish", "reset": "Parolni tiklash", "other": "Boshqa"}
 TOPICS = {
     "prices_inflation": "Narx/inflatsiya", "currency_fx": "Valyuta/kurs",
     "fiscal": "Byudjet/soliq", "trade": "Tashqi savdo", "macro": "Makro",
@@ -55,17 +65,26 @@ def q(sql, params=(), one=False):
         return (rows[0] if rows else None) if one else rows
 
 
-def get_or_create_user(uid, user):
-    if ADMIN_ID and str(uid) == str(ADMIN_ID):
-        return "admin", "active"
-    rec = q("select role, status from app_users where telegram_id=%s", (uid,), one=True)
-    if rec:
-        return rec["role"], rec["status"]
-    q("""insert into app_users (telegram_id, username, full_name, role, status)
-         values (%s,%s,%s,'public','pending') on conflict (telegram_id) do nothing""",
-      (uid, user.get("username"),
-       " ".join(filter(None, [user.get("first_name"), user.get("last_name")]))))
-    return "public", "pending"
+_SCHEMA_READY = False
+
+
+def ensure_schema():
+    """Create the access-control tables once per cold start (idempotent DDL)."""
+    global _SCHEMA_READY
+    if not _SCHEMA_READY:
+        q(auth.SCHEMA)
+        _SCHEMA_READY = True
+
+
+def who(tg_user):
+    """(state, account) of a verified Telegram user: ok | login | blocked | expired."""
+    ensure_schema()
+    return auth.principal(q, tg_user["id"], ADMIN_ID)
+
+
+def me_json(acc):
+    return {"login": acc["login"], "role": acc["role"], "is_admin": bool(acc.get("is_admin")),
+            "owner": bool(acc.get("owner")), "expires_at": acc.get("expires_at")}
 
 
 def index_rows(ptype, n):
@@ -81,8 +100,9 @@ def index_rows(ptype, n):
 
 # ------------------------------------------------------------------- telegram --
 def send(chat_id, text, **kw):
+    """Send a message; returns whether Telegram accepted it."""
     if not BOT_TOKEN:
-        print("SEND SKIPPED: TELEGRAM_BOT_TOKEN is empty"); return
+        print("SEND SKIPPED: TELEGRAM_BOT_TOKEN is empty"); return False
     kw = {k: v for k, v in kw.items() if v is not None}   # drop None (e.g. reply_markup)
     try:
         r = requests.post(f"{API}/sendMessage", timeout=15, json={
@@ -90,21 +110,32 @@ def send(chat_id, text, **kw):
             "disable_web_page_preview": True, **kw})
         if not r.ok:
             print(f"Telegram sendMessage FAILED {r.status_code}: {r.text[:300]}")
+        return r.ok
     except Exception as e:
         print("send error:", e)
+        return False
 
 
 def main_kb():
     """Interactive navigation keyboard shown under bot messages."""
     rows = [
-        [{"text": "📊 Bugun", "callback_data": "nav:today"},
-         {"text": "🔝 Top", "callback_data": "nav:top"}],
-        [{"text": "🗂 Mavzular", "callback_data": "nav:topics"},
-         {"text": "📈 Grafik", "callback_data": "nav:chart"}],
+        [{"text": "Bugun", "callback_data": "nav:today"},
+         {"text": "Asosiy xabarlar", "callback_data": "nav:top"}],
+        [{"text": "Mavzular", "callback_data": "nav:topics"},
+         {"text": "Grafik", "callback_data": "nav:chart"}],
     ]
     if WEBAPP_URL:
-        rows.append([{"text": "📱 Dashboard (Mini App)", "web_app": {"url": WEBAPP_URL}}])
+        rows.append([{"text": "Dashboard", "web_app": {"url": WEBAPP_URL}}])
     return {"inline_keyboard": rows}
+
+
+def app_kb(text, screen=""):
+    """One button that opens the Mini App, optionally on a screen (?screen=admin). A query
+    parameter, not a #fragment: Telegram passes its launch data in the URL fragment."""
+    if not WEBAPP_URL:
+        return None
+    url = WEBAPP_URL.rstrip("/") + "/" + (f"?screen={screen}" if screen else "")
+    return {"inline_keyboard": [[{"text": text, "web_app": {"url": url}}]]}
 
 
 def edit(chat_id, mid, text, kb=None):
@@ -269,44 +300,53 @@ def fmt_topic(key):
     return "\n".join(out)
 
 
-# ------------------------------------------------------------------ admin -------
-def admin_cmd(text):
-    p = text.split()
-    c = p[0]
-    if c == "/pending":
-        rows = q("select telegram_id, username, full_name from app_users where status='pending'")
-        return ("Kutayotgan foydalanuvchi yo'q." if not rows else
-                "⏳ <b>Tasdiq kutayotganlar:</b>\n" + "\n".join(
-                    f"{r['telegram_id']} — {escape(r.get('full_name') or '')} "
-                    f"@{escape(r.get('username') or '')}" for r in rows))
-    if c == "/users":
-        rows = q("select telegram_id, role, status from app_users order by created_at desc limit 30")
-        return "👥 <b>Foydalanuvchilar:</b>\n" + "\n".join(
-            f"{r['telegram_id']} — {ROLE_NAMES.get(r['role'], r['role'])} ({r['status']})" for r in rows)
-    if c in ("/approve", "/setrole", "/block") and len(p) >= 2 and not p[1].isdigit():
-        return "ID raqam bo'lishi kerak, masalan: /approve 123456789 economist"
-    if c in ("/approve", "/setrole") and len(p) >= 3 and p[2] in ROLE_NAMES:
-        q("""insert into app_users (telegram_id, role, status, approved_at)
-             values (%s,%s,'active', now())
-             on conflict (telegram_id) do update set role=excluded.role, status='active', approved_at=now()""",
-          (int(p[1]), p[2]))
-        send(int(p[1]), f"✅ Sizga <b>{ROLE_NAMES[p[2]]}</b> roli berildi. /today bilan boshlang.")
-        return f"✅ {p[1]} → {ROLE_NAMES[p[2]]} (active)"
-    if c in ("/approve", "/setrole"):
-        return "Rol: cb_analyst | economist | public | admin"
-    if c == "/block" and len(p) >= 2:
-        q("update app_users set status='blocked' where telegram_id=%s", (int(p[1]),))
-        return f"🚫 {p[1]} bloklandi."
-    return None
+# ------------------------------------------------------------- access ----------
+GATE = {
+    "login": "<b>UZ Economic Index</b>\nO‘zbekiston iqtisodiy yangiliklar indeksi.\n\n"
+             "Kirish uchun quyidagi tugmani bosing.",
+    "blocked": "Hisobingiz bloklangan. Kirish uchun administratorga murojaat qiling.",
+    "expired": "Kirish muddati tugagan. Uzaytirish uchun administratorga murojaat qiling.",
+}
+HELP = ("<b>UZ Economic Index</b>\n\n"
+        "/today — kunlik iqtisodiy manzara\n/top — kunning asosiy postlari\n"
+        "/topics — mavzular kesimi\n/topic &lt;nom&gt; — bitta mavzu (masalan: /topic currency_fx)\n"
+        "/app — dashboard\n/me — hisobim\n/logout — hisobdan chiqish\n/help — yordam")
+OLD_ADMIN_CMDS = ("/pending", "/approve", "/setrole", "/block", "/users")
 
 
-HELP = ("🤖 <b>UZ Economic Index bot</b>\n\n"
-        "/today — kunlik iqtisodiy manzara\n/index — sarlavha indekslar\n"
-        "/top — kunning top postlari\n/topics — mavzular kesimi\n"
-        "/topic &lt;nom&gt; — bitta mavzu (masalan: /topic currency_fx)\n"
-        "/app — Dashboard (Mini App)\n/me — mening rolim\n/help — yordam")
-ADMIN_HELP = ("\n\n<b>Admin:</b>\n/pending\n/approve &lt;id&gt; &lt;rol&gt;\n"
-              "/setrole &lt;id&gt; &lt;rol&gt;\n/block &lt;id&gt;\n/users")
+def gate(chat_id, state):
+    send(chat_id, GATE[state] if WEBAPP_URL else GATE[state] + "\n\nMini App hali ulanmagan.",
+         reply_markup=app_kb("Kirish"))
+
+
+def fmt_me(acc):
+    if acc.get("owner"):
+        return "<b>Hisobim</b>\nAdmin (bot egasi)"
+    until = acc["expires_at"].strftime("%d.%m.%Y") if acc.get("expires_at") else "muddatsiz"
+    return (f"<b>Hisobim</b>\nLogin: <code>{escape(acc['login'])}</code>\n"
+            f"Rol: {ROLE_NAMES.get(acc['role'], acc['role'])}\nAmal qiladi: {until}")
+
+
+def notify_new_request(req):
+    """Tell the owner-admin about a new access request."""
+    if not ADMIN_ID:
+        return
+    name = escape(req["full_name"]) + (f" · {escape(req['organization'])}" if req.get("organization") else "")
+    tg = f"@{escape(req['tg_username'])}" if req.get("tg_username") else escape(req.get("tg_name") or "")
+    text = f"<b>Yangi kirish so‘rovi</b>\n{name}\n{tg} · {REASON_NAMES.get(req['reason'], '')}"
+    if req.get("message"):
+        text += f"\n\n{escape(req['message'])}"
+    send(int(ADMIN_ID), text, reply_markup=app_kb("Admin panelini ochish", "admin"))
+
+
+def deliver_credentials(req, account, password):
+    """Send the new login to the requester; it works only from their Telegram account."""
+    return send(req["telegram_id"],
+                "<b>Kirish ma’lumoti</b>\n"
+                f"Login: <code>{escape(account['login'])}</code>\n"
+                f"Parol: <code>{escape(password)}</code>\n\n"
+                "Kirish uchun quyidagi tugmani bosing. Login faqat shu Telegram hisobida ishlaydi.",
+                reply_markup=app_kb("Kirish"))
 
 
 def handle_callback(cq):
@@ -315,76 +355,65 @@ def handle_callback(cq):
     m = cq.get("message", {})
     chat_id = m.get("chat", {}).get("id")
     mid = m.get("message_id")
-    role, status = get_or_create_user(frm["id"], frm)
     answer_cb(cq["id"])
-    if status != "active":
+    state, acc = who(frm)
+    if state != "ok":
+        gate(chat_id, state)
         return
-    is_full = role in FULL_ROLES
     kb = main_kb()
     if data == "nav:today":
         edit(chat_id, mid, fmt_index(), kb)
     elif data == "nav:top":
-        edit(chat_id, mid, fmt_top(8 if is_full else 3), kb)
+        edit(chat_id, mid, fmt_top(8), kb)
     elif data == "nav:topics":
-        edit(chat_id, mid, fmt_topics() if is_full else "🔒 Mavzular kesimi to'liq rol uchun.", kb)
+        edit(chat_id, mid, fmt_topics(), kb)
     elif data == "nav:chart":
-        send_photo(chat_id, quickchart_url(), "📈 <b>EAI va ESI — 30 kunlik trend</b>", kb)
+        send_photo(chat_id, quickchart_url(), "<b>EAI va ESI — 30 kunlik trend</b>", kb)
 
 
 def handle_update(update):
     if "callback_query" in update:
         return handle_callback(update["callback_query"])
     msg = update.get("message") or update.get("edited_message")
-    if not msg or "text" not in msg:
+    if not msg or "text" not in msg or msg.get("chat", {}).get("type") != "private":
         return
     chat_id = msg["chat"]["id"]
     text = msg["text"].strip()
-    frm = msg["from"]
-    role, status = get_or_create_user(frm["id"], frm)
-    is_admin = role == "admin"
-    is_full = role in FULL_ROLES
-    cmd = text.split()[0].lower().split("@")[0]
-
-    if status == "blocked":
-        send(chat_id, "🚫 Kirish bloklangan."); return
-    if cmd == "/start":
-        if status == "pending":
-            send(chat_id, "👋 Xush kelibsiz! Arizangiz qabul qilindi — admin tasdig'ini kuting.\n\n" + HELP)
-            if ADMIN_ID:
-                send(int(ADMIN_ID), f"🔔 Yangi foydalanuvchi: {frm['id']} @{escape(frm.get('username', ''))} "
-                                    f"— /approve {frm['id']} economist")
-        else:
-            send(chat_id, "🇺🇿 <b>UZ Economic Index</b>\nO'zbekiston iqtisodiy yangiliklar indeksi.\n"
-                 "Quyidagi tugmalar orqali indeks, mavzular va top yangiliklarni ko'ring 👇"
-                 + (ADMIN_HELP if is_admin else ""), reply_markup=main_kb())
+    cmd = text.split()[0].lower().split("@")[0] if text else ""
+    state, acc = who(msg["from"])
+    if state != "ok":
+        gate(chat_id, state)
         return
+
+    if cmd == "/start":
+        send(chat_id, "<b>UZ Economic Index</b>\nO‘zbekiston iqtisodiy yangiliklar indeksi.\n"
+                      "Quyidagi tugmalar orqali indeks, mavzular va asosiy xabarlarni ko‘ring.",
+             reply_markup=main_kb()); return
     if cmd == "/help":
-        send(chat_id, HELP + (ADMIN_HELP if is_admin else "")); return
+        send(chat_id, HELP); return
     if cmd == "/me":
-        send(chat_id, f"🆔 {frm['id']}\nRol: <b>{ROLE_NAMES.get(role, role)}</b>\nHolat: {status}"); return
-
-    if is_admin:
-        r = admin_cmd(text)
-        if r is not None:
-            send(chat_id, r); return
-
-    if status == "pending":
-        send(chat_id, "⏳ Hisobingiz hali tasdiqlanmagan. Admin tasdig'ini kuting."); return
-
+        send(chat_id, fmt_me(acc)); return
+    if cmd == "/logout":
+        if acc.get("owner"):
+            send(chat_id, "Bot egasi hisobdan chiqmaydi."); return
+        auth.logout(q, msg["from"]["id"])
+        gate(chat_id, "login"); return
+    if cmd in OLD_ADMIN_CMDS and acc.get("is_admin"):
+        send(chat_id, "Foydalanuvchilar endi Mini App’dagi admin panelida boshqariladi.",
+             reply_markup=app_kb("Admin panelini ochish", "admin")); return
     if cmd == "/app":
-        send(chat_id, "📊 Dashboard:" if WEBAPP_URL else "Mini App hali ulanmagan.", reply_markup=main_kb()); return
+        send(chat_id, "Dashboard:" if WEBAPP_URL else "Mini App hali ulanmagan.",
+             reply_markup=main_kb()); return
     if cmd in ("/today", "/index"):
         send(chat_id, fmt_index(), reply_markup=main_kb()); return
     if cmd == "/top":
-        send(chat_id, fmt_top(8 if is_full else 3)); return
+        send(chat_id, fmt_top(8)); return
     if cmd == "/topics":
-        send(chat_id, fmt_topics() if is_full else "Bu bo'lim to'liq rol uchun."); return
+        send(chat_id, fmt_topics()); return
     if cmd == "/topic":
         pp = text.split()
         if len(pp) < 2:
             send(chat_id, "Masalan: /topic currency_fx\nMavzular: " + ", ".join(TOPICS))
-        elif not is_full:
-            send(chat_id, "Bu bo'lim to'liq rol uchun.")
         else:
             send(chat_id, fmt_topic(pp[1]))
         return
@@ -459,17 +488,92 @@ def build_payload(role):
             "topics": topics, "top": top}
 
 
+# ------------------------------------------------------- Mini App actions -----
+def _int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+ERROR_CODES = {"invalid": 401, "locked": 429, "too_many": 429, "blocked": 403, "expired": 403,
+               "other_account": 403, "forbidden": 403, "not_found": 404, "no_request": 404,
+               "no_account": 404}
+
+
+def app_action(user, action, body):
+    """One Mini App action for a verified Telegram user -> (http code, json)."""
+    if action == "login":
+        r = auth.login(q, user, body.get("login"), body.get("password"))
+    elif action == "logout":
+        r = auth.logout(q, user["id"])
+    elif action == "request":
+        r = auth.create_request(q, user, body)
+        if r["ok"]:
+            notify_new_request(r.pop("request"))
+    else:
+        state, acc = who(user)
+        if state != "ok" or not acc.get("is_admin"):
+            r = {"ok": False, "error": "forbidden"}
+        elif action == "admin":
+            r = auth.overview(q)
+        elif action == "create":
+            r = auth.create_account(q, user["id"], body.get("role"), str(body.get("term")),
+                                    _int(body.get("request_id")))
+            req = r.pop("request", None)
+            if r["ok"] and req:
+                r["delivered"] = deliver_credentials(req, r["account"], r["password"])
+        elif action == "reset":                      # an account, or the requester's own login
+            r = auth.reset_password(q, _int(body.get("id")), user["id"], _int(body.get("request_id")))
+            req = r.pop("request", None)
+            if r["ok"] and req:
+                r["delivered"] = deliver_credentials(req, r["account"], r["password"])
+        elif action in ("block", "unblock"):
+            r = auth.set_status(q, _int(body.get("id")), "blocked" if action == "block" else "active")
+        elif action == "extend":
+            r = auth.extend(q, _int(body.get("id")), str(body.get("term")))
+        elif action in ("reject", "close"):           # close = handled, the requester is not told
+            r = auth.finish_request(q, user["id"], _int(body.get("request_id")),
+                                    "rejected" if action == "reject" else "done")
+            req = r.pop("request", None)
+            if r["ok"] and action == "reject":
+                send(req["telegram_id"], "Kirish so‘rovingiz rad etildi.")
+        else:
+            r = {"ok": False, "error": "unknown_action"}
+    code = 200 if r.get("ok") else ERROR_CODES.get(r.get("error"), 400)
+    return code, r
+
+
 # ------------------------------------------------------ Vercel entry point -----
+def _jsonable(v):
+    """JSON value for what psycopg returns. Times go out as ISO 8601 with a 'T' and
+    milliseconds: iOS Safari cannot parse str(datetime) ('2026-10-06 10:00:00+00:00')."""
+    if isinstance(v, datetime):
+        return v.isoformat(timespec="milliseconds")
+    if isinstance(v, date):
+        return v.isoformat()
+    if isinstance(v, Decimal):
+        return float(v)
+    return str(v)
+
+
 class handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
-        body = json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8")
+        body = json.dumps(obj, ensure_ascii=False, default=_jsonable).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
+    def _user(self, init):
+        user = verify_init_data(init)
+        return user if user and "id" in user else None
+
     def do_POST(self):
+        init = self.headers.get("X-Telegram-Init-Data")
+        if init is not None:                       # Mini App action
+            return self._app_action(init)
         if WEBHOOK_SECRET and self.headers.get("X-Telegram-Bot-Api-Secret-Token") != WEBHOOK_SECRET:
             self.send_response(401); self.end_headers(); self.wfile.write(b"unauthorized"); return
         try:
@@ -486,20 +590,43 @@ class handler(BaseHTTPRequestHandler):
             traceback.print_exc()
         self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
 
+    def _app_action(self, init):
+        user = self._user(init)
+        if not user:
+            return self._json(401, {"ok": False, "error": "unauthorized"})
+        try:
+            n = int(self.headers.get("content-length", 0) or 0)
+            if n > 16384:
+                return self._json(413, {"ok": False, "error": "too_large"})
+            body = json.loads(self.rfile.read(n) or b"{}") if n else {}
+            if not isinstance(body, dict):
+                raise ValueError("body must be an object")
+        except ValueError:
+            return self._json(400, {"ok": False, "error": "bad_json"})
+        action = parse_qs(urlparse(self.path).query).get("action", [""])[0] or str(body.get("action", ""))
+        try:
+            ensure_schema()
+            code, out = app_action(user, action, body)
+            return self._json(code, out)
+        except Exception as e:
+            print("ACTION ERROR:", action, repr(e))    # never logs the body (passwords)
+            return self._json(500, {"ok": False, "error": "server"})
+
     def do_GET(self):
         init = self.headers.get("X-Telegram-Init-Data", "")
         if not init:
             self.send_response(200); self.end_headers()
             self.wfile.write(b"UZ Economic Index bot is running.")
             return
-        user = verify_init_data(init)
-        if not user or "id" not in user:
+        user = self._user(init)
+        if not user:
             return self._json(401, {"error": "unauthorized"})
-        role, status = get_or_create_user(user["id"], user)
-        if status != "active":
-            return self._json(200, {"status": status, "role": role})
         try:
-            return self._json(200, {"status": "active", **build_payload(role)})
+            state, acc = who(user)
+            if state != "ok":
+                return self._json(200, {"auth": state,
+                                        "request_open": auth.has_open_request(q, user["id"])})
+            return self._json(200, {"auth": "ok", "me": me_json(acc), **build_payload(acc["role"])})
         except Exception as e:
-            print("data error:", e)
+            print("data error:", repr(e))
             return self._json(500, {"error": "server"})

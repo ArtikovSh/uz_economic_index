@@ -5,8 +5,8 @@
 -- Access model: the backend (bot webhook + mini-app API) connects with the
 -- Supabase SERVICE ROLE key and enforces per-user roles in code. RLS is enabled
 -- with NO public policies, so the anon/public key cannot read anything — data is
--- reachable only through the backend. Roles: admin / cb_analyst / economist /
--- public, assigned by an admin.
+-- reachable only through the backend. Users sign in with a login + password that an
+-- admin creates (accounts table); roles analyst / economist / admin.
 -- =====================================================================
 
 -- ---------- raw scraped messages -------------------------------------
@@ -98,7 +98,53 @@ create table if not exists monthly_index (
     top_topics         text
 );
 
--- ---------- bot users & roles ----------------------------------------
+-- ---------- access: logins an admin creates (app/api/_auth.py) -------
+-- The backend also creates these on its first request (same DDL).
+create table if not exists accounts (
+    id             bigserial primary key,
+    login          text        not null unique,
+    password_hash  text        not null,
+    role           text        not null check (role in ('analyst','economist','admin')),
+    status         text        not null default 'active' check (status in ('active','blocked')),
+    expires_at     timestamptz,
+    telegram_id    bigint      unique,
+    last_tg        bigint,                -- last Telegram account it was bound to (kept on sign-out)
+    reserved_tg    bigint,
+    tg_username    text,
+    tg_name        text,
+    full_name      text,
+    organization   text,
+    request_id     bigint,
+    created_at     timestamptz not null default now(),
+    created_by     bigint,
+    bound_at       timestamptz,
+    last_seen_at   timestamptz,
+    failed_logins  integer     not null default 0,
+    locked_until   timestamptz
+);
+create table if not exists access_requests (
+    id             bigserial primary key,
+    telegram_id    bigint      not null,
+    tg_username    text,
+    tg_name        text,
+    full_name      text        not null,
+    organization   text,
+    reason         text        not null check (reason in ('access','reset','other')),
+    message        text,
+    status         text        not null default 'new' check (status in ('new','done','rejected')),
+    created_at     timestamptz not null default now(),
+    handled_at     timestamptz,
+    handled_by     bigint
+);
+create index if not exists idx_requests_open on access_requests (status, created_at);
+create table if not exists auth_failures (
+    telegram_id    bigint primary key,
+    failures       integer     not null default 0,
+    last_at        timestamptz not null default now(),
+    locked_until   timestamptz
+);
+
+-- ---------- legacy (pre-login, no longer used) ------------------------
 create table if not exists app_users (
     telegram_id  bigint primary key,
     username     text,
@@ -133,3 +179,6 @@ alter table monthly_index  enable row level security;
 alter table indices        enable row level security;
 alter table app_users      enable row level security;
 alter table subscriptions  enable row level security;
+alter table accounts        enable row level security;
+alter table access_requests enable row level security;
+alter table auth_failures   enable row level security;

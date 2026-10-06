@@ -17,7 +17,8 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
 1. **Loyiha yarating:** https://supabase.com → *New project* (bepul reja).
    Region: yaqinroq (Frankfurt/EU). *Database password*ni saqlang.
 2. **Sxemani ishga tushiring:** Supabase → *SQL Editor* → *New query* → `db/schema.sql`
-   ичидагини butunlay ko'chirib qo'ying → **Run**. (Jadvallar + RLS yaratiladi.)
+   ichidagini butunlay ko'chirib qo'ying → **Run**. (Jadvallar + RLS yaratiladi; kirish
+   jadvallarini backend birinchi so'rovda o'zi ham yaratadi.)
 3. **Ulanish satrini oling:** Supabase → *Project Settings* → *Database* →
    **Connection string** → **Connection pooler** (Transaction mode, port **6543**) →
    URI'ni nusxalang. Ko'rinishi:
@@ -35,7 +36,7 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
 > Sxema xavfsiz: RLS yoqilgan, anon kalit hech narsa o'qiy olmaydi — faqat backend
 > (service_role) kiradi.
 
-**Sizga kerak bo'ladigan boshqa Supabase qiymatlari (bot/app uchun, 2-qismда):**
+**Sizga kerak bo'ladigan boshqa Supabase qiymatlari (bot/app uchun, 2-qismda):**
 - *Project URL* (Settings → API → Project URL)
 - *service_role* kalit (Settings → API → service_role — **maxfiy**, faqat backend)
 
@@ -65,17 +66,15 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
    https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<app>.vercel.app/api/index&secret_token=<WEBHOOK_SECRET>
    ```
    `{"ok":true,...}` chiqishi kerak.
-7. **Botga `/start`** yozing → admin sifatida tan olinasiz. Endi:
-   - boshqalar `/start` yozsa — sizga bildirishnoma keladi;
-   - `/approve <id> economist` (yoki `cb_analyst` / `public`) bilan tasdiqlaysiz;
-   - `/pending`, `/users`, `/block <id>` — boshqaruv.
+7. **Botga `/start`** yozing → bot egasi (admin) sifatida tan olinasiz. Boshqa foydalanuvchilar
+   faqat siz bergan login va parol bilan kiradi (pastdagi *Kirish va foydalanuvchilar* bo'limi).
 
-**Bot buyruqlari:** `/today` `/index` `/top` `/topics` `/topic <nom>` `/me` `/help`.
+**Bot buyruqlari:** `/today` `/index` `/top` `/topics` `/topic <nom>` `/app` `/me` `/logout` `/help`.
 Statistikalar 1-qismdagi Supabase ma'lumotidan olinadi (avval workflow sync qilgan bo'lsin).
 
-## 3-qism — Mini App (TAYYOR: `app/public/index.html` + `app/api/index.py`)
+## 3-qism — Mini App (TAYYOR: `app/public/` — `index.html`, `css/`, `js/` + `app/api/index.py`)
 
-Mini App bir xil Vercel deploy'da keladi — **build shart emas** (statik HTML + Chart.js).
+Mini App bir xil Vercel deploy'da keladi — **build shart emas** (statik HTML/CSS/JS + Chart.js).
 Vercel uni ildizda beradi: `https://<app>.vercel.app/`.
 
 1. **Bot'ga `WEBAPP_URL` qo'shing** (2-qism env jadvaliga): `https://<app>.vercel.app`
@@ -83,24 +82,49 @@ Vercel uni ildizda beradi: `https://<app>.vercel.app/`.
 2. **Menu tugmasi (ixtiyoriy, chiroyliroq):** @BotFather → `/setmenubutton` → botni tanlang →
    *URL* → `https://<app>.vercel.app` → nomi "Dashboard". Endi bot chatida doim "Open App"
    tugmasi turadi.
-3. **Xavfsizlik:** Mini App `/api/index` ga Telegram `initData` yuboradi; funksiya uni
-   bot-token bilan **HMAC** tekshiradi (soxta so'rov rad etiladi), rolni aniqlaydi va
-   faqat ruxsat etilgan ma'lumotni qaytaradi. `public` rol — sarlavha indeks + top 3;
-   to'liq rollar — mavzular + ko'proq postlar. Baza faqat backend orqali (RLS).
+3. **Xavfsizlik:** Mini App har so'rovda Telegram `initData` yuboradi; backend uni bot-token
+   bilan **HMAC** tekshiradi (soxta yoki 24 soatdan eski bo'lsa rad etiladi), so'ng login
+   holatini aniqlaydi. Ma'lumot faqat kirgan foydalanuvchiga beriladi. Baza faqat backend
+   orqali (RLS).
 
-**Mini App nima ko'rsatadi:** EAI/ESI kartalari (o'zgarish bilan), kunlik trend grafigi,
-mavzular kesimi (to'liq rol), top iqtisodiy postlar, "rasmiy emas" disclaimer'i.
+**Mini App nima ko'rsatadi:** kirish ekrani (o'zbek, rus, ingliz tillarida), administratorga
+murojaat, admin paneli; dashboard — EAI/ESI kartalari, kunlik trend, mavzular kesimi, top
+iqtisodiy postlar.
 
-## Qanday tekshirish (hammasi ulangач)
+## Qanday tekshirish (hammasi ulangach)
 1. `SUPABASE_DB_URL` secret → workflow'ni ishga tushiring → DB to'ladi.
 2. Botga `/start` → admin → `/today` ishlayapti.
 3. `/app` yoki Menu tugmasi → Mini App ochiladi, dashboard ko'rinadi.
-4. Boshqa foydalanuvchini `/approve <id> economist` bilan tasdiqlang.
+4. Mini App → *Foydalanuvchilar* → login yarating va uni boshqa Telegram hisobidan sinab ko'ring.
 
 ---
 
-## Rollar (admin tasdig'i bilan)
-- `admin` — hammasi + foydalanuvchilarni tasdiqlash (siz).
-- `cb_analyst` / `economist` — to'liq statistika + eksport.
-- `public` — faqat sarlavha indeks + top postlar.
-- Yangi foydalanuvchi `pending` bo'lib qo'shiladi; admin `/approve <id> <rol>` bilan faollashtiradi.
+## Kirish va foydalanuvchilar
+Bot va Mini App faqat admin bergan login va parol bilan ishlaydi. `BOT_ADMIN_ID` (bot egasi)
+doim kiradi va hisobdan chiqmaydi.
+
+- **Login yaratish:** Mini App → yuqoridagi *Foydalanuvchilar* tugmasi (yoki bot xabaridagi
+  *Admin panelini ochish*) → *Yangi kirish ma'lumoti* → rol va muddat → *Login va parol
+  yaratish*. Parol **bir marta** ko'rsatiladi; bazada faqat uning xeshi (scrypt) saqlanadi.
+- **Birinchi kirishda** login foydalanuvchining Telegram hisobiga bog'lanadi va boshqa Telegram
+  hisobidan ishlamaydi. Foydalanuvchi hisobdan chiqsa (Mini App → *Hisob* → *Hisobdan chiqish*
+  yoki botda `/logout`), bog'lanish bekor bo'ladi.
+- **Kirish so'rovlari:** logini yo'q foydalanuvchi kirish ekranidagi *Administratorga* havolasi
+  orqali so'rov yuboradi, sizga bot xabar beradi. So'rovdan yaratilgan login va parol
+  foydalanuvchiga bot orqali boradi va faqat uning Telegram hisobida ishlaydi. *Parolni
+  tiklash* so'rovida foydalanuvchining mavjud logini uchun yangi parol yuboriladi. So'rovni
+  xabarsiz yopish yoki rad etish (foydalanuvchiga xabar boradi) mumkin.
+- **Boshqaruv:** har bir login uchun parolni tiklash, muddatni uzaytirish, bloklash.
+- **Himoya:** bitta Telegram hisobidan 5 ta xato urinish — 15 daqiqa blok; bitta loginga
+  10 ta xato — 30 daqiqa blok. Parollar log'ga yozilmaydi.
+
+| Rol | Imkoniyat |
+|-----|-----------|
+| `analyst` (Analitik) | to'liq dashboard va bot |
+| `economist` (Iqtisodchi) | to'liq dashboard va bot |
+| `admin` (Admin) | yuqoridagilar + foydalanuvchilarni boshqarish |
+
+Muddat: 30 kun, 90 kun yoki muddatsiz; muddati tugagan yoki bloklangan login kira olmaydi.
+Jadvallar (`accounts`, `access_requests`, `auth_failures`) birinchi so'rovda avtomatik
+yaratiladi. Eski `app_users` jadvali endi ishlatilmaydi — oldingi foydalanuvchilarga yangi
+login berish kerak.
