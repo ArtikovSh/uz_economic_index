@@ -1,22 +1,24 @@
 """
-Gemini message classifier for the posts waiting in pending.csv.
+LLM message classifier for the posts waiting in pending.csv — OpenAI or Gemini.
 
+* The provider is config.LLM_PROVIDER: OpenAI when a real OpenAI key is set (unless
+  LLM_PROVIDER=gemini), else Gemini. Both get the same prompt and schema (prompts.py).
 * Posts without a label for the current LLM_LABEL_VERSION are sent oldest first,
   so days can be finalised in date order.
-* Posts go in batches with a JSON response schema; requests are paced to the
-  free-tier per-minute limit and capped per run (LLM_MAX_REQUESTS).
+* Posts go in batches with a JSON response schema; requests are paced
+  (LLM_RPM) and capped per run (LLM_MAX_REQUESTS).
 * Every label comes back with its post number; a reply whose numbers do not match
   is rejected, so a label can never land on the wrong post.
-* No rule-based fallback: a post Gemini could not label keeps waiting and is
+* No rule-based fallback: a post the model could not label keeps waiting and is
   retried on the next run, so the index never mixes labelling methods. Only a post
   that fails on its own in two runs is stored as non-economic (marked in
   label_model), so it cannot hold back every later day.
 * Short outages (HTTP 429/5xx, timeouts) are retried with growing pauses; labelling
-  stops for the run only after three batches in a row fail, after the daily quota
+  stops for the run only after three batches in a row fail, after a daily quota
   is used up, or when the time budget (LLM_TIME_BUDGET_MIN) is spent.
-* The model is "sticky": GEMINI_MODEL if set, else the model of the latest labels,
-  else the newest stable Flash model available to the key. Each label records the
-  model that produced it.
+* The model is "sticky": GEMINI_MODEL / OPENAI_MODEL if set, else the model of the
+  latest labels (if it belongs to the provider), else the provider's default. Each
+  label records the model that produced it.
 """
 import json
 import re
@@ -24,9 +26,11 @@ import time
 
 import requests
 
-from config import (GEMINI_API_KEY, GEMINI_MODEL, LLM_BATCH_SIZE, LLM_MAX_CHARS,
+from config import (GEMINI_API_KEY, GEMINI_MODEL, OPENAI_API_KEY, OPENAI_MODEL,
+                    OPENAI_REASONING_EFFORT, LLM_PROVIDER, LLM_BATCH_SIZE, LLM_MAX_CHARS,
                     LLM_RPM, LLM_MAX_REQUESTS, LLM_TIME_BUDGET_MIN, LLM_LABEL_VERSION)
-from prompts import SYSTEM_PROMPT, RESPONSE_SCHEMA, CATEGORIES, build_user_prompt
+from prompts import (SYSTEM_PROMPT, RESPONSE_SCHEMA, OPENAI_SCHEMA, CATEGORIES,
+                     build_user_prompt)
 from store import LABEL_COLS, post_keys
 
 API = "https://generativelanguage.googleapis.com/v1beta"
@@ -36,12 +40,19 @@ _STABLE_FLASH = re.compile(r"^gemini-(\d+(?:\.\d+)?)-flash(-lite)?$")
 SAFETY_OFF = [{"category": c, "threshold": "BLOCK_NONE"} for c in (
     "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
     "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")]
+
+OPENAI_API = "https://api.openai.com/v1"
+# gpt-6-luna: OpenAI's model for high-volume classification; gpt-5-mini if it is not
+# available to the key. The first one that works stays (sticky).
+OPENAI_DEFAULTS = ["gpt-6-luna", "gpt-5-mini"]
+OPENAI_MAX_OUTPUT = 32000          # a cap on reasoning + answer tokens per request
+
 UNLABELLED = {"is_economic": 0, "primary_topic": "non_economic", "relevance": 0.0,
               "sentiment": 0.0, "is_ad": 0, "is_digest": 0, "is_foreign": 0}
 
 
 class ProviderError(Exception):
-    """Needs a human: bad/missing key, API disabled, no usable model."""
+    """Needs a human: bad/missing key, API disabled, no credit, no usable model."""
 
 
 class ModelUnavailable(Exception):
@@ -60,7 +71,18 @@ class OutOfTime(TransientError):
     """Waiting any longer would exceed the run's labelling time budget."""
 
 
-# ------------------------------------------------------------------ HTTP -------
+def provider_of(model):
+    return "gemini" if model.startswith("gemini") else "openai"
+
+
+def _wait(seconds, deadline, what):
+    """Sleep before a retry, unless that would cross the run's time budget."""
+    if deadline and time.time() + seconds > deadline:
+        raise OutOfTime(f"time budget spent while waiting ({what})")
+    time.sleep(seconds)
+
+
+# ------------------------------------------------------------------ Gemini -----
 def _headers():
     return {"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"}
 
@@ -85,7 +107,7 @@ def _error_info(resp):
 
 
 def list_models():
-    """Model ids this key can call with generateContent."""
+    """Gemini model ids this key can call with generateContent."""
     r = requests.get(f"{API}/models", headers=_headers(), params={"pageSize": 1000}, timeout=60)
     if r.status_code != 200:
         raise ProviderError(f"cannot list models: HTTP {r.status_code}: {_error_info(r)[0]}")
@@ -99,12 +121,21 @@ def _flash_rank(model):
     return version, m.group(2) is None          # newer first, Flash before Flash-Lite
 
 
-def candidate_models(sticky=None):
-    """Models to try, in order. An explicit GEMINI_MODEL is the only candidate."""
-    if GEMINI_MODEL:
-        return [GEMINI_MODEL]
+def candidate_models(sticky=None, provider=None):
+    """Models to try, in order. An explicit GEMINI_MODEL / OPENAI_MODEL is the only
+    candidate; otherwise the model of the latest labels comes first if it belongs to
+    this provider."""
+    provider = provider or LLM_PROVIDER
     if sticky:
         sticky = sticky.split(":")[0]              # "<model>:unlabelled" marks a stored default
+        if provider_of(sticky) != provider:
+            sticky = None
+    if provider == "openai":
+        if OPENAI_MODEL:
+            return [OPENAI_MODEL]
+        return list(dict.fromkeys(([sticky] if sticky else []) + OPENAI_DEFAULTS))
+    if GEMINI_MODEL:
+        return [GEMINI_MODEL]
     try:
         flash = sorted((m for m in list_models() if _STABLE_FLASH.match(m)),
                        key=_flash_rank, reverse=True)
@@ -115,17 +146,10 @@ def candidate_models(sticky=None):
     return list(dict.fromkeys(order))           # dedupe, keep order
 
 
-# --------------------------------------------------------------- classify -----
-def _parse(data, n):
-    cands = data.get("candidates") or []
-    if not cands:
-        block = (data.get("promptFeedback") or {}).get("blockReason")
-        raise ValueError(f"no candidates (blockReason={block})")
-    parts = (cands[0].get("content") or {}).get("parts") or []
-    text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
-    if not text:
-        raise ValueError(f"empty reply (finishReason={cands[0].get('finishReason')})")
-    text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text)
+# --------------------------------------------------------------- parsing ------
+def _parse_text(text, n):
+    """The model's JSON answer -> n labels, checking count and post ids."""
+    text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text.strip())
     obj = json.loads(text)
     arr = obj.get("results") if isinstance(obj, dict) else obj
     if not isinstance(arr, list) or len(arr) != n:
@@ -141,6 +165,35 @@ def _parse(data, n):
         if not ok:
             raise ValueError("post ids in the reply do not match the request")
     return [_to_label(x) for x in arr]
+
+
+def _parse(data, n):
+    """Gemini generateContent reply -> labels."""
+    cands = data.get("candidates") or []
+    if not cands:
+        block = (data.get("promptFeedback") or {}).get("blockReason")
+        raise ValueError(f"no candidates (blockReason={block})")
+    parts = (cands[0].get("content") or {}).get("parts") or []
+    text = "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+    if not text:
+        raise ValueError(f"empty reply (finishReason={cands[0].get('finishReason')})")
+    return _parse_text(text, n)
+
+
+def _openai_text(data):
+    """OpenAI Responses reply -> the answer text."""
+    if data.get("status") == "incomplete":
+        reason = (data.get("incomplete_details") or {}).get("reason")
+        raise ValueError(f"incomplete reply ({reason})")
+    for item in data.get("output") or []:
+        if item.get("type") != "message":
+            continue
+        for c in item.get("content") or []:
+            if c.get("type") == "refusal":
+                raise ValueError(f"refused: {str(c.get('refusal'))[:100]}")
+            if c.get("type") == "output_text" and c.get("text"):
+                return c["text"]
+    raise ValueError("reply has no output text")
 
 
 def _num(x, lo, hi):
@@ -166,18 +219,20 @@ def _to_label(d):
     }
 
 
+# --------------------------------------------------------------- classify -----
 def classify_batch(model, texts, channels=None, deadline=None):
-    """Label one batch. Raises ValueError on unusable output, else a typed error."""
+    """Label one batch with `model` (OpenAI or Gemini, by its name). Raises ValueError
+    on unusable output, else a typed error."""
+    if provider_of(model) == "openai":
+        return _openai_batch(model, texts, channels, deadline)
+    return _gemini_batch(model, texts, channels, deadline)
+
+
+def _gemini_batch(model, texts, channels=None, deadline=None):
     gen = {"responseMimeType": "application/json", "responseSchema": RESPONSE_SCHEMA}
     if model.startswith("gemini-2"):
         gen["temperature"] = 0      # Gemini 3+: Google advises keeping the default
     last = ""
-
-    def pause(seconds):
-        if deadline and time.time() + seconds > deadline:
-            raise OutOfTime(f"{model}: time budget spent while waiting ({last})")
-        time.sleep(seconds)
-
     for attempt in range(5):
         payload = {
             "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
@@ -191,7 +246,7 @@ def classify_batch(model, texts, channels=None, deadline=None):
                               headers=_headers(), json=payload, timeout=300)
         except requests.RequestException as e:
             last = f"{type(e).__name__}: {str(e)[:200]}"
-            pause(min(15 * 2 ** attempt, 120))
+            _wait(min(15 * 2 ** attempt, 120), deadline, f"{model}: {last}")
             continue
         if r.status_code == 200:
             return _parse(r.json(), len(texts))
@@ -205,14 +260,84 @@ def classify_batch(model, texts, channels=None, deadline=None):
                 raise ModelUnavailable(f"{model}: no free quota ({msg})")
             if any("PerDay" in q for q in quota_ids):
                 raise QuotaExhausted(f"{model}: daily quota reached")
-            pause(min(max(delay or 0, 20) + 2, 120))    # per-minute limit: wait it out
+            _wait(min(max(delay or 0, 20) + 2, 120), deadline, f"{model}: {last}")
             continue
         if r.status_code in (500, 502, 503, 504):
-            pause(min(15 * 2 ** attempt, 120))          # overloaded: 15, 30, 60, 120 s
+            _wait(min(15 * 2 ** attempt, 120), deadline, f"{model}: {last}")  # 15 .. 120 s
             continue
         if r.status_code == 404:
             raise ModelUnavailable(f"{model}: {msg}")
         raise ProviderError(last)                   # 400 bad key, 403 API disabled, ...
+    raise TransientError(f"{model}: {last}")
+
+
+# ------------------------------------------------------------------ OpenAI -----
+def _openai_error(resp):
+    """(message, code) of an OpenAI error reply."""
+    try:
+        err = resp.json().get("error") or {}
+    except ValueError:
+        return resp.text[:300], ""
+    return str(err.get("message", ""))[:300], str(err.get("code") or err.get("type") or "")
+
+
+def _retry_after(resp):
+    headers = getattr(resp, "headers", None) or {}
+    try:
+        if headers.get("retry-after-ms"):
+            return float(headers["retry-after-ms"]) / 1000
+        if headers.get("retry-after"):
+            return float(headers["retry-after"])
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def _openai_batch(model, texts, channels=None, deadline=None):
+    body = {
+        "model": model,
+        "instructions": SYSTEM_PROMPT,
+        "input": build_user_prompt(texts, channels),
+        "text": {"format": {"type": "json_schema", "name": "post_labels",
+                            "schema": OPENAI_SCHEMA, "strict": True}},
+        "reasoning": {"effort": OPENAI_REASONING_EFFORT},
+        "max_output_tokens": OPENAI_MAX_OUTPUT,
+        "store": False,                             # posts are not kept on OpenAI's side
+    }
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    last = ""
+    for attempt in range(5):
+        try:
+            r = requests.post(f"{OPENAI_API}/responses", headers=headers, json=body, timeout=300)
+        except requests.RequestException as e:
+            last = f"{type(e).__name__}: {str(e)[:200]}"
+            _wait(min(15 * 2 ** attempt, 120), deadline, f"{model}: {last}")
+            continue
+        if r.status_code == 200:
+            return _parse_text(_openai_text(r.json()), len(texts))
+        msg, code = _openai_error(r)
+        last = f"HTTP {r.status_code}: {msg}"
+        low = msg.lower()
+        if r.status_code == 400 and "reasoning" in body and "reasoning" in low:
+            body.pop("reasoning")                   # a model without reasoning effort
+            continue
+        if (r.status_code == 400 and body["text"]["format"]["type"] == "json_schema"
+                and ("schema" in low or "text.format" in low)):
+            body["text"] = {"format": {"type": "json_object"}}   # schema rejected -> JSON mode
+            continue
+        if r.status_code == 429:
+            if code == "insufficient_quota" or "insufficient_quota" in low or "billing" in low:
+                raise ProviderError(f"OpenAI: no credit left on the account ({msg})")
+            if "per day" in low or "(rpd)" in low or "(tpd)" in low:
+                raise QuotaExhausted(f"{model}: daily limit reached")
+            _wait(min(max(_retry_after(r) or 0, 20) + 2, 120), deadline, f"{model}: {last}")
+            continue
+        if r.status_code in (500, 502, 503, 504):
+            _wait(min(15 * 2 ** attempt, 120), deadline, f"{model}: {last}")
+            continue
+        if r.status_code == 404 or (r.status_code == 403 and "model" in low):
+            raise ModelUnavailable(f"{model}: {msg}")
+        raise ProviderError(f"OpenAI: {last}")      # 401 bad key, 403 region/permissions, ...
     raise TransientError(f"{model}: {last}")
 
 
@@ -235,8 +360,9 @@ def label_pending(pending, save=None, sticky=None):
     status["todo"] = len(todo)
     if todo.empty:
         return pending, status
-    if not GEMINI_API_KEY:
-        status["error"] = "GEMINI_API_KEY is not set"
+    key_name = "OPENAI_API_KEY" if LLM_PROVIDER == "openai" else "GEMINI_API_KEY"
+    if not (OPENAI_API_KEY if LLM_PROVIDER == "openai" else GEMINI_API_KEY):
+        status["error"] = f"{key_name} is not set"
         return pending, status
     try:
         models = candidate_models(sticky)
@@ -245,7 +371,7 @@ def label_pending(pending, save=None, sticky=None):
         return pending, status
     model = models.pop(0)
     todo = todo.sort_values("date")
-    print(f"  Gemini model: {model} | {len(todo)} posts to label "
+    print(f"  {LLM_PROVIDER} model: {model} | {len(todo)} posts to label "
           f"(batch {LLM_BATCH_SIZE}, max {LLM_MAX_REQUESTS} requests this run)")
 
     texts = todo["raw_text"].fillna("").astype(str).str.slice(0, LLM_MAX_CHARS).tolist()

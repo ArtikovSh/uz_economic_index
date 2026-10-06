@@ -1,7 +1,8 @@
 name: uz-economic-index
 
 # Collects one full Tashkent day (2 days back) right after Tashkent midnight, so
-# every post has been public >= 24h when measured; labels new posts with Gemini,
+# every post has been public >= 24h when measured; labels new posts with the LLM
+# (OpenAI if OPENAI_API_KEY holds an OpenAI key, else Gemini),
 # appends final days to the posts table and closed periods (day / week / month /
 # quarter / year) to the indices table, and commits the results. The 02:05 run is
 # a backup: it only collects channels the 00:05 run missed (posts are never
@@ -47,8 +48,11 @@ jobs:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION_STRING: ${{ secrets.TG_SESSION_STRING }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}   # set -> OpenAI labels the posts
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}      # optional pin; empty = gpt-6-luna
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}      # optional pin; empty = auto
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}      # optional: "gemini" forces Gemini
         run: python main.py
 
       - name: Sync to Supabase (no-op if SUPABASE_DB_URL unset)

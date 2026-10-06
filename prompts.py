@@ -159,8 +159,8 @@ EXAMPLES (headline -> labels)
      -> is_ad
 
 OUTPUT
-Return ONLY {"results": [...]} with exactly one object per post, in the given order.
-Each object starts with "id" = the number of its POST."""
+Return ONLY a JSON object {"results": [...]} with exactly one object per post, in the
+given order. Each object starts with "id" = the number of its POST."""
 
 _ITEM = {
     "type": "OBJECT",
@@ -187,6 +187,23 @@ RESPONSE_SCHEMA = {
     "properties": {"results": {"type": "ARRAY", "items": _ITEM}},
     "required": ["results"],
 }
+
+
+def _json_schema(s):
+    """The same schema in standard JSON Schema for OpenAI's strict Structured Outputs:
+    lower-case types, every object closed (additionalProperties false); property order
+    is the order of "properties"."""
+    out = {k: v for k, v in s.items() if k != "propertyOrdering"}
+    out["type"] = s["type"].lower()
+    if "properties" in s:
+        out["properties"] = {k: _json_schema(v) for k, v in s["properties"].items()}
+        out["additionalProperties"] = False
+    if "items" in s:
+        out["items"] = _json_schema(s["items"])
+    return out
+
+
+OPENAI_SCHEMA = _json_schema(RESPONSE_SCHEMA)
 
 
 def build_user_prompt(texts, channels=None):

@@ -42,22 +42,43 @@ INDICES_CSV = os.path.join(DATA_DIR, "indices.csv")    # "Indekslar": day/week/m
 PENDING_CSV = os.path.join(DATA_DIR, "pending.csv")    # posts whose day is not final yet
 
 # =============================================================================
-# Gemini classifier. Every post is labelled once. There is no rule-based fallback:
-# a post Gemini could not label waits in pending.csv and is retried on the next
-# run, so the index never mixes labelling methods. Only a post that fails on its own
-# in two runs (e.g. blocked by the API) is stored as non-economic, so that one post
-# can never hold back every later day.
+# LLM classifier (OpenAI or Gemini, one at a time). Every post is labelled once.
+# There is no rule-based fallback: a post the model could not label waits in
+# pending.csv and is retried on the next run, so the index never mixes labelling
+# methods. Only a post that fails on its own in two runs (e.g. blocked by the API) is
+# stored as non-economic, so that one post can never hold back every later day.
 # =============================================================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 # Empty = automatic and "sticky": keep the model that produced the cached labels,
 # else the newest stable Flash model available to the key.
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip()
 
-# The free tier of the newest Flash model allows only ~20 requests a day, and the
-# quota counts requests, not posts — hence 50 posts per request (~1 000 posts a day).
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+# Empty = "sticky" (the model of the latest labels), else gpt-6-luna.
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "").strip()
+OPENAI_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "").strip() or "medium"
+
+
+def is_openai_key(key):
+    """A real OpenAI key (sk-...). The old setup kept a Groq key (gsk_...) in
+    OPENAI_API_KEY; that one must not switch the pipeline to OpenAI."""
+    return key.startswith("sk-") and not key.startswith(("sk-or-", "sk-ant-"))
+
+
+def choose_provider(forced, openai_key):
+    """"openai" when a real OpenAI key is set, unless LLM_PROVIDER=gemini; else "gemini"."""
+    if forced == "gemini" or not is_openai_key(openai_key):
+        return "gemini"
+    return "openai"
+
+
+LLM_PROVIDER = choose_provider(os.getenv("LLM_PROVIDER", "").strip().lower(), OPENAI_API_KEY)
+
+# Gemini's free tier for the newest Flash model allows only ~20 requests a day and
+# counts requests, not posts — hence 50 posts per request (~1 000 posts a day).
 LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE", "50"))      # posts per request
 LLM_MAX_CHARS = int(os.getenv("LLM_MAX_CHARS", "1000"))      # truncate each post
-LLM_RPM = float(os.getenv("LLM_RPM", "5"))                   # free-tier requests/minute
+LLM_RPM = float(os.getenv("LLM_RPM") or (30 if LLM_PROVIDER == "openai" else 5))  # requests/minute
 LLM_MAX_REQUESTS = int(os.getenv("LLM_MAX_REQUESTS", "60"))  # per run
 LLM_TIME_BUDGET_MIN = float(os.getenv("LLM_TIME_BUDGET_MIN", "30"))  # stop labelling after this
 LLM_LABEL_VERSION = "v4"     # bump to re-label everything (v4: step-by-step prompt, post ids)

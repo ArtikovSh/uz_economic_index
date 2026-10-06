@@ -2,8 +2,9 @@
 Pre-flight check of every external dependency, without collecting any posts.
 
   * Telegram: the session is authorized and every channel handle resolves
-  * Gemini:   the key works, and the model labels the control set in gold_set.py
-              (26 real posts with known answers) well enough
+  * LLM:      for OpenAI and Gemini (each one whose key is set): the key works, and
+              the model labels the control set in gold_set.py (26 real posts with
+              known answers) well enough. The provider the pipeline uses is marked.
   * Sheets:   runs the real sync (fills the sheet), if its secrets are set
   * Alerts:   sends this summary through the bot, if its secrets are set
 
@@ -16,7 +17,8 @@ import sys
 
 import requests
 
-from config import CHANNELS, GEMINI_API_KEY, TONE_THRESHOLD
+from config import (CHANNELS, GEMINI_API_KEY, OPENAI_API_KEY, LLM_PROVIDER, TONE_THRESHOLD,
+                    is_openai_key)
 
 GOLD_PASS = 0.85        # share of the control set the model must get right
 
@@ -59,10 +61,13 @@ def outcome(label):
     return "iqt+" if s > TONE_THRESHOLD else "iqt-" if s < -TONE_THRESHOLD else "iqt0"
 
 
-def check_gemini():
-    """One request: label the control set with the model the pipeline would use."""
-    if not GEMINI_API_KEY:
-        return False, "GEMINI_API_KEY yo'q"
+def check_llm(provider):
+    """One request: label the control set with the model this provider would use."""
+    configured = is_openai_key(OPENAI_API_KEY) if provider == "openai" else bool(GEMINI_API_KEY)
+    if not configured:
+        key = "OPENAI_API_KEY" if provider == "openai" else "GEMINI_API_KEY"
+        # the provider the pipeline uses must work; the other one is optional
+        return (False if provider == LLM_PROVIDER else None), f"sozlanmagan ({key} yo'q)"
     from gold_set import GOLD
     from llm_classifier import candidate_models, classify_batch
     from store import load_ledger, load_pending
@@ -70,7 +75,7 @@ def check_gemini():
             or load_ledger()["label_model"].dropna().tolist())
     errors = []
     try:
-        models = candidate_models(used[-1] if used else None)[:4]
+        models = candidate_models(used[-1] if used else None, provider)[:4]
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
     for model in models:
@@ -116,8 +121,10 @@ def notify(text):
 
 
 def main() -> int:
+    active = " (pipeline shuni ishlatadi)"
     results = [("Telegram", *check_telegram()),
-               ("Gemini", *check_gemini()),
+               ("OpenAI" + (active if LLM_PROVIDER == "openai" else ""), *check_llm("openai")),
+               ("Gemini" + (active if LLM_PROVIDER == "gemini" else ""), *check_llm("gemini")),
                ("Google Sheets", *check_sheets())]
     icon = {True: "✅", False: "❌", None: "⚪"}
     text = "uz-economic-index tekshiruvi\n" + "\n".join(

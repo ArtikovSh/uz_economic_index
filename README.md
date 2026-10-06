@@ -18,12 +18,12 @@ oy, chorak va yil uchun formula bir xil.
    02:05 dagi zaxira run faqat birinchi run yig'a olmagan kanallarni yig'adi.
    Yig'ilmay qolgan kunlar keyinroq to'ldirilmaydi. Ko'rishlar va forward'lar indeksda
    ishlatilmaydi, lekin yig'ib boriladi.
-2. **Tasniflash** — har post **Gemini** bilan bir marta belgilanadi: reklamami, dayjestmi,
+2. **Tasniflash** — har post **OpenAI** yoki **Gemini** bilan bir marta belgilanadi: reklamami, dayjestmi,
    iqtisodiymi, xorijiymi, mavzu va sentiment. Prompt qoidalari `METHODOLOGY.md` ning
    3-bo'limida yozilgan. Zaxira klassifikator yo'q: belgilanmay qolgan post keyingi run'da
    qayta yuboriladi.
 3. **Filtrlar** — kanal o'zi reklama deb belgilagan post (`(реклама)`, oxirida `Reklama`)
-   Gemini javobidan qat'i nazar reklama hisoblanadi.
+   model javobidan qat'i nazar reklama hisoblanadi.
 4. **Ikki jadval** — kun yakunlangach (barcha postlari belgilangach) uning postlari
    **Xabarlar** jadvaliga, kun qatori **Indekslar** jadvaliga qo'shiladi. Hafta, oy,
    chorak va yil qatori davrning oxirgi kuni yakunlanganda qo'shiladi. Qo'shilgan qator
@@ -33,24 +33,24 @@ oy, chorak va yil uchun formula bir xil.
 
 | Fayl | Vazifasi |
 |------|----------|
-| `main.py` | Kunlik quvur: yig'ish → Gemini → kunni yakunlash → indekslar → Excel |
-| `config.py` | Sozlamalar: kanallar, yig'ish oynasi, Gemini, proxy |
+| `main.py` | Kunlik quvur: yig'ish → LLM belgilari → kunni yakunlash → indekslar → Excel |
+| `config.py` | Sozlamalar: kanallar, yig'ish oynasi, OpenAI/Gemini, proxy |
 | `scraper.py` | Telethon orqali kunni yig'ish; sessiyani oldindan tekshiradi |
 | `store.py` | Ikki jadval va kutish fayli (faqat qo'shish) |
-| `llm_classifier.py` | Gemini klassifikatori: partiyalar, kvota nazorati |
-| `prompts.py` | Gemini prompti va JSON sxema |
+| `llm_classifier.py` | OpenAI/Gemini klassifikatori: partiyalar, qayta urinish, kvota nazorati |
+| `prompts.py` | Prompt va JSON sxema (ikkala model uchun bir xil) |
 | `gold_set.py` | Nazorat to'plami: javobi ma'lum 26 ta haqiqiy post (`check` ishlatadi) |
 | `indicator.py` | Reklama filtri, kunni yakunlash, EAI/ESI sanog'i |
 | `excel_exporter.py` | Excel hisobot ("Indekslar", "Xabarlar", "Metodika") |
 | `sync_to_db.py` | Supabase'ga sinxronlash (bot va Mini App uchun) |
 | `sheets_sync.py` | Jadvallarni Google Sheets'ga qo'shish |
-| `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, Gemini (nazorat to'plami bilan), Sheets, bot ogohlantirishi |
+| `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, OpenAI va Gemini (nazorat to'plami bilan), Sheets, bot ogohlantirishi |
 | `export_session.py` | CI uchun Telegram sessiya satrini yaratish |
 | `app/` | Telegram bot + Mini App (Vercel) |
 
 ## Natijalar
 
-- `data/messages.csv` — **Xabarlar**: har bir yakunlangan post, Gemini belgilari va indeks
+- `data/messages.csv` — **Xabarlar**: har bir yakunlangan post, model belgilari va indeks
   bayroqlari (`nonad`, `econ`, `tone`) bilan, sana tartibida
 - `data/indices.csv` — **Indekslar**: har bir yopilgan kun, hafta, oy, chorak va yil
   (sanoqlar, EAI, ESI, izoh)
@@ -65,13 +65,18 @@ oy, chorak va yil uchun formula bir xil.
 |------|-----------|
 | `TG_API_ID`, `TG_API_HASH` | my.telegram.org dagi API juftligi |
 | `TG_SESSION_STRING` | Telegram sessiyasi (pastga qarang) |
-| `GEMINI_API_KEY` | https://aistudio.google.com/apikey |
+| `OPENAI_API_KEY` | https://platform.openai.com/api-keys — bo'lsa, postlarni OpenAI belgilaydi |
+| `GEMINI_API_KEY` | https://aistudio.google.com/apikey — OpenAI kaliti bo'lmasa ishlatiladi |
 | `TELEGRAM_BOT_TOKEN`, `BOT_ADMIN_ID` | run yiqilsa botdan ogohlantirish (ixtiyoriy) |
 | `SUPABASE_DB_URL` | bot/Mini App bazasi (ixtiyoriy) |
 | `GOOGLE_SERVICE_ACCOUNT_JSON`, `GSHEET_ID` | Google Sheets oynasi (ixtiyoriy, pastga qarang) |
 
-**Variables** (ixtiyoriy): `GEMINI_MODEL` — modelni qat'iy belgilash. Bo'sh bo'lsa
-avtomatik tanlanadi va keyin o'sha model saqlanib qoladi. Qaysi modelda bepul
+**Variables** (ixtiyoriy):
+- `LLM_PROVIDER=gemini` — OpenAI kaliti bo'lsa ham Gemini ishlatiladi.
+- `OPENAI_MODEL` — OpenAI modelini qat'iy belgilash (bo'sh bo'lsa `gpt-6-luna`).
+- `GEMINI_MODEL` — Gemini modelini qat'iy belgilash.
+
+Model bo'sh qoldirilsa, avtomatik tanlanadi va keyin o'sha model saqlanib qoladi. Qaysi modelda bepul
 kvota borligini https://aistudio.google.com/rate-limit da ko'ring. Eng yangi Flash
 modelining bepul limiti kuniga ~20 so'rov, shuning uchun bitta so'rovda 50 ta post
 yuboriladi (`LLM_BATCH_SIZE`).
@@ -79,9 +84,9 @@ yuboriladi (`LLM_BATCH_SIZE`).
 **Workflow'lar:**
 - `uz-economic-index` — kunlik (00:05 va 02:05 Toshkent) + qo'lda. Barcha davrlar
   (kun, hafta, oy, chorak, yil) shu run'da yopiladi.
-- `check` — post yig'masdan hamma narsani tekshiradi (Telegram, Gemini, Sheets) va natijani botga yuboradi.
-  Gemini nazorat to'plamidagi 26 ta postni belgilaydi; bot nechtasi to'g'ri ekanini va xatolarni
-  ko'rsatadi. Kunlik kvotadan 1 so'rov sarflanadi. Kunlik run bilan bir vaqtda ishlamaydi
+- `check` — post yig'masdan hamma narsani tekshiradi (Telegram, OpenAI, Gemini, Sheets) va natijani
+  botga yuboradi. Kaliti bor har bir model nazorat to'plamidagi 26 ta postni belgilaydi; bot
+  nechtasi to'g'ri ekanini va xatolarni ko'rsatadi. Har model uchun 1 so'rov sarflanadi. Kunlik run bilan bir vaqtda ishlamaydi
   (navbatga turadi).
 
 ## Google Sheets oynasi

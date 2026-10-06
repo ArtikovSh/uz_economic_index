@@ -52,9 +52,16 @@ soni bo'yicha hisoblanadi, kunlik qiymatlarning o'rtachasi emas.
 
 ---
 
-## 3. Tasniflash — Gemini (`llm_classifier.py`, `prompts.py`)
+## 3. Tasniflash — OpenAI yoki Gemini (`llm_classifier.py`, `prompts.py`)
 
-Har bir post bir marta belgilanadi (belgi versiyasi `v4`). Prompt modelni indeks
+Har bir post bir marta belgilanadi (belgi versiyasi `v4`). Postlarni bitta model
+belgilaydi:
+- `OPENAI_API_KEY` da OpenAI kaliti (`sk-...`) bo'lsa — OpenAI (`gpt-6-luna`, u ishlamasa
+  `gpt-5-mini`). Javob qat'iy JSON sxema bo'yicha olinadi, OpenAI postlarni saqlamaydi
+  (`store: false`).
+- aks holda, yoki `LLM_PROVIDER=gemini` bo'lsa — Gemini.
+
+Ikkalasi ham bir xil prompt va sxemani oladi. Prompt modelni indeks
 belgilarni ishlatadigan tartibda yuritadi: reklama → dayjest → iqtisodiy → xorijiy →
 mavzu → relevance → sentiment.
 
@@ -91,7 +98,7 @@ Sentiment qoidalari (indeksda faqat yo'nalish ishlatiladi):
   tayinlov, yubiley, mukofot va yo'nalishi aniq bo'lmagan statistika.
 - Aralash yangilikda sarlavha va asosiy fakt hal qiladi. Inkor hisobga olinadi.
 
-**Belgi boshqa postga tushmaydi:** Gemini har bir javobni post raqami (`id`) bilan qaytaradi.
+**Belgi boshqa postga tushmaydi:** model har bir javobni post raqami (`id`) bilan qaytaradi.
 Raqamlar so'ralganiga mos kelmasa, javob rad etiladi va partiya ikkiga bo'linib qayta
 yuboriladi. Har bir post modelga kanal nomi bilan birga yuboriladi.
 
@@ -100,27 +107,30 @@ yuboriladi. Har bir post modelga kanal nomi bilan birga yuboriladi.
 model javobidan qat'i nazar reklama hisoblanadi.
 
 **Zaxira klassifikator yo'q:**
-- Gemini javob bermasa yoki kvota tugasa, post kutib turadi va keyingi run'da qayta
+- Model javob bermasa yoki kvota tugasa, post kutib turadi va keyingi run'da qayta
   yuboriladi.
 - Vaqtinchalik xatolarda (HTTP 429, 5xx, timeout) tizim pauza qilib qayta urinadi.
 - Ketma-ket uch partiya o'tmasa, run'ning belgilash bosqichi to'xtaydi.
 - Run birorta ham postni belgilay olmasa va sabab kunlik kvota bo'lmasa, bot ogohlantiradi.
-- Gemini bitta postni ikki xil run'da ham belgilay olmasa, u iqtisodiy emas deb saqlanadi
+- Model bitta postni ikki xil run'da ham belgilay olmasa, u iqtisodiy emas deb saqlanadi
   (`label_model` oxirida `:unlabelled` belgisi qo'yiladi). Shunday qilib bitta post keyingi
   kunlarni to'xtatib qo'ymaydi.
 
 Har bir belgi uni bergan modelni (`label_model`) va versiyasini (`label_version`) saqlaydi.
 
-**Kvota:**
-- Eng yangi Flash modelining bepul limiti kuniga taxminan 20 so'rov. Shuning uchun bitta
-  so'rovda 50 ta post yuboriladi, bu kuniga ~1 000 post.
+**Kvota va narx:**
+- Gemini'ning eng yangi Flash modelida bepul limit kuniga taxminan 20 so'rov. Shuning
+  uchun bitta so'rovda 50 ta post yuboriladi, bu kuniga ~1 000 post.
+- OpenAI pullik, lekin kunlik limiti yo'q. `gpt-6-luna` narxi 1M token uchun $0.10
+  (kirish) va $0.50 (chiqish). Kuniga ~150 post uchun xarajat oyiga taxminan bir dollar.
 - Kunlik oqim ~150 post, ya'ni 3–4 so'rov.
 
 **Nazorat to'plami:**
 - `gold_set.py` da 26 ta haqiqiy post va ularning kutilgan natijasi saqlanadi: reklama,
   boshqa, iqtisodiy-ijobiy, neytral yoki salbiy.
-- `check` workflow ularni ishlayotgan modelga yuboradi va nechtasi to'g'ri ekanini botga
-  yozadi. 85% va undan ko'p to'g'ri bo'lsa, natija ✅.
+- `check` workflow ularni kaliti bor har bir modelga (OpenAI va Gemini) yuboradi va
+  nechtasi to'g'ri ekanini botga yozadi. 85% va undan ko'p to'g'ri bo'lsa, natija ✅.
+  Shunday qilib ikki modelni bir xil postlarda solishtirish mumkin.
 
 ---
 
@@ -128,7 +138,7 @@ Har bir belgi uni bergan modelni (`label_model`) va versiyasini (`label_version`
 
 | Fayl | Jadval | Mazmuni |
 |------|--------|---------|
-| `data/messages.csv` | **Xabarlar** | har bir post: matn, sana, ko'rishlar, forward'lar, Gemini belgilari va indeks bayroqlari (`nonad`, `econ`, `tone`) |
+| `data/messages.csv` | **Xabarlar** | har bir post: matn, sana, ko'rishlar, forward'lar, model belgilari va indeks bayroqlari (`nonad`, `econ`, `tone`) |
 | `data/indices.csv` | **Indekslar** | har bir yopilgan davr uchun bitta qator: `period_type` (kun / hafta / oy / chorak / yil), sanoqlar, EAI, ESI, izoh |
 | `data/pending.csv` | — | yig'ilgan, lekin kuni hali yakunlanmagan postlar (odatda bo'sh) |
 
