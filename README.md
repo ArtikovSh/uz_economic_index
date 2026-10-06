@@ -44,7 +44,8 @@ oy, chorak va yil uchun formula bir xil.
 | `excel_exporter.py` | Excel hisobot ("Indekslar", "Xabarlar", "Metodika") |
 | `sync_to_db.py` | Supabase'ga sinxronlash (bot va Mini App uchun) |
 | `sheets_sync.py` | Jadvallarni Google Sheets'ga qo'shish |
-| `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, OpenAI va Gemini (nazorat to'plami bilan), Sheets, bot ogohlantirishi |
+| `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, ishlatilayotgan LLM (nazorat to'plami bilan), Sheets, bot ogohlantirishi |
+| `evaluate.py` | LLM belgilarini 200 ta haqiqiy postda baholash; natija `eval/` papkasiga yoziladi |
 | `export_session.py` | CI uchun Telegram sessiya satrini yaratish |
 | `app/` | Telegram bot + Mini App (Vercel) |
 
@@ -84,9 +85,12 @@ yuboriladi (`LLM_BATCH_SIZE`).
 **Workflow'lar:**
 - `uz-economic-index` — kunlik (00:05 va 02:05 Toshkent) + qo'lda. Barcha davrlar
   (kun, hafta, oy, chorak, yil) shu run'da yopiladi.
-- `check` — post yig'masdan hamma narsani tekshiradi (Telegram, OpenAI, Gemini, Sheets) va natijani
-  botga yuboradi. Kaliti bor har bir model nazorat to'plamidagi 26 ta postni belgilaydi; bot
-  nechtasi to'g'ri ekanini va xatolarni ko'rsatadi. Har model uchun 1 so'rov sarflanadi. Kunlik run bilan bir vaqtda ishlamaydi
+- `check` — post yig'masdan hamma narsani tekshiradi (Telegram, ishlatilayotgan LLM, Sheets) va
+  natijani botga yuboradi. LLM nazorat to'plamidagi 26 ta postni belgilaydi; bot nechtasi
+  to'g'ri ekanini va xatolarni ko'rsatadi. LLM tekshiruvi ko'pi bilan 4 daqiqa davom etadi.
+- `eval` — 26 ta nazorat posti va 174 ta tasodifiy postni belgilaydi (OpenAI'da `low` va
+  `medium` rejimlarida) va natijani `eval/` papkasiga commit qiladi: aniqlik, tezlik, token
+  va narx. Jadvallarga tegmaydi. Kunlik run bilan bir vaqtda ishlamaydi
   (navbatga turadi).
 
 ## Google Sheets oynasi

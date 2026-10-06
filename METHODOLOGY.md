@@ -128,9 +128,11 @@ Har bir belgi uni bergan modelni (`label_model`) va versiyasini (`label_version`
 **Nazorat to'plami:**
 - `gold_set.py` da 26 ta haqiqiy post va ularning kutilgan natijasi saqlanadi: reklama,
   boshqa, iqtisodiy-ijobiy, neytral yoki salbiy.
-- `check` workflow ularni kaliti bor har bir modelga (OpenAI va Gemini) yuboradi va
-  nechtasi to'g'ri ekanini botga yozadi. 85% va undan ko'p to'g'ri bo'lsa, natija ✅.
-  Shunday qilib ikki modelni bir xil postlarda solishtirish mumkin.
+- `check` workflow ularni ishlatilayotgan modelga yuboradi va nechtasi to'g'ri ekanini
+  botga yozadi. 85% va undan ko'p to'g'ri bo'lsa, natija ✅.
+- `eval` workflow kattaroq namunani (26 + 174 post) belgilaydi va natijani `eval/`
+  papkasiga yozadi, shunda belgilarni qo'lda ko'rib chiqish mumkin. OpenAI'da `low` va
+  `medium` reasoning rejimlari solishtiriladi.
 
 ---
 

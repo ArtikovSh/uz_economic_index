@@ -4,6 +4,18 @@ label an analyst expects. Ad markers are removed, so the model itself must spot 
 Outcome classes: reklama (ad), boshqa (in the denominator only: non-economic, foreign
 or digest), iqt+ / iqt0 / iqt- (economic post counted as positive / neutral / negative).
 """
+from config import TONE_THRESHOLD
+
+
+def outcome(label):
+    """What a label does to the index: reklama / boshqa / iqt+ / iqt0 / iqt-."""
+    if label["is_ad"]:
+        return "reklama"
+    if not label["is_economic"] or label["is_digest"] or label["is_foreign"]:
+        return "boshqa"
+    s = label["sentiment"]
+    return "iqt+" if s > TONE_THRESHOLD else "iqt-" if s < -TONE_THRESHOLD else "iqt0"
+
 
 GOLD = [
     ('@spotuz', 'iqt+', "dollar eng past darajada (so'm mustahkamlandi)",

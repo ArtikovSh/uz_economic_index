@@ -75,6 +75,11 @@ def provider_of(model):
     return "gemini" if model.startswith("gemini") else "openai"
 
 
+def _timeout(deadline, cap):
+    """HTTP timeout for one request: `cap`, but never past the deadline."""
+    return cap if not deadline else max(10.0, min(cap, deadline - time.time()))
+
+
 def _wait(seconds, deadline, what):
     """Sleep before a retry, unless that would cross the run's time budget."""
     if deadline and time.time() + seconds > deadline:
@@ -220,15 +225,16 @@ def _to_label(d):
 
 
 # --------------------------------------------------------------- classify -----
-def classify_batch(model, texts, channels=None, deadline=None):
+def classify_batch(model, texts, channels=None, deadline=None, meta=None):
     """Label one batch with `model` (OpenAI or Gemini, by its name). Raises ValueError
-    on unusable output, else a typed error."""
+    on unusable output, else a typed error. If `meta` is a dict, the reply's token
+    usage is stored in meta["usage"]."""
     if provider_of(model) == "openai":
-        return _openai_batch(model, texts, channels, deadline)
-    return _gemini_batch(model, texts, channels, deadline)
+        return _openai_batch(model, texts, channels, deadline, meta)
+    return _gemini_batch(model, texts, channels, deadline, meta)
 
 
-def _gemini_batch(model, texts, channels=None, deadline=None):
+def _gemini_batch(model, texts, channels=None, deadline=None, meta=None):
     gen = {"responseMimeType": "application/json", "responseSchema": RESPONSE_SCHEMA}
     if model.startswith("gemini-2"):
         gen["temperature"] = 0      # Gemini 3+: Google advises keeping the default
@@ -243,13 +249,16 @@ def _gemini_batch(model, texts, channels=None, deadline=None):
         }
         try:
             r = requests.post(f"{API}/models/{model}:generateContent",
-                              headers=_headers(), json=payload, timeout=300)
+                              headers=_headers(), json=payload, timeout=_timeout(deadline, 300))
         except requests.RequestException as e:
             last = f"{type(e).__name__}: {str(e)[:200]}"
             _wait(min(15 * 2 ** attempt, 120), deadline, f"{model}: {last}")
             continue
         if r.status_code == 200:
-            return _parse(r.json(), len(texts))
+            data = r.json()
+            if meta is not None:
+                meta["usage"] = data.get("usageMetadata")
+            return _parse(data, len(texts))
         msg, quota_ids, delay, limit_zero = _error_info(r)
         last = f"HTTP {r.status_code}: {msg}"
         if r.status_code == 400 and "responseSchema" in gen and "schema" in msg.lower():
@@ -293,7 +302,7 @@ def _retry_after(resp):
     return None
 
 
-def _openai_batch(model, texts, channels=None, deadline=None):
+def _openai_batch(model, texts, channels=None, deadline=None, meta=None):
     body = {
         "model": model,
         "instructions": SYSTEM_PROMPT,
@@ -308,13 +317,17 @@ def _openai_batch(model, texts, channels=None, deadline=None):
     last = ""
     for attempt in range(5):
         try:
-            r = requests.post(f"{OPENAI_API}/responses", headers=headers, json=body, timeout=300)
+            r = requests.post(f"{OPENAI_API}/responses", headers=headers, json=body,
+                              timeout=_timeout(deadline, 600))
         except requests.RequestException as e:
             last = f"{type(e).__name__}: {str(e)[:200]}"
             _wait(min(15 * 2 ** attempt, 120), deadline, f"{model}: {last}")
             continue
         if r.status_code == 200:
-            return _parse_text(_openai_text(r.json()), len(texts))
+            data = r.json()
+            if meta is not None:
+                meta["usage"] = data.get("usage")
+            return _parse_text(_openai_text(data), len(texts))
         msg, code = _openai_error(r)
         last = f"HTTP {r.status_code}: {msg}"
         low = msg.lower()

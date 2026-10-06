@@ -56,7 +56,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 # Empty = "sticky" (the model of the latest labels), else gpt-6-luna.
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "").strip()
-OPENAI_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "").strip() or "medium"
+OPENAI_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "").strip() or "low"
 
 
 def is_openai_key(key):
@@ -74,9 +74,10 @@ def choose_provider(forced, openai_key):
 
 LLM_PROVIDER = choose_provider(os.getenv("LLM_PROVIDER", "").strip().lower(), OPENAI_API_KEY)
 
-# Gemini's free tier for the newest Flash model allows only ~20 requests a day and
-# counts requests, not posts — hence 50 posts per request (~1 000 posts a day).
-LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE", "50"))      # posts per request
+# Posts per request. Gemini's free tier for the newest Flash model allows only ~20
+# requests a day and counts requests, not posts — hence 50 (~1 000 posts a day).
+# OpenAI has no daily cap; smaller batches answer faster and never hit a timeout.
+LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE") or (25 if LLM_PROVIDER == "openai" else 50))
 LLM_MAX_CHARS = int(os.getenv("LLM_MAX_CHARS", "1000"))      # truncate each post
 LLM_RPM = float(os.getenv("LLM_RPM") or (30 if LLM_PROVIDER == "openai" else 5))  # requests/minute
 LLM_MAX_REQUESTS = int(os.getenv("LLM_MAX_REQUESTS", "60"))  # per run

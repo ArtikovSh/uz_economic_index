@@ -1,0 +1,56 @@
+name: eval
+
+# Manual quality check of the LLM labels: labels the 26 control posts + 174 random
+# real posts with the provider the pipeline uses (OpenAI: at "low" and "medium"
+# reasoning effort) and commits the labels and a report to eval/. No table is touched.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write               # commit eval/
+
+concurrency:
+  group: uz-economic-index
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pip install -r requirements.txt
+
+      - name: Label the sample
+        id: eval
+        continue-on-error: true
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+        run: python evaluate.py
+
+      - name: Commit the results
+        if: always()
+        run: |
+          git config user.name "ArtikovSh"
+          git config user.email "ortikovshokhrukh@gmail.com"
+          git add eval/ || true
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "eval: LLM labels on the control sample ($(date -u +'%Y-%m-%d %H:%M') UTC)"
+            git pull --rebase origin "$GITHUB_REF_NAME"
+            git push
+          fi
+
+      - name: Mark failed
+        if: steps.eval.outcome == 'failure'
+        run: exit 1
