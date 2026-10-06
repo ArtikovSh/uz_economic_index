@@ -4,8 +4,9 @@ final days to the posts table -> append closed periods to the indices table ->
 Excel report.
 
 Exits non-zero when something needs a human (expired Telegram session, a failed
-channel, a Gemini key/model problem) — after saving everything it could, so the
-workflow still commits the progress and then sends an alert.
+channel, a Gemini key/model problem, or Gemini labelling nothing for any reason but
+the daily quota) — after saving everything it could, so the workflow still commits
+the progress and then sends an alert.
 """
 import asyncio
 import sys
@@ -56,6 +57,9 @@ def main() -> int:
         print(f"::warning::{w}")
     if status["error"]:
         problems.append(f"Gemini: {status['error']}")
+    elif status["todo"] and not status["new"] and not status["quota"]:
+        problems.append("Gemini: no post could be labelled this run — "
+                        + ("; ".join(status["warnings"]) or "no reason given")[:400])
 
     print("--- STEP 3: Finalise days and append to the posts table ---")
     rows, pending, days = finalize_days(pending, ledger, target, CHANNELS)

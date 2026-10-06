@@ -54,31 +54,73 @@ soni bo'yicha hisoblanadi, kunlik qiymatlarning o'rtachasi emas.
 
 ## 3. Tasniflash — Gemini (`llm_classifier.py`, `prompts.py`)
 
-Har bir post bir marta belgilanadi:
+Har bir post bir marta belgilanadi (belgi versiyasi `v4`). Prompt modelni indeks
+belgilarni ishlatadigan tartibda yuritadi: reklama → dayjest → iqtisodiy → xorijiy →
+mavzu → relevance → sentiment.
 
 | Maydon | Ma'nosi |
 |--------|---------|
-| `economic` | post O'zbekiston ichki iqtisodiyotiga oidmi |
+| `is_ad` | mahsulot yoki brend reklamasi, advertorial ("biz", "мы"), kanal "Reklama" deb belgilagan post |
+| `is_digest` | bitta postda bir-biriga bog'liq bo'lmagan bir nechta yangilik |
+| `economic` | postning asosiy mavzusi iqtisodiy (qaysi mamlakat haqida bo'lishidan qat'i nazar) |
+| `is_foreign` | voqea O'zbekistondan tashqarida va unda O'zbekiston tomoni yo'q |
 | `topic` | 10 kategoriyadan biri yoki `non_economic` |
-| `sentiment` | O'zbekiston iqtisodiyoti va aholisi uchun ohang (−1…+1) |
-| `is_ad`, `is_digest`, `is_foreign` | reklama, dayjest, xorijiy-makro bayroqlari |
+| `sentiment` | O'zbekiston iqtisodiyoti, aholisi va biznesi uchun yaxshi yoki yomon yangilikmi (−1…+1) |
 | `relevance` | iqtisod postda qanchalik markaziy (indeksda ishlatilmaydi, saqlanadi) |
+
+Indeksdagi iqtisodiy post = reklama emas **va** `economic` **va** dayjest emas **va**
+xorijiy emas.
 
 **Ohang:** sentiment > +0.15 bo'lsa ijobiy, < −0.15 bo'lsa salbiy, qolgani neytral.
 
-Sentiment qoidalari:
-- narx, tarif yoki soliq oshsa — salbiy; YaIM, eksport yoki daromad oshsa — ijobiy;
-- dollar kursi oshsa (so'm zaiflashsa) — salbiy;
-- inkor hisobga olinadi;
-- protokol yangiliklari (uchrashuv, memorandum, tashrif, reja) aniq o'zgarishsiz bo'lsa — 0.
+Sentiment qoidalari (indeksda faqat yo'nalish ishlatiladi):
+- Ishora faqat **aniq iqtisodiy o'zgarishga** beriladi. Bu sodir bo'lgan voqea, o'lchangan
+  natija yoki qabul qilingan chora bo'lishi mumkin. Aniq raqam bilan rasman taklif
+  qilingan chora ham hisoblanadi ("yo'lkirani 2 500 so'mga oshirish taklif qilindi").
+- Narx, tarif, inflyatsiya, soliq, boj, yig'im yoki jarima oshsa — salbiy, tushsa — ijobiy.
+- YaIM, ishlab chiqarish, eksport, investitsiya, turistlar, ish o'rinlari, maosh yoki pensiya
+  oshsa — ijobiy, kamaysa — salbiy.
+- So'm mustahkamlansa (dollar kursi tushsa) — ijobiy, zaiflashsa — salbiy. Bu qoida
+  Markaziy bankning kunlik kurs postlariga ham tegishli.
+- Asosiy stavka pasaysa — ijobiy, oshsa — salbiy, o'zgarmasa — 0.
+- Imtiyoz, subsidiya yoki soddalashtirish — ijobiy. Tanqislik, elektr o'chishi, taqiq,
+  ishdan bo'shatish yoki bankrotlik — salbiy.
+- Zavod, yo'l yoki xizmat haqiqatda ishga tushsa, moliyalash haqiqatda ajratilsa — ijobiy.
+- Quyidagilar **0** oladi: uchrashuv, muzokara, tashrif, forum, ko'rgazma, memorandum va
+  "X mlrd dollarlik kelishuvlar" (bular niyat), reja, strategiya, maqsad, prognoz,
+  tayinlov, yubiley, mukofot va yo'nalishi aniq bo'lmagan statistika.
+- Aralash yangilikda sarlavha va asosiy fakt hal qiladi. Inkor hisobga olinadi.
+
+**Belgi boshqa postga tushmaydi:** Gemini har bir javobni post raqami (`id`) bilan qaytaradi.
+Raqamlar so'ralganiga mos kelmasa, javob rad etiladi va partiya ikkiga bo'linib qayta
+yuboriladi. Har bir post modelga kanal nomi bilan birga yuboriladi.
 
 **Reklama filtri:** kanal o'zi reklama deb belgilagan post (`(реклама)`,
 `на правах рекламы`, `#реклама` yoki oxirgi so'z sifatidagi `Reklama`/`Реклама`)
 model javobidan qat'i nazar reklama hisoblanadi.
 
-**Zaxira klassifikator yo'q:** Gemini javob bermasa yoki kvota tugasa, post kutib turadi
-va keyingi run'da qayta yuboriladi. Har bir belgi uni bergan modelni (`label_model`) va
-versiyasini (`label_version`) saqlaydi.
+**Zaxira klassifikator yo'q:**
+- Gemini javob bermasa yoki kvota tugasa, post kutib turadi va keyingi run'da qayta
+  yuboriladi.
+- Vaqtinchalik xatolarda (HTTP 429, 5xx, timeout) tizim pauza qilib qayta urinadi.
+- Ketma-ket uch partiya o'tmasa, run'ning belgilash bosqichi to'xtaydi.
+- Run birorta ham postni belgilay olmasa va sabab kunlik kvota bo'lmasa, bot ogohlantiradi.
+- Gemini bitta postni ikki xil run'da ham belgilay olmasa, u iqtisodiy emas deb saqlanadi
+  (`label_model` oxirida `:unlabelled` belgisi qo'yiladi). Shunday qilib bitta post keyingi
+  kunlarni to'xtatib qo'ymaydi.
+
+Har bir belgi uni bergan modelni (`label_model`) va versiyasini (`label_version`) saqlaydi.
+
+**Kvota:**
+- Eng yangi Flash modelining bepul limiti kuniga taxminan 20 so'rov. Shuning uchun bitta
+  so'rovda 50 ta post yuboriladi, bu kuniga ~1 000 post.
+- Kunlik oqim ~150 post, ya'ni 3–4 so'rov.
+
+**Nazorat to'plami:**
+- `gold_set.py` da 26 ta haqiqiy post va ularning kutilgan natijasi saqlanadi: reklama,
+  boshqa, iqtisodiy-ijobiy, neytral yoki salbiy.
+- `check` workflow ularni ishlayotgan modelga yuboradi va nechtasi to'g'ri ekanini botga
+  yozadi. 85% va undan ko'p to'g'ri bo'lsa, natija ✅.
 
 ---
 

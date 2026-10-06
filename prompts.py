@@ -1,10 +1,11 @@
 """
 The Gemini classification prompt + structured-output schema.
 
-This is the single place to tune how posts are labelled: domestic UZ economy
-focus, 10 categories, ad/digest/foreign exclusion and aspect sentiment, applied
-with real language understanding across Uzbek-Latin, Uzbek-Cyrillic and Russian.
-Changing the meaning of any rule here requires bumping LLM_LABEL_VERSION.
+This is the single place to tune how posts are labelled. The rules follow the order
+in which the index uses the labels: ad -> digest -> economic -> foreign -> topic ->
+relevance -> sentiment. Every post comes back with its own number ("id"), so a label
+can never land on the wrong post. Changing the meaning of any rule here requires
+bumping LLM_LABEL_VERSION (config.py).
 """
 
 CATEGORIES = [
@@ -14,105 +15,170 @@ CATEGORIES = [
 ]
 
 SYSTEM_PROMPT = """\
-You are an expert economic-news analyst building a DAILY ECONOMIC INDEX for
-UZBEKISTAN from Telegram news posts. Posts are in Uzbek (Latin OR Cyrillic) or
-Russian, often mixed. For EACH post you receive, return one JSON object.
+You label Telegram news posts for two daily indices of UZBEKISTAN's economy, built by
+an analyst at the Central Bank of Uzbekistan:
+  EAI (attention) = share of non-advertising posts that are about Uzbekistan's economy;
+  ESI (sentiment) = (positive - negative) / economic posts.
+Every label changes a published number. Read each post in full, decide from its MEANING,
+not from keywords, and apply the rules below exactly and the same way every time.
+Posts are in Russian, Uzbek (Latin or Cyrillic) or English. Channel footers
+("Batafsil — link", "Obuna bo'ling — @daryo", "Читать далее", social-media links) are
+not content. Label each post on its own; never let one post influence another.
 
-Decide every field from the meaning of the DOMESTIC UZBEK economy and the effect
-on Uzbek households/businesses — not from surface keywords.
+STEP 1 — is_ad (boolean)
+true when the post promotes a company's product or brand instead of reporting news:
+  - offers for bank cards, loans, deposits, cashback, instalments or "0%" credit;
+    discounts (chegirma, скидка), "aksiya"/"акция", cars, phones, electronics,
+    software and hardware products, real estate for sale ("sotiladi", "продаются
+    квартиры/апартаменты"), courses, paid events with registration, contests and
+    giveaways, job advertisements;
+  - advertorials: a brand speaking in the first person ("biz", "мы", "наши клиенты",
+    "bizga ishonch bildirgan"), slogans, congratulations from a company, calls to
+    action (buy, order, call, register, download), promo codes, a company's phone
+    number or website as the point of the post;
+  - any post the channel itself marks as advertising: "(реклама)", "на правах
+    рекламы", "#реклама", or "Reklama"/"Реклама" as the last word.
+false for news ABOUT companies written by the editors (results, deals, appointments,
+launches, fines) and for the channel's own subscribe/footer lines.
 
-FIELDS
-------
-1. economic (boolean): true only if the post is genuinely about the UZBEKISTAN
-   domestic economy, economic policy, business, finance, prices, jobs, energy,
-   trade, construction/real-estate, taxes, or macro data. false for sport,
-   weather, crime/accidents, health, culture, pure politics/foreign affairs,
-   or a post that merely mentions a sum of money in passing.
+STEP 2 — is_digest (boolean)
+true when ONE post bundles several unrelated stories: "yangiliklar dayjesti",
+"дайджест", "kunning asosiy yangiliklari", "главное за день/неделю", or a bulleted
+list of 3+ headlines on different subjects. A post about ONE subject that lists many
+facts (exchange-rate table, figures from one statistics release) is NOT a digest.
 
-2. topic (string, one of):
-   - prices_inflation : consumer prices, inflation, tariffs (utility/transport),
-                        cost of living going up/down.
-   - currency_fx      : the som exchange RATE, dollar/euro rate, devaluation,
-                        central-bank FX. NOT "$" used only as a unit of amount.
-   - fiscal           : state budget, taxes, customs, subsidies, fines/penalties,
-                        public spending, deficit.
-   - trade            : exports, imports, foreign trade, trade agreements/barriers.
-   - macro            : GDP, industrial/agri output, consumption, recession/growth,
-                        macro statistics.
-   - banking_finance  : banks, credit/loans, mortgages, deposits, investment,
-                        interest rates, securities/bonds, stock exchange, debt.
-   - labour_income    : wages, salaries, pensions, benefits, (un)employment, income.
-   - energy_utility   : gas, electricity, fuel/petrol, utilities, oil & gas.
-   - business         : entrepreneurship, business regulation/licensing, SMEs,
-                        company operations, startups.
-   - construction_realty : construction, housing, real estate, developers, mortgages
-                        of new housing.
-   - non_economic     : use whenever economic=false.
-   Pick the SINGLE most central topic. If economic=false, topic MUST be non_economic.
+STEP 3 — economic (boolean)
+true when the MAIN subject is economic: prices and inflation, exchange rates, money,
+banks and credit, the budget, taxes, customs duties and fees, trade, investment,
+companies and markets, production and harvests, jobs, wages, pensions and benefits,
+energy and utility supply and tariffs, transport and logistics as a business,
+construction and real estate, tourism flows, economic laws, reforms and regulation.
+false when the main subject is anything else: politics, diplomacy without concrete
+economic content, war, crime and court cases (including bribery, fraud, embezzlement
+by officials), accidents, weather, health, education, culture, sport, religion,
+human-interest stories — even if the post mentions an amount of money, a price or a
+company in passing.
 
-3. relevance (number 0.0-1.0): how central economics is to the post. A headline
-   economic story = ~0.9-1.0; a post that only touches economics in passing = ~0.2.
-   If economic=false, relevance = 0.0.
+STEP 4 — is_foreign (boolean)
+true when the story happens OUTSIDE Uzbekistan and has no direct Uzbek party: no Uzbek
+government body, region, company, citizens or migrants, no som, no Uzbek exports or
+imports. false when Uzbekistan is directly involved (Uzbekistan–Kazakhstan trade, a
+foreign loan to Uzbekistan, Russian rules for Uzbek migrants, a foreign company
+investing in Uzbekistan). Decide it for every post, economic or not.
 
-4. sentiment (number -1.0 to 1.0): tone FOR the Uzbek economy/households.
-   Apply ASPECT logic, not word polarity — the SIGN depends on WHAT moved:
-     - prices/tariffs/inflation/cost/fine/tax rate UP -> NEGATIVE ; DOWN -> POSITIVE
-     - GDP/output/exports/investment/wages/income/pensions/reserves UP -> POSITIVE ; DOWN -> NEGATIVE
-     - crisis, default, deficit, unemployment, shortage, bankruptcy -> NEGATIVE
-     - subsidies, tax relief, stability, records, recovery, support -> POSITIVE
-     - respect NEGATION ("prices asked NOT to be raised" is not negative).
-     - ROUTINE / PROTOCOL news -> 0.0: meetings, visits, delegations, forums,
-       presentations, awards, memoranda or agreements signed, plans and intentions
-       — unless the post reports a concrete, measurable change that already
-       happened or was decided (a new price, rate, volume, money amount, a
-       launched plant). Optimistic wording alone is NOT positive news.
+STEP 5 — topic (one value; "non_economic" if and only if economic=false)
+  prices_inflation    consumer prices, inflation, any change of a price or TARIFF
+                      (utilities, fuel, fares, food)
+  currency_fx         the som exchange rate, the FX market, currency rules
+  fiscal              budget, taxes, customs duties and payments, fees, fines, subsidies,
+                      public spending, public debt
+  trade               exports, imports, trade agreements, market access, transit and
+                      logistics corridors, tourism flows
+  macro               GDP, output of industry, agriculture or services, total investment,
+                      reserves, remittances, balance of payments, official forecasts
+  banking_finance     banks, loans, deposits, the central bank policy rate, capital markets,
+                      insurance, payment systems, fintech
+  labour_income       wages, pensions and pension rules, social benefits, employment,
+                      labour migration
+  energy_utility      supply and production of gas, electricity, oil, fuel and water;
+                      outages; energy projects (a PRICE change is prices_inflation)
+  business            companies, entrepreneurship, industrial projects and zones,
+                      privatisation, business regulation, IT and startups
+  construction_realty construction, housing, real estate, roads, airports and other
+                      infrastructure
+Pick the single most central theme.
 
-   *** EXCHANGE RATE — READ CAREFULLY (a frequent mistake) ***
-   The unit is the SOM. What matters is the som's strength, which is the OPPOSITE
-   of the dollar/euro rate:
-     - dollar/euro rate DOWN / "снизился" / "подешевел" / "kurs tushdi" / "arzonlashdi"
-       => the SOM STRENGTHENED => POSITIVE (sentiment > 0). This is GOOD news.
-     - dollar/euro rate UP / "вырос" / "подорожал" / "kurs oshdi" / "ko'tarildi"
-       => the SOM WEAKENED => NEGATIVE (sentiment < 0). This is BAD news.
-     Examples: "Курс доллара снизился на 7 сумов" -> +0.6 (som stronger, positive).
-               "Dollar kursi tushdi" -> +0.6.   "Доллар подорожал" -> -0.6.
-     NEVER score a falling dollar as negative.
-   0.0 if neutral/factual or economic=false.
+STEP 6 — relevance (0.0–1.0)
+How central the economy is to the post: 1.0 = the whole post is an economic story,
+0.5 = the economy is one of several aspects, 0.0 if economic=false.
 
-5. is_ad (boolean): advertisement / promotion / sponsored — bank product promos,
-   discounts (chegirma/skidka), "aksiya", installment offers, telecom promos, and
-   REAL-ESTATE SALES pitches ("Продаются апартаменты", "sotiladi", "для дополнительного
-   дохода", listings with price/contact). If the post is selling something, is_ad=true.
-   A post the channel itself marks as advertising — "(реклама)", "на правах
-   рекламы", "#реклама", or "Реклама"/"Reklama" as its last word — is ALWAYS
-   is_ad=true, even if it reads like ordinary news.
+STEP 7 — sentiment (-1.0 … +1.0)
+Is the post GOOD or BAD news for Uzbekistan's economy, households or businesses?
+Only the sign is used (|sentiment| <= 0.15 counts as neutral), so get the DIRECTION
+right and use 0.0 whenever there is no clear direction. Typical strengths: 0.3 mild,
+0.6 clear, 0.9 major.
 
-6. is_digest (boolean): true for a news DIGEST that bundles many separate stories
-   into ONE post — e.g. the title contains "dayjest" / "дайджест" / "yangiliklar
-   dayjesti" / "kunning asosiy yangiliklari", or the body is a bulleted list of
-   several unrelated headlines. Such a post is unscorable as one item -> is_digest=true
-   (this takes priority over is_foreign).
+A. A sign is given ONLY to a concrete economic change: something that HAS happened, a
+   measured result, or a measure that HAS been adopted — or formally proposed with
+   specifics ("proposed to raise X to Y", a draft decree):
+   - prices, tariffs, fares, inflation, taxes, duties, fees, fines UP -> negative;
+     DOWN -> positive.
+   - GDP, output, exports, investment inflows, tourist arrivals, jobs, wages, pensions,
+     benefits, reserves, sales, profits UP -> positive; DOWN -> negative.
+   - EXCHANGE RATE: the som is what matters, and it moves OPPOSITE to the dollar/euro
+     rate. Dollar/euro rate DOWN ("kurs tushdi/pasaydi", "доллар подешевел", "курс
+     снизился", a new low of the dollar) = som STRONGER -> positive. Dollar/euro rate
+     UP ("kurs oshdi/ko'tarildi", "доллар подорожал/вырос") = som WEAKER -> negative.
+     A falling dollar is NEVER negative. Daily central-bank rate posts follow this rule.
+   - Central bank policy rate cut -> positive; hike -> negative; unchanged -> 0.0.
+   - Tax relief, subsidies, simpler procedures, abolished requirements, new support
+     schemes -> positive. Shortages, outages, bans, new restrictions, layoffs,
+     closures, bankruptcies, defaults, arrears, losses -> negative.
+   - A plant, road, airport, warehouse or service actually opened or launched;
+     financing actually approved or disbursed -> positive.
+B. 0.0 for everything without such a change, however optimistic the wording:
+   meetings, talks, negotiations, visits, delegations, forums, exhibitions,
+   conferences; memoranda, cooperation or investment agreements and "deals worth $X"
+   (they are intentions); plans, strategies, targets, forecasts, goals, "will be
+   built", "is planned", "could become"; appointments, anniversaries, awards,
+   company rankings; explanations of procedures; statistics without a clear direction.
+C. Mixed news: follow the headline and the main fact. Respect negation ("prices will
+   NOT be raised" is not negative). Judge the effect on Uzbekistan, never on a foreign
+   party. If economic=false or is_foreign=true, sentiment = 0.0.
 
-7. is_foreign (boolean): the story is about a FOREIGN economy with no material
-   Uzbekistan angle (e.g. US national debt, Russia's war financing). If it is a
-   bilateral/UZ-relevant story (UZ-Kazakhstan trade), is_foreign = false.
+EXAMPLES (headline -> labels)
+ "Доллар подешевел до 11 760 сумов"
+     -> economic, currency_fx, sentiment +0.5 (som stronger)
+ "Dollar kursi 12 100 so'mgacha ko'tarildi"
+     -> economic, currency_fx, sentiment -0.5 (som weaker)
+ "Inflyatsiya avgust oyida 7,9 foizgacha sekinlashdi"
+     -> economic, prices_inflation, +0.6
+ "Тошкентда метро ва автобус йўлкирасини 2 500 сўмгача ошириш таклиф қилинди"
+     -> economic, prices_inflation, -0.5 (formal proposal with a number)
+ "Президент провёл переговоры с делегацией Siemens о новых проектах"
+     -> economic, business, 0.0 (talks)
+ "Samarqandda 2 mlrd dollarlik 15 ta investitsiya kelishuvi imzolandi"
+     -> economic, business, 0.0 (agreements are intentions)
+ "Hukumat 2030 yilgacha eksportni 45 mlrd dollarga yetkazishni maqsad qilgan"
+     -> economic, trade, 0.0 (target)
+ "В Навоийской области запустили завод медного проката, создано 800 рабочих мест"
+     -> economic, business, +0.6 (launched, jobs created)
+ "ЦБ сохранил основную ставку на уровне 14%"
+     -> economic, banking_finance, 0.0 (unchanged)
+ "Фарғонада электр таъминоти 6 соатга узилди"
+     -> economic, energy_utility, -0.5 (outage)
+ "Rossiyada O'zbekiston fuqarolari uchun mehnat patenti narxi oshirildi"
+     -> economic, labour_income, not foreign (Uzbek migrants), -0.5
+ "ФРС США снизила ставку на 0,25 п.п."
+     -> economic, banking_finance, is_foreign, 0.0
+ "Солиқ инспектори 5 минг доллар пора олаётганда ушланди"
+     -> economic=false (crime), non_economic, 0.0
+ "Kunning asosiy yangiliklari: • ... • ... • ..."
+     -> is_digest
+ "Кредит до 300 млн сумов без залога — оформите в приложении банка за 5 минут"
+     -> is_ad
 
-Be precise and consistent. Output ONLY a JSON object of the form
-{"results": [ ...one object per input post, in the SAME ORDER... ]}."""
+OUTPUT
+Return ONLY {"results": [...]} with exactly one object per post, in the given order.
+Each object starts with "id" = the number of its POST."""
 
 _ITEM = {
     "type": "OBJECT",
     "properties": {
+        "id": {"type": "INTEGER"},
+        "is_ad": {"type": "BOOLEAN"},
+        "is_digest": {"type": "BOOLEAN"},
         "economic": {"type": "BOOLEAN"},
+        "is_foreign": {"type": "BOOLEAN"},
         "topic": {"type": "STRING", "enum": CATEGORIES},
         "relevance": {"type": "NUMBER"},
         "sentiment": {"type": "NUMBER"},
-        "is_ad": {"type": "BOOLEAN"},
-        "is_digest": {"type": "BOOLEAN"},
-        "is_foreign": {"type": "BOOLEAN"},
     },
-    "required": ["economic", "topic", "relevance", "sentiment",
-                 "is_ad", "is_digest", "is_foreign"],
+    "required": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic",
+                 "relevance", "sentiment"],
+    # answer in the order of the decision steps above
+    "propertyOrdering": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic",
+                         "relevance", "sentiment"],
 }
 
 # Gemini structured-output schema (OpenAPI subset): object with a "results" array.
@@ -123,10 +189,12 @@ RESPONSE_SCHEMA = {
 }
 
 
-def build_user_prompt(texts):
-    """Number the posts so the model returns labels in the same order."""
-    lines = ['Classify these posts. Return a JSON object {"results": [...]} with '
-             f"exactly {len(texts)} objects, in the same order.\n"]
+def build_user_prompt(texts, channels=None):
+    """Number the posts (and name their channel) so each label comes back with its id."""
+    n = len(texts)
+    lines = [f'Label these {n} posts. Return {{"results": [...]}} with exactly {n} objects, '
+             f"ids 0 to {n - 1} in this order.\n"]
     for i, t in enumerate(texts):
-        lines.append(f"--- POST {i} ---\n{t}\n")
+        source = f" | {channels[i]}" if channels else ""
+        lines.append(f"--- POST {i}{source} ---\n{t}\n")
     return "\n".join(lines)

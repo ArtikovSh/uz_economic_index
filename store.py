@@ -20,7 +20,7 @@ from config import MASTER_CSV, INDICES_CSV, PENDING_CSV, DATA_DIR, LLM_LABEL_VER
 RAW_COLS = ["channel", "message_id", "date", "views", "forwards", "raw_text", "scraped_at"]
 LABEL_COLS = ["is_economic", "primary_topic", "relevance", "sentiment",
               "is_ad", "is_digest", "is_foreign"]
-PENDING_COLS = RAW_COLS + LABEL_COLS + ["label_version", "label_model"]
+PENDING_COLS = RAW_COLS + LABEL_COLS + ["label_version", "label_model", "label_error"]
 LEDGER_COLS = ["date_local", "channel", "message_id", "date", "views", "forwards", "scraped_at",
                "primary_topic", "is_economic", "relevance", "sentiment", "is_ad", "ad_marker",
                "is_digest", "is_foreign", "nonad", "econ", "tone", "label_version", "label_model",
@@ -42,7 +42,8 @@ def write_csv(df: pd.DataFrame, path: str) -> None:
 
 
 TEXT_COLS = {"channel", "date", "raw_text", "scraped_at", "primary_topic", "label_version",
-             "label_model", "date_local", "period_type", "period", "start", "end", "note"}
+             "label_model", "label_error", "date_local", "period_type", "period", "start", "end",
+             "note"}
 
 
 def typed(df):

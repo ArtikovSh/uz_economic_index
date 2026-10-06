@@ -5,8 +5,15 @@ Gemini message classifier for the posts waiting in pending.csv.
   so days can be finalised in date order.
 * Posts go in batches with a JSON response schema; requests are paced to the
   free-tier per-minute limit and capped per run (LLM_MAX_REQUESTS).
+* Every label comes back with its post number; a reply whose numbers do not match
+  is rejected, so a label can never land on the wrong post.
 * No rule-based fallback: a post Gemini could not label keeps waiting and is
-  retried on the next run, so the index never mixes labelling methods.
+  retried on the next run, so the index never mixes labelling methods. Only a post
+  that fails on its own in two runs is stored as non-economic (marked in
+  label_model), so it cannot hold back every later day.
+* Short outages (HTTP 429/5xx, timeouts) are retried with growing pauses; labelling
+  stops for the run only after three batches in a row fail, after the daily quota
+  is used up, or when the time budget (LLM_TIME_BUDGET_MIN) is spent.
 * The model is "sticky": GEMINI_MODEL if set, else the model of the latest labels,
   else the newest stable Flash model available to the key. Each label records the
   model that produced it.
@@ -18,13 +25,19 @@ import time
 import requests
 
 from config import (GEMINI_API_KEY, GEMINI_MODEL, LLM_BATCH_SIZE, LLM_MAX_CHARS,
-                    LLM_RPM, LLM_MAX_REQUESTS, LLM_LABEL_VERSION)
+                    LLM_RPM, LLM_MAX_REQUESTS, LLM_TIME_BUDGET_MIN, LLM_LABEL_VERSION)
 from prompts import SYSTEM_PROMPT, RESPONSE_SCHEMA, CATEGORIES, build_user_prompt
 from store import LABEL_COLS, post_keys
 
 API = "https://generativelanguage.googleapis.com/v1beta"
 FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.1-flash-lite"]   # if /models can't be listed
 _STABLE_FLASH = re.compile(r"^gemini-(\d+(?:\.\d+)?)-flash(-lite)?$")
+# news about crime or war must not be blocked: a blocked post could never be labelled
+SAFETY_OFF = [{"category": c, "threshold": "BLOCK_NONE"} for c in (
+    "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
+    "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")]
+UNLABELLED = {"is_economic": 0, "primary_topic": "non_economic", "relevance": 0.0,
+              "sentiment": 0.0, "is_ad": 0, "is_digest": 0, "is_foreign": 0}
 
 
 class ProviderError(Exception):
@@ -41,6 +54,10 @@ class QuotaExhausted(Exception):
 
 class TransientError(Exception):
     """Server/network trouble that outlasted the retries."""
+
+
+class OutOfTime(TransientError):
+    """Waiting any longer would exceed the run's labelling time budget."""
 
 
 # ------------------------------------------------------------------ HTTP -------
@@ -86,6 +103,8 @@ def candidate_models(sticky=None):
     """Models to try, in order. An explicit GEMINI_MODEL is the only candidate."""
     if GEMINI_MODEL:
         return [GEMINI_MODEL]
+    if sticky:
+        sticky = sticky.split(":")[0]              # "<model>:unlabelled" marks a stored default
     try:
         flash = sorted((m for m in list_models() if _STABLE_FLASH.match(m)),
                        key=_flash_rank, reverse=True)
@@ -111,6 +130,16 @@ def _parse(data, n):
     arr = obj.get("results") if isinstance(obj, dict) else obj
     if not isinstance(arr, list) or len(arr) != n:
         raise ValueError(f"expected {n} results, got {len(arr) if isinstance(arr, list) else '?'}")
+    if any(not isinstance(x, dict) for x in arr):
+        raise ValueError("result items are not objects")
+    ids = [x.get("id") for x in arr]
+    if any(i is not None for i in ids):                 # ids are required by the schema
+        try:
+            ok = [int(i) for i in ids] == list(range(n))
+        except (TypeError, ValueError):
+            ok = False
+        if not ok:
+            raise ValueError("post ids in the reply do not match the request")
     return [_to_label(x) for x in arr]
 
 
@@ -137,24 +166,32 @@ def _to_label(d):
     }
 
 
-def classify_batch(model, texts):
+def classify_batch(model, texts, channels=None, deadline=None):
     """Label one batch. Raises ValueError on unusable output, else a typed error."""
     gen = {"responseMimeType": "application/json", "responseSchema": RESPONSE_SCHEMA}
     if model.startswith("gemini-2"):
         gen["temperature"] = 0      # Gemini 3+: Google advises keeping the default
     last = ""
-    for attempt in range(4):
+
+    def pause(seconds):
+        if deadline and time.time() + seconds > deadline:
+            raise OutOfTime(f"{model}: time budget spent while waiting ({last})")
+        time.sleep(seconds)
+
+    for attempt in range(5):
         payload = {
             "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-            "contents": [{"role": "user", "parts": [{"text": build_user_prompt(texts)}]}],
+            "contents": [{"role": "user",
+                          "parts": [{"text": build_user_prompt(texts, channels)}]}],
             "generationConfig": gen,
+            "safetySettings": SAFETY_OFF,
         }
         try:
             r = requests.post(f"{API}/models/{model}:generateContent",
-                              headers=_headers(), json=payload, timeout=180)
+                              headers=_headers(), json=payload, timeout=300)
         except requests.RequestException as e:
-            time.sleep(10 * (attempt + 1))
-            last = str(e)
+            last = f"{type(e).__name__}: {str(e)[:200]}"
+            pause(min(15 * 2 ** attempt, 120))
             continue
         if r.status_code == 200:
             return _parse(r.json(), len(texts))
@@ -168,10 +205,10 @@ def classify_batch(model, texts):
                 raise ModelUnavailable(f"{model}: no free quota ({msg})")
             if any("PerDay" in q for q in quota_ids):
                 raise QuotaExhausted(f"{model}: daily quota reached")
-            time.sleep(min(delay or 20 * (attempt + 1), 90))
+            pause(min(max(delay or 0, 20) + 2, 120))    # per-minute limit: wait it out
             continue
         if r.status_code in (500, 502, 503, 504):
-            time.sleep(10 * (attempt + 1))
+            pause(min(15 * 2 ** attempt, 120))          # overloaded: 15, 30, 60, 120 s
             continue
         if r.status_code == 404:
             raise ModelUnavailable(f"{model}: {msg}")
@@ -180,16 +217,22 @@ def classify_batch(model, texts):
 
 
 # --------------------------------------------------------------- public --------
+def _failed_before(value):
+    return isinstance(value, str) and value.strip() != ""
+
+
 def label_pending(pending, save=None, sticky=None):
     """Label every post in `pending` without a current-version label, oldest first.
 
     Labels are written into pending's LABEL_COLS (+ label_version, label_model);
     `save(pending)` is called every few batches and at the end, so progress survives
-    a timeout. Returns (pending, status) with status = {"error", "warnings", "new"},
-    where "error" is set only for problems that need a human.
+    a timeout. Returns (pending, status) with status = {"error", "warnings", "new",
+    "todo", "quota"}: "error" is set only for problems that need a human, "quota" when
+    the daily quota ran out (expected while a backlog is being labelled).
     """
-    status = {"error": None, "warnings": [], "new": 0}
+    status = {"error": None, "warnings": [], "new": 0, "todo": 0, "quota": False}
     todo = pending[pending["label_version"].astype(str) != LLM_LABEL_VERSION]
+    status["todo"] = len(todo)
     if todo.empty:
         return pending, status
     if not GEMINI_API_KEY:
@@ -206,20 +249,35 @@ def label_pending(pending, save=None, sticky=None):
           f"(batch {LLM_BATCH_SIZE}, max {LLM_MAX_REQUESTS} requests this run)")
 
     texts = todo["raw_text"].fillna("").astype(str).str.slice(0, LLM_MAX_CHARS).tolist()
+    chans = todo["channel"].astype(str).tolist()
     idx = todo.index.tolist()
-    queue = [(idx[i:i + LLM_BATCH_SIZE], texts[i:i + LLM_BATCH_SIZE])
+    queue = [(idx[i:i + LLM_BATCH_SIZE], chans[i:i + LLM_BATCH_SIZE], texts[i:i + LLM_BATCH_SIZE])
              for i in range(0, len(texts), LLM_BATCH_SIZE)]
     interval = 60.0 / LLM_RPM if LLM_RPM > 0 else 0.0
-    requests_used, last_call, since_save = 0, 0.0, 0
+    deadline = time.time() + 60 * LLM_TIME_BUDGET_MIN
+    requests_used, last_call, since_save, failures_in_row = 0, 0.0, 0, 0
+    retried, changed = set(), False                # single posts already retried this run
 
-    def call(batch_texts):
+    def call(batch_texts, batch_chans):
         nonlocal requests_used, last_call
         wait = interval - (time.time() - last_call)
         if wait > 0:
             time.sleep(wait)                       # pace to the per-minute limit
         last_call = time.time()
         requests_used += 1
-        return classify_batch(model, batch_texts)
+        return classify_batch(model, batch_texts, batch_chans, deadline)
+
+    def keep(bidx, labels, label_model):
+        nonlocal since_save, changed
+        for i, lab in zip(bidx, labels):
+            for c in LABEL_COLS:
+                pending.at[i, c] = lab[c]
+            pending.at[i, "label_version"] = LLM_LABEL_VERSION
+            pending.at[i, "label_model"] = label_model
+            pending.at[i, "label_error"] = None
+        status["new"] += len(labels)
+        since_save += len(labels)
+        changed = True
 
     try:
         while queue:
@@ -227,9 +285,13 @@ def label_pending(pending, save=None, sticky=None):
                 status["warnings"].append(
                     f"request cap ({LLM_MAX_REQUESTS}) reached — the rest is labelled next run")
                 break
-            bidx, btexts = queue.pop(0)
+            if time.time() > deadline:
+                status["warnings"].append(f"time budget ({LLM_TIME_BUDGET_MIN:g} min) spent "
+                                          "— the rest is labelled next run")
+                break
+            bidx, bchans, btexts = queue.pop(0)
             try:
-                labels = call(btexts)
+                labels = call(btexts, bchans)
             except ModelUnavailable as e:
                 if not models:
                     status["error"] = f"no usable Gemini model ({e})"
@@ -237,35 +299,54 @@ def label_pending(pending, save=None, sticky=None):
                 old, model = model, models.pop(0)
                 status["warnings"].append(f"model switched {old} -> {model} ({e})")
                 print(f"  !! {e} -> switching model {old} -> {model}")
-                queue.insert(0, (bidx, btexts))
+                queue.insert(0, (bidx, bchans, btexts))
+                continue
+            except OutOfTime as e:
+                status["warnings"].append(f"{e} — the rest is labelled next run")
+                break
+            except TransientError as e:            # outlasted the retries inside the call
+                failures_in_row += 1
+                if failures_in_row >= 3 or time.time() + 60 > deadline:
+                    status["warnings"].append(f"Gemini unavailable ({e}) — retry next run")
+                    break
+                print(f"  !! {e} -> pausing a minute, then retrying")
+                queue.insert(0, (bidx, bchans, btexts))
+                time.sleep(60)
                 continue
             except ValueError as e:                # bad output: retry as two halves
+                failures_in_row = 0
                 if len(bidx) > 1:
                     half = len(bidx) // 2
-                    queue[:0] = [(bidx[:half], btexts[:half]), (bidx[half:], btexts[half:])]
+                    queue[:0] = [(bidx[:half], bchans[:half], btexts[:half]),
+                                 (bidx[half:], bchans[half:], btexts[half:])]
                     print(f"  batch of {len(bidx)} unusable ({e}) -> split")
+                    continue
+                i, key = bidx[0], post_keys(pending.loc[bidx]).iloc[0]
+                if i not in retried:               # once more, at the end of this run
+                    retried.add(i)
+                    queue.append((bidx, bchans, btexts))
+                elif _failed_before(pending.at[i, "label_error"]):
+                    keep([i], [UNLABELLED], f"{model}:unlabelled")
+                    status["warnings"].append(f"post {key} could not be labelled in two runs "
+                                              f"({e}) — stored as non-economic")
                 else:
-                    key = post_keys(pending.loc[bidx]).iloc[0]
-                    status["warnings"].append(f"post {key} could not be labelled ({e})")
+                    pending.at[i, "label_error"] = str(e)[:200]
+                    changed = True
+                    status["warnings"].append(f"post {key} could not be labelled ({e}) "
+                                              "— retried next run")
                 continue
-            for i, lab in zip(bidx, labels):
-                for c in LABEL_COLS:
-                    pending.at[i, c] = lab[c]
-                pending.at[i, "label_version"] = LLM_LABEL_VERSION
-                pending.at[i, "label_model"] = model
-            status["new"] += len(labels)
-            since_save += len(labels)
+            failures_in_row = 0
+            keep(bidx, labels, model)
             print(f"    labelled {status['new']}/{len(texts)}")
             if save and since_save >= 5 * LLM_BATCH_SIZE:   # flush often: survive timeouts
                 save(pending)
                 since_save = 0
     except QuotaExhausted as e:
+        status["quota"] = True
         status["warnings"].append(f"{e} — the rest is labelled next run")
-    except TransientError as e:
-        status["warnings"].append(f"Gemini temporarily unavailable ({e}) — retry next run")
     except ProviderError as e:
         status["error"] = str(e)
     finally:
-        if save and status["new"]:
+        if save and changed:
             save(pending)
     return pending, status

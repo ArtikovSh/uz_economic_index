@@ -2,7 +2,8 @@
 Pre-flight check of every external dependency, without collecting any posts.
 
   * Telegram: the session is authorized and every channel handle resolves
-  * Gemini:   the key works and a model returns a valid classification
+  * Gemini:   the key works, and the model labels the control set in gold_set.py
+              (26 real posts with known answers) well enough
   * Sheets:   runs the real sync (fills the sheet), if its secrets are set
   * Alerts:   sends this summary through the bot, if its secrets are set
 
@@ -15,10 +16,9 @@ import sys
 
 import requests
 
-from config import CHANNELS, GEMINI_API_KEY
+from config import CHANNELS, GEMINI_API_KEY, TONE_THRESHOLD
 
-SAMPLE = ["Markaziy bank dollar kursini e'lon qildi: dollar biroz ko'tarildi.",
-          "Bugun Toshkentda havo issiq bo'ladi, yomg'ir kutilmaydi."]
+GOLD_PASS = 0.85        # share of the control set the model must get right
 
 
 def check_telegram():
@@ -49,22 +49,44 @@ def check_telegram():
         return False, f"{type(e).__name__}: {e}"
 
 
+def outcome(label):
+    """What a label does to the index: reklama / boshqa / iqt+ / iqt0 / iqt-."""
+    if label["is_ad"]:
+        return "reklama"
+    if not label["is_economic"] or label["is_digest"] or label["is_foreign"]:
+        return "boshqa"
+    s = label["sentiment"]
+    return "iqt+" if s > TONE_THRESHOLD else "iqt-" if s < -TONE_THRESHOLD else "iqt0"
+
+
 def check_gemini():
+    """One request: label the control set with the model the pipeline would use."""
     if not GEMINI_API_KEY:
         return False, "GEMINI_API_KEY yo'q"
+    from gold_set import GOLD
     from llm_classifier import candidate_models, classify_batch
+    from store import load_ledger, load_pending
+    used = (load_pending()["label_model"].dropna().tolist()
+            or load_ledger()["label_model"].dropna().tolist())
     errors = []
     try:
-        models = candidate_models()[:4]
+        models = candidate_models(used[-1] if used else None)[:4]
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
     for model in models:
         try:
-            out = classify_batch(model, SAMPLE)
-            return True, (f"{model} ishlayapti (namuna: {out[0]['primary_topic']}, "
-                          f"sentiment {out[0]['sentiment']:+.2f})")
+            labels = classify_batch(model, [g[3] for g in GOLD], [g[0] for g in GOLD])
         except Exception as e:
             errors.append(f"{model}: {type(e).__name__}: {e}")
+            continue
+        wrong = [f"#{i + 1} {why}: kutilgan {want}, javob {outcome(lab)}"
+                 for i, ((_, want, why, _), lab) in enumerate(zip(GOLD, labels))
+                 if outcome(lab) != want]
+        right = len(GOLD) - len(wrong)
+        msg = f"{model} ishlayapti; nazorat to'plami: {right}/{len(GOLD)} to'g'ri"
+        if wrong:
+            msg += "\n   " + "\n   ".join(wrong)
+        return right >= GOLD_PASS * len(GOLD), msg[:1500]
     return False, ("; ".join(errors) or "mos model topilmadi")[:600]
 
 

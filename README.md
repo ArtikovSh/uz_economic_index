@@ -18,9 +18,10 @@ oy, chorak va yil uchun formula bir xil.
    02:05 dagi zaxira run faqat birinchi run yig'a olmagan kanallarni yig'adi.
    Yig'ilmay qolgan kunlar keyinroq to'ldirilmaydi. Ko'rishlar va forward'lar indeksda
    ishlatilmaydi, lekin yig'ib boriladi.
-2. **Tasniflash** — har post **Gemini** bilan bir marta belgilanadi: iqtisodiymi, mavzu,
-   sentiment, reklama/dayjest/xorijiy bayroqlari. Zaxira klassifikator yo'q: belgilanmay
-   qolgan post keyingi run'da qayta yuboriladi.
+2. **Tasniflash** — har post **Gemini** bilan bir marta belgilanadi: reklamami, dayjestmi,
+   iqtisodiymi, xorijiymi, mavzu va sentiment. Prompt qoidalari `METHODOLOGY.md` ning
+   3-bo'limida yozilgan. Zaxira klassifikator yo'q: belgilanmay qolgan post keyingi run'da
+   qayta yuboriladi.
 3. **Filtrlar** — kanal o'zi reklama deb belgilagan post (`(реклама)`, oxirida `Reklama`)
    Gemini javobidan qat'i nazar reklama hisoblanadi.
 4. **Ikki jadval** — kun yakunlangach (barcha postlari belgilangach) uning postlari
@@ -38,11 +39,12 @@ oy, chorak va yil uchun formula bir xil.
 | `store.py` | Ikki jadval va kutish fayli (faqat qo'shish) |
 | `llm_classifier.py` | Gemini klassifikatori: partiyalar, kvota nazorati |
 | `prompts.py` | Gemini prompti va JSON sxema |
+| `gold_set.py` | Nazorat to'plami: javobi ma'lum 26 ta haqiqiy post (`check` ishlatadi) |
 | `indicator.py` | Reklama filtri, kunni yakunlash, EAI/ESI sanog'i |
 | `excel_exporter.py` | Excel hisobot ("Indekslar", "Xabarlar", "Metodika") |
 | `sync_to_db.py` | Supabase'ga sinxronlash (bot va Mini App uchun) |
 | `sheets_sync.py` | Jadvallarni Google Sheets'ga qo'shish |
-| `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, Gemini, Sheets, bot ogohlantirishi |
+| `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, Gemini (nazorat to'plami bilan), Sheets, bot ogohlantirishi |
 | `export_session.py` | CI uchun Telegram sessiya satrini yaratish |
 | `app/` | Telegram bot + Mini App (Vercel) |
 
@@ -70,12 +72,17 @@ oy, chorak va yil uchun formula bir xil.
 
 **Variables** (ixtiyoriy): `GEMINI_MODEL` — modelni qat'iy belgilash. Bo'sh bo'lsa
 avtomatik tanlanadi va keyin o'sha model saqlanib qoladi. Qaysi modelda bepul
-kvota borligini https://aistudio.google.com/rate-limit da ko'ring.
+kvota borligini https://aistudio.google.com/rate-limit da ko'ring. Eng yangi Flash
+modelining bepul limiti kuniga ~20 so'rov, shuning uchun bitta so'rovda 50 ta post
+yuboriladi (`LLM_BATCH_SIZE`).
 
 **Workflow'lar:**
 - `uz-economic-index` — kunlik (00:05 va 02:05 Toshkent) + qo'lda. Barcha davrlar
   (kun, hafta, oy, chorak, yil) shu run'da yopiladi.
-- `check` — post yig'masdan hamma narsani tekshiradi (Telegram, Gemini, Sheets) va natijani botga yuboradi. Kunlik run bilan bir vaqtda ishlamaydi (navbatga turadi).
+- `check` — post yig'masdan hamma narsani tekshiradi (Telegram, Gemini, Sheets) va natijani botga yuboradi.
+  Gemini nazorat to'plamidagi 26 ta postni belgilaydi; bot nechtasi to'g'ri ekanini va xatolarni
+  ko'rsatadi. Kunlik kvotadan 1 so'rov sarflanadi. Kunlik run bilan bir vaqtda ishlamaydi
+  (navbatga turadi).
 
 ## Google Sheets oynasi
 
