@@ -149,4 +149,7 @@ Testlar uchun alohida, bo'sh Postgres bazasidan foydalaning: jadvallar qayta yar
 `TEST_DATABASE_URL` ni shu bazaning ulanish manziliga o'rnating.
 Keyin `python -m pytest -q tests/api` buyrug'ini ishga tushiring.
 `TEST_DATABASE_URL` berilmasa, test moduli o'tkazib yuboriladi.
-GitHub Actions `app/` yoki `tests/` o'zgargan push va pull request'larda testlarni ishga tushiradi.
+GitHub Actions `app/`, `tests/`, ildizdagi `.py` fayllar, `requirements.txt`, `requirements-dev.txt`
+yoki `.github/workflows/tests.yml` o'zgargan push va pull request'larda testlarni ishga tushiradi.
+`tests/pipeline` indeks formulalari va kun hamda davrlarni yakunlash qoidalarini tekshiradi.
+Ularni lokal ishga tushirish: `python -m pytest -q tests/pipeline`.
