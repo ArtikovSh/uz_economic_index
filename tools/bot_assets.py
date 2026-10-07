@@ -54,6 +54,8 @@ TILES = {
     "globe": ("#0F1B2D", "globe"),
     "check": ("#0E7490", "check"),
 }
+# change arrows for the numbers: plain coloured strokes, no tile
+ARROWS = {"rise": ("#1A9BB0", "up"), "fall": ("#F06A2A", "down")}
 
 GLYPHS = {
     "dashboard": "grid", "topics": "layers", "news": "news", "week": "calendar",
@@ -81,14 +83,23 @@ def _avatar():
     ))
 
 
-def _emoji(icon, background=None):
-    size, stroke = (64, 2.6) if background else (80, 2.2)
+def _emoji(icon, background=None, color="#FFFFFF"):
+    # tiles keep a 10px margin: Telegram draws custom emoji edge to edge, so tiles on
+    # consecutive lines would otherwise touch
+    size, stroke = (52, 2.6) if background else (80, 2.2)
     inset = (100 - size) / 2
-    tile = f'<rect width="100" height="100" rx="26" fill="{background}"/>' if background else ""
+    tile = f'<rect x="10" y="10" width="80" height="80" rx="21" fill="{background}"/>' if background else ""
     return _svg(100, (
         f'{tile}<svg x="{inset}" y="{inset}" width="{size}" height="{size}" '
-        f'viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="{stroke}" '
+        f'viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="{stroke}" '
         f'stroke-linecap="round" stroke-linejoin="round">{PATHS[icon]}</svg>'
+    ))
+
+
+def _arrow(icon, color):
+    return _svg(100, (
+        '<svg x="18" y="18" width="64" height="64" viewBox="0 0 24 24" fill="none" '
+        f'stroke="{color}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">{PATHS[icon]}</svg>'
     ))
 
 
@@ -98,6 +109,8 @@ def main():
     images = [(DESTINATION / "avatar.png", _avatar())]
     images.extend((emoji_dir / f"t-{name}.png", _emoji(icon, color))
                   for name, (color, icon) in TILES.items())
+    images.extend((emoji_dir / f"t-{name}.png", _arrow(icon, color))
+                  for name, (color, icon) in ARROWS.items())
     images.extend((emoji_dir / f"g-{name}.png", _emoji(icon))
                   for name, icon in GLYPHS.items())
     for path, svg in images:

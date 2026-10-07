@@ -71,7 +71,7 @@ T = {
         "lifted": "ESI ni ko‘targan: {x}", "pulled": "ESI ni tushirgan: {x}",
         "topics_title": "Mavzular · {d}", "topics_sub": "{n} ta iqtisodiy xabar",
         "top_title": "Asosiy xabarlar · {d}",
-        "tone": {"pos": "ijobiy", "neu": "neytral", "neg": "salbiy"},
+        "tone": {"pos": "ijobiy xabar", "neu": "neytral xabar", "neg": "salbiy xabar"},
         "no_data": "Hozircha ma’lumot yo‘q.", "no_posts": "Bu kun uchun iqtisodiy xabar yo‘q.",
         "me_title": "Hisobim", "me_owner": "Admin (bot egasi)", "me_login": "Login: {x}", "me_role": "Rol: {x}",
         "me_until": "Amal qiladi: {x} gacha", "me_forever": "Amal qiladi: muddatsiz",
@@ -137,7 +137,7 @@ T = {
         "lifted": "Подняли ESI: {x}", "pulled": "Снизили ESI: {x}",
         "topics_title": "Темы · {d}", "topics_sub": "Экономических новостей: {n}",
         "top_title": "Главные новости · {d}",
-        "tone": {"pos": "позитив", "neu": "нейтрально", "neg": "негатив"},
+        "tone": {"pos": "позитивная новость", "neu": "нейтральная новость", "neg": "негативная новость"},
         "no_data": "Данных пока нет.", "no_posts": "За этот день экономических новостей нет.",
         "me_title": "Мой аккаунт", "me_owner": "Админ (владелец бота)", "me_login": "Логин: {x}",
         "me_role": "Роль: {x}", "me_until": "Действует до {x}", "me_forever": "Действует бессрочно",
@@ -203,7 +203,7 @@ T = {
         "lifted": "Lifted ESI: {x}", "pulled": "Pulled ESI down: {x}",
         "topics_title": "Topics · {d}", "topics_sub": "Economic posts: {n}",
         "top_title": "Top posts · {d}",
-        "tone": {"pos": "positive", "neu": "neutral", "neg": "negative"},
+        "tone": {"pos": "positive news", "neu": "neutral news", "neg": "negative news"},
         "no_data": "No data yet.", "no_posts": "No economic posts on this day.",
         "me_title": "My account", "me_owner": "Admin (bot owner)", "me_login": "Login: {x}", "me_role": "Role: {x}",
         "me_until": "Valid until {x}", "me_forever": "Valid with no end date",
@@ -247,7 +247,8 @@ COMMANDS = ("today", "week", "topics", "top", "app", "me", "lang", "help")
 
 # icon name -> fallback emoji Telegram requires next to a custom emoji (never shown when it works)
 TILES = {"logo": "📈", "eai": "🎯", "esi": "💬", "news": "📰", "topics": "🗂", "up": "📈", "down": "📉",
-         "week": "📅", "user": "👤", "bell": "🔔", "lock": "🔒", "globe": "🌐", "check": "✅"}
+         "week": "📅", "user": "👤", "bell": "🔔", "lock": "🔒", "globe": "🌐", "check": "✅",
+         "rise": "\u2197\ufe0f", "fall": "\u2198\ufe0f"}
 GLYPHS = {"dashboard": "📊", "topics": "🗂", "news": "📰", "week": "📅", "eai": "🎯", "esi": "💬",
           "user": "👤", "globe": "🌐", "bell": "🔔", "login": "🔑", "back": "◀️", "up": "⬆️",
           "down": "⬇️"}
@@ -260,7 +261,7 @@ def tr(lang, key, **kw):
 
 def ic(em, name):
     """A tile icon before a line, or nothing when the bot has no usable custom emoji."""
-    eid = (em or {}).get("t", {}).get(name)
+    eid = (em or {}).get("t", {}).get(name) if name else None
     return f'<tg-emoji emoji-id="{eid}">{TILES[name]}</tg-emoji> ' if eid else ""
 
 
@@ -348,13 +349,20 @@ def range_label(a, b, lang):
     return f"{day_label(a, lang, a.year != b.year)} – {day_label(b, lang)}"
 
 
-def delta(v, lang, unit=""):
-    """'▲ 1,7 f.b.' / '▼ 3,0' / '0,0' — the change since the previous period."""
+def delta(v, lang, unit="", em=None, tone=False):
+    """The change since the previous period, as HTML: '▲ 1,7 f.b.' / '▼ 3,0' / '0,0'. With the
+    bot's icons the arrow is a custom emoji: in the text colour for EAI (attention is neither good
+    nor bad), teal or orange for ESI (tone=True)."""
     if v is None:
         return ""
     v = round(v, 1)
     arrow = "▲ " if v > 0 else "▼ " if v < 0 else ""
-    return f"  {arrow}{num(abs(v), lang, 1)}{(' ' + unit) if unit else ''}"
+    if v and em:
+        key, name = ("t", "rise" if v > 0 else "fall") if tone else ("g", "up" if v > 0 else "down")
+        eid = em.get(key, {}).get(name)
+        if eid:
+            arrow = f'<tg-emoji emoji-id="{eid}">{(TILES if tone else GLYPHS)[name]}</tg-emoji> '
+    return f"  {arrow}{num(abs(v), lang, 1)}{(' ' + escape(unit)) if unit else ''}"
 
 
 def topic_name(lang, key):
@@ -451,9 +459,9 @@ def caption(data, lang, em=None):
     names = lambda keys: ", ".join(topic_name(lang, k) for k in keys)
     lines = [ic(em, "logo" if daily else "week") + "<b>" + escape(tr(lang, "daily_title" if daily else "weekly_title", d=when)) + "</b>", ""]
     lines.append(f"{ic(em, 'eai')}{escape(tr(lang, 'eai'))}: <b>{num(data['eai'], lang, 1)}%</b>"
-                 + escape(delta(data["d_eai"], lang, tr(lang, "pp"))))
+                 + delta(data["d_eai"], lang, tr(lang, "pp"), em))
     lines.append(f"{ic(em, 'esi')}{escape(tr(lang, 'esi'))}: <b>{signed(data['esi'], lang)}</b>"
-                 + escape(delta(data["d_esi"], lang)))
+                 + delta(data["d_esi"], lang, em=em, tone=True))
     if daily:
         econ = tr(lang, "econ_day", e=num(data["econ"], lang), n=num(data["nonad"], lang),
                   c=data["channels"], t=data["channels_total"])
@@ -493,7 +501,9 @@ def period_label(data, lang):
     return range_label(data["start"], data["end"], lang)
 
 
-def top_text(rows, data, lang, titles, clean, em=None):
+def top_text(rows, data, lang, titles, parts, em=None):
+    """Each post: its headline in bold, up to 100 characters of the text, then the channel (a link
+    to the post), topic and tone. `parts(raw)` splits a post into (headline, text)."""
     if not rows:
         return tr(lang, "no_posts")
     out = [ic(em, "news") + "<b>" + escape(tr(lang, "top_title", d=period_label(data, lang))) + "</b>"]
@@ -501,9 +511,11 @@ def top_text(rows, data, lang, titles, clean, em=None):
         ch = str(r["channel"])
         link = f"https://t.me/{ch.lstrip('@')}/{r['message_id']}"
         name = escape(titles.get(ch, ch.lstrip("@")))
-        head = (f"{i}. <a href=\"{escape(link)}\">{name}</a> · {escape(topic_name(lang, r['primary_topic']))}"
-                f" · {escape(tr(lang, 'tone')[r['tone']])}")
-        out.append(f"\n{head}\n{escape(clean(r['raw_text'], 230))}")
+        head, body = parts(r["raw_text"])
+        mark = ic(em, {"pos": "rise", "neg": "fall"}.get(r["tone"], ""))
+        meta = (f'<a href="{escape(link)}">{name}</a> · {escape(topic_name(lang, r["primary_topic"]))} · '
+                f'{mark}{escape(tr(lang, "tone")[r["tone"]])}')
+        out.append(f"\n<b>{i}. {escape(head)}</b>" + (f"\n{escape(body)}" if body else "") + f"\n<i>{meta}</i>")
     return "\n".join(out)
 
 

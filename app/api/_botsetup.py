@@ -20,7 +20,10 @@ import json
 from _bot import GLYPHS, LANGS, T, TILES, COMMANDS
 
 NAME = "UZ Economic Index"
-SETS = (("t", TILES, False), ("g", GLYPHS, True))       # (key, icons, needs_repainting)
+# (key, set name prefix, icons, needs_repainting). Telegram keeps a set's pictures, so new
+# pictures go into a set with a new prefix; the old set is deleted.
+SETS = (("t", "uzei_t2", TILES, False), ("g", "uzei_g", GLYPHS, True))
+OLD_SETS = ("uzei_t",)
 
 REPORT = {
     "uz": {"title": "Bot sozlamalari", "ok": "tayyor", "same": "o‘zgarmagan", "fail": "xato: {x}",
@@ -94,9 +97,9 @@ def emoji_sets(call, q, owner_id, base):
     """Create the two sets if missing, add icons that are new since; returns {key: {icon: id}}."""
     bot = call("getMe")["username"]
     out = {}
-    for key, icons, repaint in SETS:
-        name = f"uzei_{key}_by_{bot}"
-        sticker = lambda icon: {"sticker": f"{base}/bot/emoji/{key}-{icon}.png", "format": "static",
+    for key, prefix, icons, repaint in SETS:
+        name = f"{prefix}_by_{bot}"
+        sticker = lambda icon: {"sticker": f"{base}/bot/emoji/{key}-{icon}.png?set={prefix}", "format": "static",
                                 "emoji_list": [icons[icon]]}
         try:
             have = call("getStickerSet", {"name": name})["stickers"]
@@ -111,6 +114,11 @@ def emoji_sets(call, q, owner_id, base):
         if len(have) < len(names):
             have = call("getStickerSet", {"name": name})["stickers"]
         out[key] = {icon: s["custom_emoji_id"] for icon, s in zip(names, have)}
+    for prefix in OLD_SETS:
+        try:
+            call("deleteStickerSet", {"name": f"{prefix}_by_{bot}"})
+        except TgError:                                  # already gone
+            pass
     return out
 
 

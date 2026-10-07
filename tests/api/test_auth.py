@@ -511,17 +511,31 @@ def test_setup_profile_and_premium_icons(fresh_db):
                                      "https://uzei.example.app", False)
     report = run()
     assert calls.count("setMyDescription") == 3 and calls.count("setMyCommands") == 4
-    assert "setMyProfilePhoto" in calls and "Premium ikonkalar — ishlaydi (26 ta)" in report
+    assert "setMyProfilePhoto" in calls and "Premium ikonkalar — ishlaydi (28 ta)" in report
     assert "Ertalabki xulosa — Vercel'da CRON_SECRET" in report
     em = index.emoji()
-    assert em["t"]["logo"] == "uzei_t_by_uzei_bot-0" and em["g"]["down"] == "uzei_g_by_uzei_bot-12"
+    assert em["t"]["logo"] == "uzei_t2_by_uzei_bot-0" and em["t"]["fall"] == "uzei_t2_by_uzei_bot-14"
+    assert em["g"]["down"] == "uzei_g_by_uzei_bot-12" and calls.count("deleteStickerSet") == 1
     text = index.bot.caption({"kind": "kun", "start": "2026-10-04", "end": "2026-10-04", "eai": 50.0, "esi": 10.0,
                               "d_eai": None, "d_esi": None, "nonad": 6, "econ": 3, "channels": 5,
                               "channels_total": 5, "topics": []}, "en", em)
-    assert text.startswith('<tg-emoji emoji-id="uzei_t_by_uzei_bot-0">')
+    assert text.startswith('<tg-emoji emoji-id="uzei_t2_by_uzei_bot-0">')
     calls.clear()
     assert "Avatar — o‘zgarmagan" in run()                          # same picture, sets already there
     assert "setMyProfilePhoto" not in calls and "createNewStickerSet" not in calls
+
+
+def test_top_posts_headline_and_short_text():
+    raw = ("**Eksport 9 oyda 18% oshdi**\n\nStatistika agentligi ma'lumotiga ko'ra, yanvar–sentabrda eksport "
+           "hajmi 21,4 mlrd dollarga yetdi va o'tgan yilning shu davridan ancha yuqori bo'ldi.\n\n@kunuzofficial")
+    head, body = index.post_parts(raw)
+    assert head == "Eksport 9 oyda 18% oshdi" and body.endswith("…") and len(body) <= 101
+    assert index.post_parts("Sarlavhasiz bitta qatorli post. Davomi shu yerda.") == ("Sarlavhasiz bitta qatorli post.", "Davomi shu yerda.")
+    rows = [{"channel": "@kunuzofficial", "message_id": 5, "primary_topic": "trade", "tone": "pos", "raw_text": raw}]
+    data = {"kind": "kun", "start": "2026-10-05", "end": "2026-10-05"}
+    text = index.bot.top_text(rows, data, "uz", {"@kunuzofficial": "Kun.uz"}, index.post_parts)
+    assert "<b>1. Eksport 9 oyda 18% oshdi</b>\nStatistika" in text
+    assert '<i><a href="https://t.me/kunuzofficial/5">Kun.uz</a> · Tashqi savdo · ijobiy xabar</i>' in text
 
 
 # --------------------------------------------------------------- channels --
