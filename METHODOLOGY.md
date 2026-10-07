@@ -45,8 +45,11 @@ soni bo'yicha hisoblanadi, kunlik qiymatlarning o'rtachasi emas.
   (`scraped_at`) yig'ilganda saqlanadi va keyin yangilanmaydi. Ular indeks hisobida
   ishlatilmaydi, lekin kelajakdagi tahlil uchun yig'ib boriladi.
 - **Zaxira run (02:05)** faqat birinchi run yig'a olmagan kanallarni yig'adi.
-- **Yig'ilmagan kunlar keyin to'ldirilmaydi.** Ular davr qatorlarida `kunlar`
-  ustunida ko'rinadi, masalan 26/30.
+- **Yig'ilmagan kunlar avtomatik to'ldirilmaydi.** Ular davr qatorlarida `kunlar`
+  ustunida ko'rinadi, masalan 26/30. Davr hali yopilmagan bo'lsa, bunday kunni
+  `backfill.py` bilan qo'lda yig'ish mumkin (workflow'da `backfill_days`). Indeks postlar
+  sonidan hisoblanadi, shuning uchun kech yig'ish uni o'zgartirmaydi; faqat saqlangan
+  ko'rishlar soni kattaroq bo'ladi. 2026-09-28..2026-10-03 shu yo'l bilan yig'ilgan.
 - Telegram sessiyasi yig'ishdan oldin tekshiriladi. Biror muammo bo'lsa, bot
   administratorga xabar yuboradi.
 
@@ -54,8 +57,10 @@ soni bo'yicha hisoblanadi, kunlik qiymatlarning o'rtachasi emas.
 
 ## 3. Tasniflash — OpenAI yoki Gemini (`llm_classifier.py`, `prompts.py`)
 
-Har bir post bir marta belgilanadi (belgi versiyasi `v4`). Postlarni bitta model
-belgilaydi:
+Har bir post bir marta belgilanadi (belgi versiyasi `v5`). 2–21-sentabr postlari `v4` bilan
+belgilangan: ularda `central_bank` mavzusi yo'q, bunday postlar bank, inflyatsiya yoki kurs
+mavzusida. Indeks to'liq ishga tushganda butun tarix bitta versiya bilan qayta quriladi.
+Postlarni bitta model belgilaydi:
 - `OPENAI_API_KEY` da OpenAI kaliti (`sk-...`) bo'lsa — OpenAI (`gpt-6-luna`, u ishlamasa
   `gpt-5-mini`). Javob qat'iy JSON sxema bo'yicha olinadi, OpenAI postlarni saqlamaydi
   (`store: false`).
@@ -71,12 +76,20 @@ mavzu → relevance → sentiment.
 | `is_digest` | bitta postda bir-biriga bog'liq bo'lmagan bir nechta yangilik |
 | `economic` | postning asosiy mavzusi iqtisodiy (qaysi mamlakat haqida bo'lishidan qat'i nazar) |
 | `is_foreign` | voqea O'zbekistondan tashqarida va unda O'zbekiston tomoni yo'q |
-| `topic` | 10 kategoriyadan biri yoki `non_economic` |
+| `topic` | 11 kategoriyadan biri yoki `non_economic` (pastda) |
 | `sentiment` | O'zbekiston iqtisodiyoti, aholisi va biznesi uchun yaxshi yoki yomon yangilikmi (−1…+1) |
 | `relevance` | iqtisod postda qanchalik markaziy (indeksda ishlatilmaydi, saqlanadi) |
 
 Indeksdagi iqtisodiy post = reklama emas **va** `economic` **va** dayjest emas **va**
 xorijiy emas.
+
+**Mavzular:** narx va inflatsiya, valyuta kursi, byudjet va soliq, tashqi savdo,
+makroiqtisodiyot, **Markaziy bank**, bank va moliya, mehnat va daromad, energetika,
+biznes, qurilish. O'zbekiston Markaziy bankining qarori, bayonoti, prognozi yoki
+qoidasi haqidagi post — inflyatsiya, kurs yoki banklar haqida bo'lsa ham — `central_bank`.
+Kunlik rasmiy kurs xabari va Markaziy bank ma'lumotiga shunchaki tayangan yangilik o'z
+mavzusida qoladi (`currency_fx`, `banking_finance`, ...). Mavzu indeks formulasiga
+kirmaydi; u mavzular kesimi uchun ishlatiladi (`v5` belgilaridan boshlab).
 
 **Ohang:** sentiment > +0.15 bo'lsa ijobiy, < −0.15 bo'lsa salbiy, qolgani neytral.
 
@@ -124,6 +137,8 @@ Har bir belgi uni bergan modelni (`label_model`) va versiyasini (`label_version`
 - OpenAI pullik, lekin kunlik limiti yo'q. `gpt-6-luna` narxi 1M token uchun $0.10
   (kirish) va $0.50 (chiqish). Kuniga ~150 post uchun xarajat oyiga taxminan bir dollar.
 - Kunlik oqim ~150 post, ya'ni 3–4 so'rov.
+- OpenAI'ga bir vaqtda 4 tagacha so'rov yuboriladi, bitta run'da 240 tagacha (6 000 post),
+  shuning uchun to'liq qayta belgilash bitta tunda tugaydi.
 
 **Nazorat to'plami:**
 - `gold_set.py` da 26 ta haqiqiy post va ularning kutilgan natijasi saqlanadi: reklama,

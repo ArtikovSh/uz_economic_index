@@ -9,7 +9,7 @@ bumping LLM_LABEL_VERSION (config.py).
 """
 
 CATEGORIES = [
-    "prices_inflation", "currency_fx", "fiscal", "trade", "macro",
+    "prices_inflation", "currency_fx", "fiscal", "trade", "macro", "central_bank",
     "banking_finance", "labour_income", "energy_utility", "business",
     "construction_realty", "non_economic",
 ]
@@ -76,8 +76,12 @@ STEP 5 — topic (one value; "non_economic" if and only if economic=false)
                       logistics corridors, tourism flows
   macro               GDP, output of industry, agriculture or services, total investment,
                       reserves, remittances, balance of payments, official forecasts
-  banking_finance     banks, loans, deposits, the central bank policy rate, capital markets,
-                      insurance, payment systems, fintech
+  central_bank        the Central Bank of Uzbekistan (CBU, ЦБ, Markaziy bank) as the actor:
+                      its policy rate and other monetary-policy decisions, its statements,
+                      reviews and forecasts, its rules for banks, payments and the FX market,
+                      bank licences it grants or revokes, its FX or gold operations
+  banking_finance     banks, loans, deposits, capital markets, insurance, payment systems,
+                      fintech
   labour_income       wages, pensions and pension rules, social benefits, employment,
                       labour migration
   energy_utility      supply and production of gas, electricity, oil, fuel and water;
@@ -86,7 +90,11 @@ STEP 5 — topic (one value; "non_economic" if and only if economic=false)
                       privatisation, business regulation, IT and startups
   construction_realty construction, housing, real estate, roads, airports and other
                       infrastructure
-Pick the single most central theme.
+Pick the single most central theme. A decision, statement, forecast or rule OF the
+Central Bank of Uzbekistan is central_bank even when it is about inflation, the exchange
+rate or banks. The daily official exchange-rate post, and news that only cites CBU data,
+keep their own topic (currency_fx, banking_finance, ...). Other countries' central banks
+are banking_finance.
 
 STEP 6 — relevance (0.0–1.0)
 How central the economy is to the post: 1.0 = the whole post is an economic story,
@@ -144,7 +152,13 @@ EXAMPLES (headline -> labels)
  "В Навоийской области запустили завод медного проката, создано 800 рабочих мест"
      -> economic, business, +0.6 (launched, jobs created)
  "ЦБ сохранил основную ставку на уровне 14%"
-     -> economic, banking_finance, 0.0 (unchanged)
+     -> economic, central_bank, 0.0 (unchanged)
+ "Markaziy bank asosiy stavkani 13,5 foizgacha pasaytirdi"
+     -> economic, central_bank, +0.6 (rate cut)
+ "Марказий банк инфляция прогнозини 5-6 фоизга қайта кўриб чиқди"
+     -> economic, central_bank, 0.0 (forecast)
+ "Markaziy bank O'zbekistondagi bir bankning litsenziyasini qaytarib oldi"
+     -> economic, central_bank, -0.5 (a bank closed)
  "Фарғонада электр таъминоти 6 соатга узилди"
      -> economic, energy_utility, -0.5 (outage)
  "Rossiyada O'zbekiston fuqarolari uchun mehnat patenti narxi oshirildi"

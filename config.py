@@ -80,9 +80,12 @@ LLM_PROVIDER = choose_provider(os.getenv("LLM_PROVIDER", "").strip().lower(), OP
 LLM_BATCH_SIZE = int(os.getenv("LLM_BATCH_SIZE") or (25 if LLM_PROVIDER == "openai" else 50))
 LLM_MAX_CHARS = int(os.getenv("LLM_MAX_CHARS", "1000"))      # truncate each post
 LLM_RPM = float(os.getenv("LLM_RPM") or (30 if LLM_PROVIDER == "openai" else 5))  # requests/minute
-LLM_MAX_REQUESTS = int(os.getenv("LLM_MAX_REQUESTS", "60"))  # per run
+# OpenAI: 4 requests in flight and 240 a run (6,000 posts), so a whole relabel fits in one
+# night; Gemini stays sequential within its free quota.
+LLM_WORKERS = int(os.getenv("LLM_WORKERS") or (4 if LLM_PROVIDER == "openai" else 1))
+LLM_MAX_REQUESTS = int(os.getenv("LLM_MAX_REQUESTS") or (240 if LLM_PROVIDER == "openai" else 60))  # per run
 LLM_TIME_BUDGET_MIN = float(os.getenv("LLM_TIME_BUDGET_MIN", "30"))  # stop labelling after this
-LLM_LABEL_VERSION = "v4"     # bump to re-label everything (v4: step-by-step prompt, post ids)
+LLM_LABEL_VERSION = "v5"     # bump to re-label everything (v5: central_bank topic)
 
 # =============================================================================
 # Index parameters (see METHODOLOGY.md)

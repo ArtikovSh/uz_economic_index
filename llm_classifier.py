@@ -6,7 +6,8 @@ LLM message classifier for the posts waiting in pending.csv — OpenAI or Gemini
 * Posts without a label for the current LLM_LABEL_VERSION are sent oldest first,
   so days can be finalised in date order.
 * Posts go in batches with a JSON response schema; requests are paced
-  (LLM_RPM) and capped per run (LLM_MAX_REQUESTS).
+  (LLM_RPM), up to LLM_WORKERS run at once, and they are capped per run
+  (LLM_MAX_REQUESTS).
 * Every label comes back with its post number; a reply whose numbers do not match
   is rejected, so a label can never land on the wrong post.
 * No rule-based fallback: a post the model could not label keeps waiting and is
@@ -22,13 +23,16 @@ LLM message classifier for the posts waiting in pending.csv — OpenAI or Gemini
 """
 import json
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
 from config import (GEMINI_API_KEY, GEMINI_MODEL, OPENAI_API_KEY, OPENAI_MODEL,
                     OPENAI_REASONING_EFFORT, LLM_PROVIDER, LLM_BATCH_SIZE, LLM_MAX_CHARS,
-                    LLM_RPM, LLM_MAX_REQUESTS, LLM_TIME_BUDGET_MIN, LLM_LABEL_VERSION)
+                    LLM_RPM, LLM_WORKERS, LLM_MAX_REQUESTS, LLM_TIME_BUDGET_MIN,
+                    LLM_LABEL_VERSION)
 from prompts import (SYSTEM_PROMPT, RESPONSE_SCHEMA, OPENAI_SCHEMA, CATEGORIES,
                      build_user_prompt)
 from store import LABEL_COLS, post_keys
@@ -364,9 +368,11 @@ def label_pending(pending, save=None, sticky=None):
 
     Labels are written into pending's LABEL_COLS (+ label_version, label_model);
     `save(pending)` is called every few batches and at the end, so progress survives
-    a timeout. Returns (pending, status) with status = {"error", "warnings", "new",
-    "todo", "quota"}: "error" is set only for problems that need a human, "quota" when
-    the daily quota ran out (expected while a backlog is being labelled).
+    a timeout. Up to LLM_WORKERS batches are in flight at once (OpenAI); their results
+    are handled one by one, in queue order. Returns (pending, status) with status =
+    {"error", "warnings", "new", "todo", "quota"}: "error" is set only for problems that
+    need a human, "quota" when the daily quota ran out (expected while a backlog is
+    being labelled).
     """
     status = {"error": None, "warnings": [], "new": 0, "todo": 0, "quota": False}
     todo = pending[pending["label_version"].astype(str) != LLM_LABEL_VERSION]
@@ -385,7 +391,7 @@ def label_pending(pending, save=None, sticky=None):
     model = models.pop(0)
     todo = todo.sort_values("date")
     print(f"  {LLM_PROVIDER} model: {model} | {len(todo)} posts to label "
-          f"(batch {LLM_BATCH_SIZE}, max {LLM_MAX_REQUESTS} requests this run)")
+          f"(batch {LLM_BATCH_SIZE}, {LLM_WORKERS} at a time, max {LLM_MAX_REQUESTS} requests this run)")
 
     texts = todo["raw_text"].fillna("").astype(str).str.slice(0, LLM_MAX_CHARS).tolist()
     chans = todo["channel"].astype(str).tolist()
@@ -394,17 +400,17 @@ def label_pending(pending, save=None, sticky=None):
              for i in range(0, len(texts), LLM_BATCH_SIZE)]
     interval = 60.0 / LLM_RPM if LLM_RPM > 0 else 0.0
     deadline = time.time() + 60 * LLM_TIME_BUDGET_MIN
-    requests_used, last_call, since_save, failures_in_row = 0, 0.0, 0, 0
+    requests_used, since_save, failures_in_row = 0, 0, 0
     retried, changed = set(), False                # single posts already retried this run
+    pace, last_call = threading.Lock(), [0.0]
 
-    def call(batch_texts, batch_chans):
-        nonlocal requests_used, last_call
-        wait = interval - (time.time() - last_call)
-        if wait > 0:
-            time.sleep(wait)                       # pace to the per-minute limit
-        last_call = time.time()
-        requests_used += 1
-        return classify_batch(model, batch_texts, batch_chans, deadline)
+    def call(use_model, batch_texts, batch_chans):
+        with pace:                                 # start requests at most LLM_RPM a minute
+            wait = interval - (time.time() - last_call[0])
+            if wait > 0:
+                time.sleep(wait)
+            last_call[0] = time.time()
+        return classify_batch(use_model, batch_texts, batch_chans, deadline)
 
     def keep(bidx, labels, label_model):
         nonlocal since_save, changed
@@ -418,73 +424,93 @@ def label_pending(pending, save=None, sticky=None):
         since_save += len(labels)
         changed = True
 
+    stop = False                                   # finish the batches in flight, then stop
     try:
-        while queue:
-            if requests_used >= LLM_MAX_REQUESTS:
-                status["warnings"].append(
-                    f"request cap ({LLM_MAX_REQUESTS}) reached — the rest is labelled next run")
-                break
-            if time.time() > deadline:
-                status["warnings"].append(f"time budget ({LLM_TIME_BUDGET_MIN:g} min) spent "
-                                          "— the rest is labelled next run")
-                break
-            bidx, bchans, btexts = queue.pop(0)
-            try:
-                labels = call(btexts, bchans)
-            except ModelUnavailable as e:
-                if not models:
-                    status["error"] = f"no usable Gemini model ({e})"
+        with ThreadPoolExecutor(max_workers=LLM_WORKERS) as pool:
+            while queue and not stop:
+                if requests_used >= LLM_MAX_REQUESTS:
+                    status["warnings"].append(
+                        f"request cap ({LLM_MAX_REQUESTS}) reached — the rest is labelled next run")
                     break
-                old, model = model, models.pop(0)
-                status["warnings"].append(f"model switched {old} -> {model} ({e})")
-                print(f"  !! {e} -> switching model {old} -> {model}")
-                queue.insert(0, (bidx, bchans, btexts))
-                continue
-            except OutOfTime as e:
-                status["warnings"].append(f"{e} — the rest is labelled next run")
-                break
-            except TransientError as e:            # outlasted the retries inside the call
-                failures_in_row += 1
-                if failures_in_row >= 3 or time.time() + 60 > deadline:
-                    status["warnings"].append(f"Gemini unavailable ({e}) — retry next run")
+                if time.time() > deadline:
+                    status["warnings"].append(f"time budget ({LLM_TIME_BUDGET_MIN:g} min) spent "
+                                              "— the rest is labelled next run")
                     break
-                print(f"  !! {e} -> pausing a minute, then retrying")
-                queue.insert(0, (bidx, bchans, btexts))
-                time.sleep(60)
-                continue
-            except ValueError as e:                # bad output: retry as two halves
-                failures_in_row = 0
-                if len(bidx) > 1:
-                    half = len(bidx) // 2
-                    queue[:0] = [(bidx[:half], bchans[:half], btexts[:half]),
-                                 (bidx[half:], bchans[half:], btexts[half:])]
-                    print(f"  batch of {len(bidx)} unusable ({e}) -> split")
-                    continue
-                i, key = bidx[0], post_keys(pending.loc[bidx]).iloc[0]
-                if i not in retried:               # once more, at the end of this run
-                    retried.add(i)
-                    queue.append((bidx, bchans, btexts))
-                elif _failed_before(pending.at[i, "label_error"]):
-                    keep([i], [UNLABELLED], f"{model}:unlabelled")
-                    status["warnings"].append(f"post {key} could not be labelled in two runs "
-                                              f"({e}) — stored as non-economic")
-                else:
-                    pending.at[i, "label_error"] = str(e)[:200]
-                    changed = True
-                    status["warnings"].append(f"post {key} could not be labelled ({e}) "
-                                              "— retried next run")
-                continue
-            failures_in_row = 0
-            keep(bidx, labels, model)
-            print(f"    labelled {status['new']}/{len(texts)}")
-            if save and since_save >= 5 * LLM_BATCH_SIZE:   # flush often: survive timeouts
-                save(pending)
-                since_save = 0
-    except QuotaExhausted as e:
-        status["quota"] = True
-        status["warnings"].append(f"{e} — the rest is labelled next run")
-    except ProviderError as e:
-        status["error"] = str(e)
+                wave = []
+                while queue and len(wave) < LLM_WORKERS and requests_used < LLM_MAX_REQUESTS:
+                    job = queue.pop(0)
+                    wave.append((job, model, pool.submit(call, model, job[2], job[1])))
+                    requests_used += 1
+                pause = False
+                for (bidx, bchans, btexts), used_model, fut in wave:
+                    try:
+                        labels = fut.result()
+                    except ModelUnavailable as e:
+                        queue.insert(0, (bidx, bchans, btexts))
+                        if used_model != model:    # already switched for an earlier batch
+                            continue
+                        if not models:
+                            status["error"] = f"no usable {LLM_PROVIDER} model ({e})"
+                            stop = True
+                            continue
+                        model = models.pop(0)
+                        status["warnings"].append(f"model switched {used_model} -> {model} ({e})")
+                        print(f"  !! {e} -> switching model {used_model} -> {model}")
+                        continue
+                    except OutOfTime as e:
+                        status["warnings"].append(f"{e} — the rest is labelled next run")
+                        stop = True
+                        continue
+                    except TransientError as e:    # outlasted the retries inside the call
+                        failures_in_row += 1
+                        queue.insert(0, (bidx, bchans, btexts))
+                        if failures_in_row >= 3 or time.time() + 60 > deadline:
+                            if not stop:
+                                status["warnings"].append(f"{LLM_PROVIDER} unavailable ({e}) — retry next run")
+                            stop = True
+                        else:
+                            print(f"  !! {e} -> pausing a minute, then retrying")
+                            pause = True
+                        continue
+                    except QuotaExhausted as e:
+                        status["quota"] = True
+                        status["warnings"].append(f"{e} — the rest is labelled next run")
+                        stop = True
+                        continue
+                    except ProviderError as e:
+                        status["error"] = str(e)
+                        stop = True
+                        continue
+                    except ValueError as e:        # bad output: retry as two halves
+                        failures_in_row = 0
+                        if len(bidx) > 1:
+                            half = len(bidx) // 2
+                            queue[:0] = [(bidx[:half], bchans[:half], btexts[:half]),
+                                         (bidx[half:], bchans[half:], btexts[half:])]
+                            print(f"  batch of {len(bidx)} unusable ({e}) -> split")
+                            continue
+                        i, key = bidx[0], post_keys(pending.loc[bidx]).iloc[0]
+                        if i not in retried:       # once more, at the end of this run
+                            retried.add(i)
+                            queue.append((bidx, bchans, btexts))
+                        elif _failed_before(pending.at[i, "label_error"]):
+                            keep([i], [UNLABELLED], f"{used_model}:unlabelled")
+                            status["warnings"].append(f"post {key} could not be labelled in two runs "
+                                                      f"({e}) — stored as non-economic")
+                        else:
+                            pending.at[i, "label_error"] = str(e)[:200]
+                            changed = True
+                            status["warnings"].append(f"post {key} could not be labelled ({e}) "
+                                                      "— retried next run")
+                        continue
+                    failures_in_row = 0
+                    keep(bidx, labels, used_model)
+                    print(f"    labelled {status['new']}/{len(texts)}")
+                if save and since_save >= 5 * LLM_BATCH_SIZE:   # flush often: survive timeouts
+                    save(pending)
+                    since_save = 0
+                if pause and not stop:
+                    time.sleep(60)
     finally:
         if save and changed:
             save(pending)

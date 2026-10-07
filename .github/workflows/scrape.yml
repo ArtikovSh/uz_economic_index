@@ -11,6 +11,11 @@ name: uz-economic-index
 
 on:
   workflow_dispatch:            # manual "Run workflow" button
+    inputs:
+      backfill_days:
+        description: "Missed Tashkent days to collect first (YYYY-MM-DD..YYYY-MM-DD); empty = none"
+        required: false
+        default: '2026-09-28..2026-10-03'
   schedule:
     - cron: '5 19 * * *'        # 00:05 Tashkent
     - cron: '5 21 * * *'        # 02:05 Tashkent (backup)
@@ -40,6 +45,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      # One-off: the days 2026-09-28..2026-10-03 were never collected. Scheduled runs fill
+      # them too, before any later day is finalised; days already collected are skipped.
+      - name: Collect missed days
+        id: backfill
+        if: inputs.backfill_days != '' || github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_SESSION_STRING: ${{ secrets.TG_SESSION_STRING }}
+          BACKFILL_DAYS: ${{ inputs.backfill_days || '2026-09-28..2026-10-03' }}
+        run: python backfill.py "$BACKFILL_DAYS"
 
       - name: Run pipeline
         id: pipeline
@@ -97,7 +115,7 @@ jobs:
           fi
 
       - name: Alert on Telegram
-        if: steps.pipeline.outcome == 'failure' || steps.sync.outcome == 'failure' || steps.sheets.outcome == 'failure'
+        if: steps.pipeline.outcome == 'failure' || steps.backfill.outcome == 'failure' || steps.sync.outcome == 'failure' || steps.sheets.outcome == 'failure'
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.BOT_ADMIN_ID }}
@@ -107,6 +125,8 @@ jobs:
             echo "Alert skipped: TELEGRAM_BOT_TOKEN / BOT_ADMIN_ID secrets are not set."; exit 0
           fi
           DETAILS=$(head -c 1500 run_problems.txt 2>/dev/null || true)
+          [ "${{ steps.backfill.outcome }}" = "failure" ] && DETAILS="$DETAILS
+          Missed days could not be collected (see the log)."
           [ "${{ steps.sync.outcome }}" = "failure" ] && DETAILS="$DETAILS
           Supabase sync failed."
           [ "${{ steps.sheets.outcome }}" = "failure" ] && DETAILS="$DETAILS
@@ -118,5 +138,5 @@ jobs:
           ${RUN_URL}"
 
       - name: Mark the job as failed
-        if: steps.pipeline.outcome == 'failure' || steps.sync.outcome == 'failure' || steps.sheets.outcome == 'failure'
+        if: steps.pipeline.outcome == 'failure' || steps.backfill.outcome == 'failure' || steps.sync.outcome == 'failure' || steps.sheets.outcome == 'failure'
         run: exit 1
