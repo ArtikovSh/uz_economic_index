@@ -58,7 +58,7 @@ oy, chorak va yil uchun formula bir xil.
 - `data/indices.csv` — **Indekslar**: har bir yopilgan kun, hafta, oy, chorak va yil
   (sanoqlar, EAI, ESI, izoh)
 - `data/pending.csv` — kuni hali yakunlanmagan postlar (odatda bo'sh)
-- `output/economic_index_latest.xlsx` — Excel hisobot (Actions artifact sifatida ham)
+- `output/economic_index_latest.xlsx` — kunlik, haftalik, oylik, choraklik, yillik indekslar, mavzular hissasi va xabarlar; xabarlarda to'liq matn va model ham bor (Actions artifact sifatida ham)
 
 ## GitHub sozlamalari
 
@@ -105,9 +105,11 @@ Hisob-kitob backend'da (GitHub Actions) bajariladi, jadvalga faqat natija yozila
 
 | Varaq | Mazmuni |
 |-------|---------|
-| Indekslar | har bir yopilgan kun / hafta / oy / chorak / yil |
-| Xabarlar | har bir yakunlangan post (mavzu, bayroqlar, ohang, havola), sana tartibida |
-| Info | oxirgi yangilanish vaqti, qatorlar soni, kutayotgan postlar |
+| Kunlik | sana, hafta kuni, sanoqlar, EAI, ESI va kanallar soni |
+| Haftalik / Oylik / Choraklik / Yillik | har davr alohida varaqda; sanoqlar, indekslar va bevosita oldingi davrdan farq |
+| Mavzular | kun va mavzu bo'yicha xabarlar, mavzu ESI va kunlik ESI'ga hissa |
+| Xabarlar | sana-vaqt, sarlavha, qisqa matn, o'zbekcha mavzu va ohang, indeksga kirishi, chiqarilish sababi va havola |
+| Info | oxirgi yangilanish vaqti, qatorlar soni, kutayotgan postlar va label versiyasi |
 
 Jadvalga qo'lda yozmang. Tahlil uchun alohida varaq yoki nusxa oching.
 

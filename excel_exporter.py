@@ -1,54 +1,51 @@
-"""
-Excel report (one workbook, overwritten each run):
-
-  1. Indekslar  – every closed day / week / month / quarter / year
-  2. Xabarlar   – the posts table (every final post with its labels and flags)
-  3. Metodika   – the formulas at a glance (full text in METHODOLOGY.md)
-"""
+"""One readable workbook, regenerated from the shared report tables each run."""
 import os
 
 import pandas as pd
+from openpyxl.formatting.rule import CellIsRule
+from openpyxl.styles import Alignment, Font
+from openpyxl.utils import get_column_letter
 
 from config import OUTPUT_DIR
-
-INDEX_HEADERS = {
-    "period_type": "davr turi", "period": "davr", "start": "boshlanish", "end": "tugash",
-    "days": "kunlar", "days_expected": "kunlar (jami)", "posts": "jami xabarlar",
-    "nonad": "reklama emas", "econ": "iqtisodiy", "pos": "ijobiy", "neu": "neytral",
-    "neg": "salbiy", "EAI": "EAI, %", "ESI": "ESI (balans)", "note": "izoh",
-}
-POST_HEADERS = {
-    "date_local": "sana (Toshkent)", "channel": "kanal", "message_id": "post id",
-    "primary_topic": "mavzu", "is_economic": "iqtisodiy (LLM)", "is_ad": "reklama",
-    "ad_marker": "kanal reklama belgisi", "is_digest": "dayjest", "is_foreign": "xorijiy",
-    "econ": "indeksda", "tone": "ohang", "sentiment": "sentiment", "relevance": "relevance",
-    "views": "ko'rishlar", "forwards": "forwardlar", "scraped_at": "o'lchangan (UTC)",
-    "label_model": "model", "raw_text": "matn",
-}
-METHOD_LINES = [
-    "Indekslar barcha kanallar bo'yicha birga, oddiy sanoq bilan hisoblanadi:",
-    "  EAI = 100 * iqtisodiy / reklama emas   (reklama bo'lmagan xabarlarning necha foizi iqtisodiy)",
-    "  ESI = 100 * (ijobiy - salbiy) / iqtisodiy   (balans, -100 ... +100; 0 = neytral)",
-    "iqtisodiy = reklama emas + O'zbekiston iqtisodiyotiga oid (dayjest va xorijiy-makro emas).",
-    "Kanal o'zi reklama deb belgilagan xabar ('(реклама)', oxirida 'Reklama') har doim reklama.",
-    "Ohang: sentiment > +0.15 ijobiy, < -0.15 salbiy, qolgani neytral (Gemini belgisi).",
-    "Kun yakunlangach (barcha postlar belgilangan) xabarlar va kun qatori jadvalga qo'shiladi;",
-    "  hafta / oy / chorak / yil qatori davrning oxirgi kuni yakunlanganda qo'shiladi.",
-    "Qo'shilgan qator keyin hech qachon o'zgartirilmaydi.",
-    "Yig'ish: har kecha 00:05 da 2 kun oldingi to'liq kun; har post bir marta o'lchanadi.",
-]
+from report_tables import build_tables, ordered_posts
 
 
 def export_results(indices, ledger, pending_count=0):
+    tables = build_tables(indices, ledger)
+    posts = ordered_posts(ledger)
+    tables["Xabarlar"]["To'liq matn"] = posts["raw_text"].astype(object).where(posts["raw_text"].notna(), None)
+    tables["Xabarlar"]["Model"] = posts["label_model"].astype(object).where(posts["label_model"].notna(), None)
     filepath = os.path.join(OUTPUT_DIR, "economic_index_latest.xlsx")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    widths = {"Davr": 35, "Sana": 13, "Boshlanish": 13, "Tugash": 13, "Vaqt": 9, "Hafta kuni": 15,
+              "Kanal": 22, "Sarlavha": 60, "Matn boshi": 75, "To'liq matn": 90,
+              "Mavzu": 24, "Sabab": 21, "Havola": 48, "Izoh": 45, "Model": 28}
+    wrapped = {"Sarlavha", "Matn boshi", "To'liq matn", "Izoh"}
     with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
-        indices.rename(columns=INDEX_HEADERS).to_excel(writer, sheet_name="Indekslar", index=False)
-        cols = [c for c in POST_HEADERS if c in ledger.columns]
-        ledger[cols].rename(columns=POST_HEADERS).to_excel(writer, sheet_name="Xabarlar", index=False)
-        lines = METHOD_LINES + ["", f"Kun yakunlanishini kutayotgan xabarlar: {pending_count}"]
-        pd.DataFrame({"Metodika (to'liq matn: METHODOLOGY.md)": lines}).to_excel(
-            writer, sheet_name="Metodika", index=False)
-        for ws in writer.sheets.values():
+        for title, frame in tables.items():
+            frame.to_excel(writer, sheet_name=title, index=False)
+            ws = writer.sheets[title]
             ws.freeze_panes = "A2"
+            ws.auto_filter.ref = ws.dimensions
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+            for i, column in enumerate(frame.columns, 1):
+                letter = get_column_letter(i)
+                ws.column_dimensions[letter].width = widths.get(column, max(13, len(column) + 2))
+                numeric = "EAI" in column or "ESI" in column
+                for cells in ws.iter_rows(min_row=2, min_col=i, max_col=i, max_row=ws.max_row):
+                    cell = cells[0]
+                    # Telegram text is content, even when it starts with an equals sign.
+                    if isinstance(cell.value, str):
+                        # XML normalizes line endings; avoid doubled CRLF on Windows.
+                        cell.value = cell.value.replace("\r\n", "\n").replace("\r", "\n")
+                        cell.data_type = "s"
+                    cell.alignment = Alignment(vertical="top", wrap_text=column in wrapped)
+                    if numeric:
+                        cell.number_format = "0.0"
+                if "ESI" in column and len(frame):
+                    for operator, color in (("greaterThan", "0E7490"), ("lessThan", "C2410C")):
+                        ws.conditional_formatting.add(f"{letter}2:{letter}{len(frame) + 1}",
+                            CellIsRule(operator=operator, formula=["0"], font=Font(color=color)))
     print(f"Excel report generated: {filepath}")
     return filepath
