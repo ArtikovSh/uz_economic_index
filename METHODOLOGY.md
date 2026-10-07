@@ -60,9 +60,10 @@ soni bo'yicha hisoblanadi, kunlik qiymatlarning o'rtachasi emas.
 
 ## 3. Tasniflash — OpenAI yoki Gemini (`llm_classifier.py`, `prompts.py`)
 
-Har bir post bir marta belgilanadi (belgi versiyasi `v5`). 2–21-sentabr postlari `v4` bilan
-belgilangan: ularda `central_bank` mavzusi yo'q, bunday postlar bank, inflyatsiya yoki kurs
-mavzusida. Indeks to'liq ishga tushganda butun tarix bitta versiya bilan qayta quriladi.
+Har bir post bir marta belgilanadi (belgi versiyasi `v6`). Qoida o'zgarganda butun tarix bitta
+versiya bilan qayta quriladi (`rebuild.py`, workflow'da `rebuild`): barcha postlar qayta
+belgilanadi, Xabarlar va Indekslar jadvallari, baza va Sheets qaytadan yoziladi. Bu jadvallar
+o'zgarmasligi qoidasidan yagona istisno.
 Postlarni bitta model belgilaydi:
 - `OPENAI_API_KEY` da OpenAI kaliti (`sk-...`) bo'lsa — OpenAI (`gpt-6-luna`, u ishlamasa
   `gpt-5-mini`). Javob qat'iy JSON sxema bo'yicha olinadi, OpenAI postlarni saqlamaydi
@@ -96,10 +97,15 @@ kirmaydi; u mavzular kesimi uchun ishlatiladi (`v5` belgilaridan boshlab).
 
 **Ohang:** sentiment > +0.15 bo'lsa ijobiy, < −0.15 bo'lsa salbiy, qolgani neytral.
 
-Sentiment qoidalari (indeksda faqat yo'nalish ishlatiladi):
-- Ishora faqat **aniq iqtisodiy o'zgarishga** beriladi. Bu sodir bo'lgan voqea, o'lchangan
-  natija yoki qabul qilingan chora bo'lishi mumkin. Aniq raqam bilan rasman taklif
-  qilingan chora ham hisoblanadi ("yo'lkirani 2 500 so'mga oshirish taklif qilindi").
+Sentiment qoidalari (indeksda faqat yo'nalish ishlatiladi; `v6` dan boshlab):
+- Xabarning **ohangi** baholanadi: voqea sodir bo'lganmi, bo'layaptimi yoki faqat
+  rejalashtirilgan, taklif qilingan, kutilayotgan yoki kelishilganmi — farqi yo'q.
+- Uchrashuv, muzokara, tashrif, forum, memorandum, hamkorlik va investitsiya kelishuvlari,
+  "X mlrd dollarlik kelishuvlar", reja, strategiya, maqsad va prognozlar ham iqtisodiy
+  ohangi aniq bo'lsa belgilanadi: yangi investitsiya, loyiha, ishlab chiqarish, ish o'rni,
+  eksport, savdo yoki hamkorlik kengayishi, o'sish maqsadi, yaxshi prognoz — ijobiy;
+  kutilayotgan narx, tarif yoki soliq oshishi, imtiyoz qisqarishi, yomon prognoz, yopilish,
+  bekor qilingan kelishuv — salbiy.
 - Narx, tarif, inflyatsiya, soliq, boj, yig'im yoki jarima oshsa — salbiy, tushsa — ijobiy.
 - YaIM, ishlab chiqarish, eksport, investitsiya, turistlar, ish o'rinlari, maosh yoki pensiya
   oshsa — ijobiy, kamaysa — salbiy.
@@ -108,10 +114,9 @@ Sentiment qoidalari (indeksda faqat yo'nalish ishlatiladi):
 - Asosiy stavka pasaysa — ijobiy, oshsa — salbiy, o'zgarmasa — 0.
 - Imtiyoz, subsidiya yoki soddalashtirish — ijobiy. Tanqislik, elektr o'chishi, taqiq,
   ishdan bo'shatish yoki bankrotlik — salbiy.
-- Zavod, yo'l yoki xizmat haqiqatda ishga tushsa, moliyalash haqiqatda ajratilsa — ijobiy.
-- Quyidagilar **0** oladi: uchrashuv, muzokara, tashrif, forum, ko'rgazma, memorandum va
-  "X mlrd dollarlik kelishuvlar" (bular niyat), reja, strategiya, maqsad, prognoz,
-  tayinlov, yubiley, mukofot va yo'nalishi aniq bo'lmagan statistika.
+- Faqat aniq iqtisodiy ohangi yo'q xabar **0** oladi: iqtisodiy mazmuni aytilmagan
+  protokol uchrashuvi, tayinlov, yubiley, mukofot, reyting, tartib tushuntirishi,
+  yo'nalishi aniq bo'lmagan statistika.
 - Aralash yangilikda sarlavha va asosiy fakt hal qiladi. Inkor hisobga olinadi.
 
 **Belgi boshqa postga tushmaydi:** model har bir javobni post raqami (`id`) bilan qaytaradi.
@@ -144,7 +149,7 @@ Har bir belgi uni bergan modelni (`label_model`) va versiyasini (`label_version`
   shuning uchun to'liq qayta belgilash bitta tunda tugaydi.
 
 **Nazorat to'plami:**
-- `gold_set.py` da 26 ta haqiqiy post va ularning kutilgan natijasi saqlanadi: reklama,
+- `gold_set.py` da 27 ta haqiqiy post va ularning kutilgan natijasi saqlanadi: reklama,
   boshqa, iqtisodiy-ijobiy, neytral yoki salbiy.
 - `check` workflow ularni ishlatilayotgan modelga yuboradi va nechtasi to'g'ri ekanini
   botga yozadi. 85% va undan ko'p to'g'ri bo'lsa, natija ✅.

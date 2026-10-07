@@ -40,11 +40,12 @@ oy, chorak va yil uchun formula bir xil.
 | `store.py` | Ikki jadval va kutish fayli (faqat qo'shish) |
 | `llm_classifier.py` | OpenAI/Gemini klassifikatori: partiyalar, qayta urinish, kvota nazorati |
 | `prompts.py` | Prompt va JSON sxema (ikkala model uchun bir xil) |
-| `gold_set.py` | Nazorat to'plami: javobi ma'lum 26 ta haqiqiy post (`check` ishlatadi) |
+| `gold_set.py` | Nazorat to'plami: javobi ma'lum 27 ta haqiqiy post (`check` ishlatadi) |
 | `indicator.py` | Reklama filtri, kunni yakunlash, EAI/ESI sanog'i |
 | `excel_exporter.py` | Excel hisobot ("Indekslar", "Xabarlar", "Metodika") |
 | `sync_to_db.py` | Supabase'ga sinxronlash (bot va Mini App uchun) |
 | `sheets_sync.py` | Jadvallarni Google Sheets'ga qo'shish |
+| `rebuild.py` | Butun tarixni joriy belgilash qoidalari bilan qayta qurish (metodika o'zgarganda) |
 | `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, ishlatilayotgan LLM (nazorat to'plami bilan), Sheets, bot ogohlantirishi |
 | `evaluate.py` | LLM belgilarini 200 ta haqiqiy postda baholash; natija `eval/` papkasiga yoziladi |
 | `export_session.py` | CI uchun Telegram sessiya satrini yaratish |
@@ -85,11 +86,14 @@ yuboriladi (`LLM_BATCH_SIZE`).
 
 **Workflow'lar:**
 - `uz-economic-index` — kunlik (00:05 va 02:05 Toshkent) + qo'lda. Barcha davrlar
-  (kun, hafta, oy, chorak, yil) shu run'da yopiladi.
+  (kun, hafta, oy, chorak, yil) shu run'da yopiladi. Qo'lda ishga tushirishda `rebuild`
+  belgilansa, yig'ish o'rniga butun tarix joriy qoidalar bilan qayta belgilanadi va baza
+  hamda Sheets qaytadan yoziladi (`rebuild.py`; metodika o'zgarganda).
+- `health` — har 6 soatda bot va bazani tekshiradi; muammo bo'lsa botga xabar yuboradi.
 - `check` — post yig'masdan hamma narsani tekshiradi (Telegram, ishlatilayotgan LLM, Sheets) va
-  natijani botga yuboradi. LLM nazorat to'plamidagi 26 ta postni belgilaydi; bot nechtasi
+  natijani botga yuboradi. LLM nazorat to'plamidagi 27 ta postni belgilaydi; bot nechtasi
   to'g'ri ekanini va xatolarni ko'rsatadi. LLM tekshiruvi ko'pi bilan 4 daqiqa davom etadi.
-- `eval` — 26 ta nazorat posti va 174 ta tasodifiy postni belgilaydi (OpenAI'da `low` va
+- `eval` — 27 ta nazorat posti va 174 ta tasodifiy postni belgilaydi (OpenAI'da `low` va
   `medium` rejimlarida) va natijani `eval/` papkasiga commit qiladi: aniqlik, tezlik, token
   va narx. Jadvallarga tegmaydi. Kunlik run bilan bir vaqtda ishlamaydi
   (navbatga turadi).

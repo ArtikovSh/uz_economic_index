@@ -2,7 +2,7 @@
 Quality check of the LLM labels on a fixed sample of real posts. No table is touched:
 the labels go to eval/ (committed by eval.yml) so they can be read and judged by hand.
 
-Sample: the 26 control posts of gold_set.py + EVAL_SIZE random posts (fixed seed, so
+Sample: the 27 control posts of gold_set.py + EVAL_SIZE random posts (fixed seed, so
 every run labels the same posts). With OpenAI every reasoning effort in EVAL_EFFORTS
 is run, to compare accuracy, speed and cost.
 

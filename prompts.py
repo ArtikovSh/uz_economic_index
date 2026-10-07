@@ -101,14 +101,19 @@ How central the economy is to the post: 1.0 = the whole post is an economic stor
 0.5 = the economy is one of several aspects, 0.0 if economic=false.
 
 STEP 7 — sentiment (-1.0 … +1.0)
-Is the post GOOD or BAD news for Uzbekistan's economy, households or businesses?
-Only the sign is used (|sentiment| <= 0.15 counts as neutral), so get the DIRECTION
-right and use 0.0 whenever there is no clear direction. Typical strengths: 0.3 mild,
-0.6 clear, 0.9 major.
+What is the TONE of the post for Uzbekistan's economy, households or businesses: good
+news, bad news, or neither? Only the sign is used (|sentiment| <= 0.15 counts as
+neutral), so get the DIRECTION right. Typical strengths: 0.3 mild, 0.6 clear, 0.9 major.
 
-A. A sign is given ONLY to a concrete economic change: something that HAS happened, a
-   measured result, or a measure that HAS been adopted — or formally proposed with
-   specifics ("proposed to raise X to Y", a draft decree):
+A. Judge the tone of the news whatever its time: it does not matter whether the event
+   has happened, is happening, or is planned, proposed, expected, forecast or agreed.
+   Meetings, talks, visits, forums, memoranda, cooperation and investment agreements,
+   "deals worth $X", plans, strategies, targets and forecasts get a sign whenever their
+   economic tone is clear: new investment, projects, production, jobs, exports, wider
+   trade or cooperation, growth targets, better forecasts, support measures -> positive;
+   coming price, tariff, tax or fee rises, cuts in benefits, worse forecasts, closures,
+   failed or cancelled deals -> negative.
+B. The direction rules (the same for facts and for expectations):
    - prices, tariffs, fares, inflation, taxes, duties, fees, fines UP -> negative;
      DOWN -> positive.
    - GDP, output, exports, investment inflows, tourist arrivals, jobs, wages, pensions,
@@ -122,15 +127,13 @@ A. A sign is given ONLY to a concrete economic change: something that HAS happen
    - Tax relief, subsidies, simpler procedures, abolished requirements, new support
      schemes -> positive. Shortages, outages, bans, new restrictions, layoffs,
      closures, bankruptcies, defaults, arrears, losses -> negative.
-   - A plant, road, airport, warehouse or service actually opened or launched;
-     financing actually approved or disbursed -> positive.
-B. 0.0 for everything without such a change, however optimistic the wording:
-   meetings, talks, negotiations, visits, delegations, forums, exhibitions,
-   conferences; memoranda, cooperation or investment agreements and "deals worth $X"
-   (they are intentions); plans, strategies, targets, forecasts, goals, "will be
-   built", "is planned", "could become"; appointments, anniversaries, awards,
-   company rankings; explanations of procedures; statistics without a clear direction.
-C. Mixed news: follow the headline and the main fact. Respect negation ("prices will
+   - A plant, road, airport, warehouse or service opened, launched or to be built;
+     financing approved, disbursed or promised -> positive.
+C. 0.0 only when the post has no clear economic tone: a protocol meeting or visit that
+   names no economic content, appointments, anniversaries, awards, company rankings,
+   explanations of procedures, statistics without a clear direction, a policy rate
+   left unchanged.
+D. Mixed news: follow the headline and the main fact. Respect negation ("prices will
    NOT be raised" is not negative). Judge the effect on Uzbekistan, never on a foreign
    party. If economic=false or is_foreign=true, sentiment = 0.0.
 
@@ -144,19 +147,23 @@ EXAMPLES (headline -> labels)
  "Тошкентда метро ва автобус йўлкирасини 2 500 сўмгача ошириш таклиф қилинди"
      -> economic, prices_inflation, -0.5 (formal proposal with a number)
  "Президент провёл переговоры с делегацией Siemens о новых проектах"
-     -> economic, business, 0.0 (talks)
+     -> economic, business, +0.3 (talks on new projects)
  "Samarqandda 2 mlrd dollarlik 15 ta investitsiya kelishuvi imzolandi"
-     -> economic, business, 0.0 (agreements are intentions)
+     -> economic, business, +0.5 (investment agreements)
  "Hukumat 2030 yilgacha eksportni 45 mlrd dollarga yetkazishni maqsad qilgan"
-     -> economic, trade, 0.0 (target)
+     -> economic, trade, +0.4 (growth target)
+ "2027 yildan elektr energiyasi tariflarini oshirish rejalashtirilmoqda"
+     -> economic, energy_utility, -0.5 (planned tariff rise)
+ "«Корзинка» назначила нового генерального директора"
+     -> economic, business, 0.0 (appointment)
  "В Навоийской области запустили завод медного проката, создано 800 рабочих мест"
      -> economic, business, +0.6 (launched, jobs created)
  "ЦБ сохранил основную ставку на уровне 14%"
      -> economic, central_bank, 0.0 (unchanged)
  "Markaziy bank asosiy stavkani 13,5 foizgacha pasaytirdi"
      -> economic, central_bank, +0.6 (rate cut)
- "Марказий банк инфляция прогнозини 5-6 фоизга қайта кўриб чиқди"
-     -> economic, central_bank, 0.0 (forecast)
+ "Markaziy bank 2027 yilda inflyatsiya 5 foizgacha pasayishini kutmoqda"
+     -> economic, central_bank, +0.4 (better forecast)
  "Markaziy bank O'zbekistondagi bir bankning litsenziyasini qaytarib oldi"
      -> economic, central_bank, -0.5 (a bank closed)
  "Фарғонада электр таъминоти 6 соатга узилди"

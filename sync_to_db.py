@@ -6,6 +6,10 @@ Mini App can serve them. Run after the daily pipeline.
                         differently there); labels carry the FINAL flags (ad marker incl.)
   * indices           – the indices table (created here if missing)
 
+`--full` (after rebuild.py): the indices table is replaced and the bot's cached summary
+cards are dropped, since every number may have changed; posts are upserted as usual (their
+label version changed, so all of them are written).
+
 Connection string comes from env SUPABASE_DB_URL (or DATABASE_URL) — use the
 Supabase "Connection pooler" URI (Transaction mode, port 6543). If neither is
 set, this is a no-op, so local runs without a DB still work.
@@ -40,6 +44,8 @@ create table if not exists indices (
 );
 alter table indices enable row level security;
 """
+# tables of the pre-ledger layout, no longer read or written by anything
+LEGACY_DDL = "drop table if exists subscriptions, app_users, daily_index, monthly_index cascade"
 
 
 def _connect():
@@ -96,9 +102,15 @@ def sync_posts(conn, ledger):
     print(f"  messages/labels: synced {len(todo)} posts")
 
 
-def sync_indices(conn, indices):
+def sync_indices(conn, indices, full=False):
     with conn.cursor() as cur:
         cur.execute(INDICES_DDL)
+        if full:
+            cur.execute("delete from indices")
+            cur.execute("""do $$ begin
+                             if to_regclass('bot_cards') is not null then delete from bot_cards; end if;
+                           end $$""")
+            print("  indices: replaced (full); cached bot cards dropped")
     conn.commit()
     if indices.empty:
         print("  indices: nothing to sync")
@@ -116,15 +128,18 @@ def sync_indices(conn, indices):
     print(f"  indices: {len(rows)} rows checked")
 
 
-def main() -> int:
+def main(full=False) -> int:
     if not DB_URL:
         print("SUPABASE_DB_URL not set -> skipping DB sync.")
         return 0
-    print("--- Sync to Supabase ---")
+    print("--- Sync to Supabase" + (" (full)" if full else "") + " ---")
     conn = _connect()
     try:
+        with conn.cursor() as cur:
+            cur.execute(LEGACY_DDL)
+        conn.commit()
         sync_posts(conn, load_ledger())
-        sync_indices(conn, load_indices())
+        sync_indices(conn, load_indices(), full)
     finally:
         conn.close()
     print("DB sync done.")
@@ -132,4 +147,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(full="--full" in sys.argv[1:]))

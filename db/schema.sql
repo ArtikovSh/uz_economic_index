@@ -65,39 +65,6 @@ create table if not exists indices (
     primary key (period_type, period)
 );
 
--- ---------- legacy daily/monthly tables (pre-v4; no longer written) --------
--- ---------- daily index time series ----------------------------------
-create table if not exists daily_index (
-    date_only          date primary key,
-    total_messages     integer,
-    economic_messages  integer,
-    counted_messages   integer,
-    econ_share         real,
-    eai                real,
-    eai_z              real,
-    eai_100            real,
-    esi                real,
-    esi_z              real,
-    esi_100            real,
-    avg_engagement     real
-);
-
--- ---------- monthly index time series --------------------------------
-create table if not exists monthly_index (
-    month              text primary key,          -- 'YYYY-MM'
-    days_covered       integer,
-    total_messages     integer,
-    economic_messages  integer,
-    counted_messages   integer,
-    econ_share         real,
-    eai                real,
-    eai_100            real,
-    esi                real,
-    esi_100            real,
-    avg_engagement     real,
-    top_topics         text
-);
-
 -- ---------- access: logins an admin creates (app/api/_auth.py) -------
 -- The backend also creates these on its first request (same DDL).
 create table if not exists accounts (
@@ -180,41 +147,11 @@ create table if not exists bot_cards (     -- Telegram file id of each rendered 
     primary key (kind, period, lang)
 );
 
--- ---------- legacy (pre-login, no longer used) ------------------------
-create table if not exists app_users (
-    telegram_id  bigint primary key,
-    username     text,
-    full_name    text,
-    role         text        not null default 'public'
-                 check (role in ('admin','cb_analyst','economist','public')),
-    status       text        not null default 'pending'
-                 check (status in ('pending','active','blocked')),
-    lang         text        default 'uz',
-    created_at   timestamptz default now(),
-    approved_by  bigint,
-    approved_at  timestamptz
-);
-
--- ---------- subscriptions (digests / alerts) -------------------------
-create table if not exists subscriptions (
-    id           bigserial primary key,
-    telegram_id  bigint not null references app_users (telegram_id) on delete cascade,
-    kind         text   not null,            -- 'daily' | 'weekly' | 'monthly' | 'topic' | 'alert'
-    params       jsonb  default '{}'::jsonb, -- e.g. {"topic":"currency_fx"} or {"metric":"esi","op":"<","value":-0.3}
-    active       boolean default true,
-    created_at   timestamptz default now()
-);
-create index if not exists idx_subs_user on subscriptions (telegram_id);
-
 -- ---------- lock down: enable RLS, add NO public policies ------------
 -- (service_role bypasses RLS; anon/public gets nothing -> backend-only access)
 alter table messages       enable row level security;
 alter table labels         enable row level security;
-alter table daily_index    enable row level security;
-alter table monthly_index  enable row level security;
 alter table indices        enable row level security;
-alter table app_users      enable row level security;
-alter table subscriptions  enable row level security;
 alter table accounts        enable row level security;
 alter table access_requests enable row level security;
 alter table auth_failures   enable row level security;
