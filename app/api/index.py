@@ -47,6 +47,7 @@ DB_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL") or ""
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
 CRON_SECRET = os.getenv("CRON_SECRET", "").strip()     # Vercel sends it with its cron calls
+DIGEST_MAX_AGE = 5                     # days: an older latest day is history, not news
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 TZ = "5 hours"
 INIT_DATA_MAX_AGE = 24 * 3600          # Mini App initData older than this is rejected
@@ -353,6 +354,10 @@ def run_digest():
     it is new, to every signed-in user and the owner who keep them on. Each goes once."""
     ensure_schema()
     day, week = summary("kun"), summary("hafta")
+    # only fresh periods: while the history is built month by month the latest day is old
+    fresh = (datetime.now(timezone.utc) + timedelta(hours=5)).date() - timedelta(days=DIGEST_MAX_AGE)
+    day = day if day and _date(day["start"]) >= fresh else None
+    week = week if week and _date(week["end"]) >= fresh else None
     if not day and not week:
         return {"ok": True, "sent": 0}
     people = q("""select t.tg, b.lang, b.digest_day, b.digest_week

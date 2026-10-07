@@ -20,6 +20,9 @@ on:
         description: "Missed Tashkent days to collect first (YYYY-MM-DD..YYYY-MM-DD); empty = none"
         required: false
         default: ''
+  # Daily collection runs only when the repository variable DAILY_COLLECTION is "on"
+  # (Settings -> Secrets and variables -> Actions -> Variables). While the history is
+  # being built month by month (history.yml) it stays off and the scheduled runs are skipped.
   schedule:
     - cron: '5 19 * * *'        # 00:05 Tashkent
     - cron: '5 21 * * *'        # 02:05 Tashkent (backup)
@@ -33,6 +36,7 @@ concurrency:
 
 jobs:
   build-index:
+    if: github.event_name != 'schedule' || vars.DAILY_COLLECTION == 'on'
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.rebuild && 150 || 45 }}
     steps:

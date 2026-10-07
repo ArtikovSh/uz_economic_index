@@ -487,6 +487,9 @@ def test_summaries_and_morning_digest(server, fresh_db, monkeypatch):
         call(server, U(151), "login", {"login": off["account"]["login"], "password": off["password"]})
         index.bot.toggle_digest(index.q, 151)                       # this one turned the summaries off
 
+        monkeypatch.setattr(index, "DIGEST_MAX_AGE", 0)
+        assert index.run_digest()["sent"] == 0 and cards == []      # an old day is history, not news
+        monkeypatch.setattr(index, "DIGEST_MAX_AGE", 100000)
         assert index.run_digest()["sent"] == 4
         assert sorted(cards) == [(150, "hafta", "en"), (150, "kun", "en"), (OWNER, "hafta", "uz"), (OWNER, "kun", "uz")]
         assert index.run_digest()["sent"] == 0                      # each goes once
