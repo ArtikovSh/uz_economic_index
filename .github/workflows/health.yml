@@ -1,0 +1,52 @@
+name: health
+
+# Every 6 hours: is the bot reachable? Telegram's own view of the webhook (delivery errors,
+# a growing queue of unanswered updates) and the server's database check (?health=1).
+# On a problem the owner gets a message straight from the Telegram API, so it arrives
+# even when the bot's server is down.
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the webhook and the server
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.BOT_ADMIN_ID }}
+        run: |
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "TELEGRAM_BOT_TOKEN / BOT_ADMIN_ID are not set - nothing to check."; exit 0
+          fi
+          INFO=$(curl -s --max-time 30 "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo")
+          URL=$(echo "$INFO" | jq -r '.result.url // ""')
+          QUEUE=$(echo "$INFO" | jq -r '.result.pending_update_count // 0')
+          ERR_AT=$(echo "$INFO" | jq -r '.result.last_error_date // 0')
+          ERR=$(echo "$INFO" | jq -r '.result.last_error_message // ""')
+          PROBLEMS=""
+          [ -z "$URL" ] && PROBLEMS="Webhook o'rnatilmagan."
+          [ "$ERR_AT" -gt $(( $(date +%s) - 21600 )) ] && PROBLEMS="$PROBLEMS
+          Telegram botga xabar yetkaza olmadi: $ERR"
+          [ "$QUEUE" -gt 20 ] && PROBLEMS="$PROBLEMS
+          Javobsiz qolgan xabarlar: $QUEUE"
+          if [ -n "$URL" ]; then
+            CODE=$(curl -s -o health.json -w '%{http_code}' --max-time 45 "${URL%%\?*}?health=1")
+            [ "$CODE" != "200" ] && PROBLEMS="$PROBLEMS
+          Server tekshiruvi o'tmadi (HTTP $CODE): bot yoki baza ishlamayapti."
+          fi
+          if [ -z "$PROBLEMS" ]; then echo "Bot is healthy (queue: $QUEUE)."; exit 0; fi
+          echo "$PROBLEMS"
+          curl -s -o /dev/null -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="$CHAT_ID" \
+            --data-urlencode text="uz-economic-index: bot tekshiruvi muammo topdi.
+          ${PROBLEMS}
+          ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          exit 1

@@ -51,6 +51,7 @@ def fresh_db(monkeypatch):
                   "bot_users, bot_settings, bot_cards cascade")
     index._SCHEMA_READY = False
     index._EMOJI_IDS = None
+    index._STATS = (None, None)
     sent = []
     monkeypatch.setattr(index, "send", lambda chat, text, **kw: sent.append((chat, text, kw)) or True)
     return sent
@@ -288,6 +289,7 @@ def test_dashboard_stats_and_posts(server):
         call(server, U(140), "login", {"login": acc["account"]["login"], "password": acc["password"]})
 
         stats = call(server, U(140))[1]["stats"]
+        assert call(server, U(140))[1]["stats"] == stats              # served from the cache
         assert stats["days"] == [["2026-09-02", 5, 4, 3, 1, 1, 2]]         # two channels collected
         assert sorted(stats["topics"]) == [[0, "fiscal", 1, 0, 1], [0, "trade", 2, 1, 0]]
         assert stats["channels_total"] == 2
@@ -303,6 +305,12 @@ def test_dashboard_stats_and_posts(server):
         assert page(sort="views")["items"][0]["v"] == 300
         assert page(channels=["@kunuzofficial"])["total"] == 1
         assert page(topics=["trade"], count_only=True) == {"ok": True, "total": 2}
+        with psycopg.connect(DB, autocommit=True) as c:             # a new final day: fresh numbers
+            c.execute("""insert into indices (period_type, period, start_date, end_date, posts, nonad, econ, pos, neg)
+                         values ('kun', '2026-09-03', '2026-09-03', '2026-09-03', 1, 1, 1, 1, 0)""")
+        assert [d[0] for d in call(server, U(140))[1]["stats"]["days"]] == ["2026-09-02", "2026-09-03"]
+        with urllib.request.urlopen(server + "?health=1", timeout=20) as r:
+            assert json.loads(r.read()) == {"ok": True}
     finally:
         with psycopg.connect(DB, autocommit=True) as c:
             c.execute(DATA_TABLES)

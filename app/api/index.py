@@ -564,10 +564,32 @@ def _post_link(channel, mid):
     return f"https://t.me/{str(channel).lstrip('@')}/{mid}"
 
 
+_STATS = (None, None)                  # (fingerprint, stats): the data changes about once a day
+
+
 def build_stats():
-    """Counts of every final day and their split by topic. The Mini App sums days into
-    weeks, months, quarters and years exactly as indicator.py does, so each figure equals
-    the published Indekslar row (and open periods use the same arithmetic)."""
+    """Counts of every final day and their split by topic, kept while the final days and the
+    active channels stay the same."""
+    global _STATS
+    try:
+        mark = q("""select (select (count(*), max(period), sum(econ), sum(pos), sum(neg))::text
+                             from indices where period_type='kun') i,
+                           (select (count(*), max(coalesce(changed_at, added_at)))::text
+                             from channels where active) c""", one=True)
+    except psycopg.errors.UndefinedTable:
+        mark = None
+    if mark is not None and _STATS[0] == mark:
+        return _STATS[1]
+    out = _build_stats()
+    if mark is not None:
+        _STATS = (mark, out)
+    return out
+
+
+def _build_stats():
+    """The Mini App sums days into weeks, months, quarters and years exactly as indicator.py
+    does, so each figure equals the published Indekslar row (and open periods use the same
+    arithmetic)."""
     try:
         days, chans, topics = q_many(
             ("""select period d, posts, nonad, econ, pos, neg from indices
@@ -878,8 +900,16 @@ class handler(BaseHTTPRequestHandler):
             return self._json(500, {"ok": False, "error": "server"})
 
     def do_GET(self):
-        if parse_qs(urlparse(self.path).query).get("cron") == ["digest"]:
+        query = parse_qs(urlparse(self.path).query)
+        if query.get("cron") == ["digest"]:
             return self._cron()
+        if "health" in query:                     # .github/workflows/health.yml: is the database reachable?
+            try:
+                q("select 1")
+                return self._json(200, {"ok": True})
+            except Exception as e:
+                print("health error:", repr(e))
+                return self._json(503, {"ok": False})
         init = self.headers.get("X-Telegram-Init-Data", "")
         if not init:
             self.send_response(200); self.end_headers()
