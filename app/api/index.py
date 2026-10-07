@@ -13,6 +13,7 @@ quarter / year): EAI = % of non-ad posts that are economic, ESI = 100*(pos-neg)/
 
 Access: only accounts an admin created (login + password, see _auth.py) can use the bot
 and the Mini App; BOT_ADMIN_ID is always the owner-admin. Roles: analyst / economist / admin.
+Admins also manage the channel list the pipeline collects (_channels.py).
 
 Env: TELEGRAM_BOT_TOKEN, BOT_ADMIN_ID, SUPABASE_DB_URL, [WEBAPP_URL], [WEBHOOK_SECRET].
 """
@@ -33,7 +34,8 @@ import psycopg
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import _auth as auth  # noqa: E402  (helper module next to this file, not an endpoint)
+import _auth as auth  # noqa: E402  (helper modules next to this file, not endpoints)
+import _channels as channels  # noqa: E402
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 ADMIN_ID = os.getenv("BOT_ADMIN_ID", "").strip()
@@ -48,7 +50,7 @@ REASON_NAMES = {"access": "Kirish olish", "reset": "Parolni tiklash", "other": "
 TOPICS = {
     "prices_inflation": "Narx/inflatsiya", "currency_fx": "Valyuta/kurs",
     "fiscal": "Byudjet/soliq", "trade": "Tashqi savdo", "macro": "Makro",
-    "banking_finance": "Bank/moliya", "labour_income": "Mehnat/daromad",
+    "central_bank": "Markaziy bank", "banking_finance": "Bank/moliya", "labour_income": "Mehnat/daromad",
     "energy_utility": "Energetika", "business": "Biznes", "construction_realty": "Qurilish",
 }
 COUNTED = "is_economic and not is_ad and not is_foreign and not is_digest"
@@ -58,8 +60,6 @@ DAY = f"((date_utc at time zone 'UTC') + interval '{TZ}')::date"
 POS, NEG = "sentiment > 0.15::real", "sentiment < -0.15::real"
 # Days the pipeline has finalised (posts of other days may still carry old labels)
 FINAL_DAYS = "(select start_date from indices where period_type='kun')"
-CHANNEL_NAMES = {"@gazetauz": "Gazeta.uz", "@kunuzofficial": "Kun.uz", "@daryo": "Daryo",
-                 "@spotuz": "Spot", "@uzdaily": "UzDaily"}
 
 
 # ------------------------------------------------------------------ database ---
@@ -88,10 +88,11 @@ _SCHEMA_READY = False
 
 
 def ensure_schema():
-    """Create the access-control tables once per cold start (idempotent DDL)."""
+    """Create the access-control and channel tables once per cold start (idempotent DDL)."""
     global _SCHEMA_READY
     if not _SCHEMA_READY:
         q(auth.SCHEMA)
+        channels.ensure(q)
         _SCHEMA_READY = True
 
 
@@ -487,13 +488,17 @@ def build_stats():
         per_channel[r["channel"]] = per_channel.get(r["channel"], 0) + r["n"]
         if r["d"] in recent:
             recent_channels.add(r["channel"])
+    try:
+        names = channels.titles(q)
+    except psycopg.errors.UndefinedTable:
+        names = channels.NAMES
     return {
         # [day, posts, nonad, econ, pos, neg, channels collected]
         "days": [[r["d"], r["posts"], r["nonad"], r["econ"], r["pos"], r["neg"], per_day.get(r["d"], 0)]
                  for r in days],
         # [index into days, topic, counted posts, positive, negative]
         "topics": [[day_ix[r["d"]], r["t"], r["n"], r["p"], r["g"]] for r in topics if r["d"] in day_ix],
-        "channels": [{"id": c, "name": CHANNEL_NAMES.get(c, str(c).lstrip("@"))}
+        "channels": [{"id": c, "name": names.get(c, str(c).lstrip("@"))}
                      for c, _ in sorted(per_channel.items(), key=lambda x: -x[1])],
         "channels_total": len(recent_channels),
     }
@@ -588,7 +593,25 @@ def _int(v):
 
 ERROR_CODES = {"invalid": 401, "locked": 429, "too_many": 429, "blocked": 403, "expired": 403,
                "other_account": 403, "forbidden": 403, "not_found": 404, "no_request": 404,
-               "no_account": 404}
+               "no_account": 404, "exists": 409, "last_channel": 409, "not_channel": 404,
+               "tg_unavailable": 503}
+
+
+def channel_info(handle):
+    """Title of a public Telegram channel, from the Bot API (it answers for any public one)."""
+    if not BOT_TOKEN:
+        return {"ok": False, "error": "tg_unavailable"}
+    try:
+        r = requests.get(f"{API}/getChat", params={"chat_id": handle}, timeout=10)
+        data = r.json()
+    except (requests.RequestException, ValueError):
+        return {"ok": False, "error": "tg_unavailable"}
+    if not data.get("ok"):
+        return {"ok": False, "error": "not_channel" if r.status_code in (400, 403) else "tg_unavailable"}
+    chat = data["result"]
+    if chat.get("type") != "channel":
+        return {"ok": False, "error": "not_channel"}
+    return {"ok": True, "title": chat.get("title") or handle}
 
 
 def app_action(user, action, body):
@@ -610,7 +633,11 @@ def app_action(user, action, body):
         elif not acc.get("is_admin"):
             r = {"ok": False, "error": "forbidden"}
         elif action == "admin":
-            r = auth.overview(q)
+            r = {**auth.overview(q), "channels": channels.listing(q)}
+        elif action == "channel_add":
+            r = channels.add(q, user["id"], body.get("handle"), channel_info)
+        elif action in ("channel_pause", "channel_resume"):
+            r = channels.set_active(q, str(body.get("handle") or ""), action == "channel_resume")
         elif action == "create":
             r = auth.create_account(q, user["id"], body.get("role"), str(body.get("term")),
                                     _int(body.get("request_id")))

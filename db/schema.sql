@@ -144,6 +144,17 @@ create table if not exists auth_failures (
     locked_until   timestamptz
 );
 
+-- ---------- channels the pipeline collects (app/api/_channels.py) ----
+-- An admin adds or pauses them in the Mini App; the backend seeds the first five.
+create table if not exists channels (
+    handle      text primary key,          -- '@daryo': always '@' and lower case
+    title       text,
+    active      boolean not null default true,
+    added_at    timestamptz not null default now(),
+    added_by    bigint,
+    changed_at  timestamptz
+);
+
 -- ---------- legacy (pre-login, no longer used) ------------------------
 create table if not exists app_users (
     telegram_id  bigint primary key,
@@ -182,3 +193,4 @@ alter table subscriptions  enable row level security;
 alter table accounts        enable row level security;
 alter table access_requests enable row level security;
 alter table auth_failures   enable row level security;
+alter table channels        enable row level security;

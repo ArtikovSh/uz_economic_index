@@ -122,6 +122,9 @@ doim kiradi va hisobdan chiqmaydi.
   tiklash* so'rovida foydalanuvchining mavjud logini uchun yangi parol yuboriladi. So'rovni
   xabarsiz yopish yoki rad etish (foydalanuvchiga xabar boradi) mumkin.
 - **Boshqaruv:** har bir login uchun parolni tiklash, muddatni uzaytirish, bloklash.
+- **Kanallar:** admin paneli → *Kanallar*. Ochiq kanal `@nom` yoki `t.me/nom` ko'rinishida
+  qo'shiladi (bot Telegram'dan tekshiradi) yoki to'xtatiladi. O'zgarish keyingi kunlik
+  yig'imdan kuchga kiradi; yakunlangan kunlar o'zgarmaydi. Kamida bitta kanal faol qoladi.
 - **Himoya:** bitta Telegram hisobidan 5 ta xato urinish — 15 daqiqa blok; bitta loginga
   10 ta xato — 30 daqiqa blok. Parollar log'ga yozilmaydi.
 

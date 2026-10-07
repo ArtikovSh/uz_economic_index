@@ -1,4 +1,4 @@
-// Admin panel: access requests, new credentials, user list and per-user actions.
+// Admin panel: access requests, new credentials, the user list with per-user actions, and channels.
 import { api, copy, errorText, esc, fmtDate, fmtWhen, haptic, icon, segHTML, setBack, t, toast } from './lib.js';
 
 const ROLES = ['analyst', 'economist', 'admin'];
@@ -15,7 +15,9 @@ export function renderAdmin(root, nav) {
   let data = null, error = '', busy = false, shown = false;
   let form = { role: 'analyst', term: '30', request: null };
   let creds = null;          // {title, login, password, delivered}
-  let sheet = null;          // {account, mode: 'menu' | 'extend' | 'creds'}
+  let sheet = null;          // {account | request | channel, mode}
+  let view = 'users';        // 'users' | 'channels'
+  let chanInput = '';
 
   async function load() {
     let r = null;
@@ -68,10 +70,11 @@ export function renderAdmin(root, nav) {
       <header class="topbar">
         <button class="icon-btn" id="back" aria-label="${esc(t('back'))}">${icon('back', 18, 2)}</button>
         <h1>${esc(t('admin.title'))}</h1>
-        <span class="badge">${icon('shield', 13, 2)}${esc(t('admin.badge'))}</span>
       </header>
+      ${data ? `<div class="seg admin-tabs" role="group">${segHTML([['users', t('admin.tabUsers')], ['channels', t('admin.tabChannels')]], view, 'view')}</div>` : ''}
       ${error ? `<p class="form-error" role="alert">${esc(error)}</p>` : ''}
-      ${data ? `
+      ${data && view === 'channels' ? channelsHTML() : ''}
+      ${data && view === 'users' ? `
       <div class="stats">${STATES.map((s) => `<div class="stat"><span>${esc(t('admin.stats.' + s))}</span><b>${c[s] || 0}</b></div>`).join('')}</div>
 
       ${reqs.length ? `
@@ -120,17 +123,51 @@ export function renderAdmin(root, nav) {
             </span>
             <button class="icon-btn ghost" data-menu="${a.id}" aria-label="${esc(t('admin.actions', { login: a.login }))}">${icon('more', 18)}</button>
           </div>`).join('') : `<p class="empty">${esc(t('admin.empty'))}</p>`}
-      </section>` : `<button class="btn primary" id="reload">${esc(t('retry'))}</button>`}
+      </section>` : ''}
+      ${data ? '' : `<button class="btn primary" id="reload">${esc(t('retry'))}</button>`}
     </main>
     ${sheet ? sheetHTML() : ''}`;
     bind();
   }
 
+  function channelsHTML() {
+    const list = data.channels || [];
+    return `
+      <section class="card stack" aria-label="${esc(t('admin.chanAdd'))}">
+        <div class="card-head"><span class="tile">${icon('send', 18)}</span>
+          <div><h2>${esc(t('admin.chanAdd'))}</h2><p class="sub">${esc(t('admin.chanSub'))}</p></div></div>
+        <form class="chan-add" id="chanForm" novalidate>
+          <input id="chanInput" class="input mono" autocomplete="off" autocapitalize="none" spellcheck="false"
+                 placeholder="${esc(t('admin.chanPh'))}" value="${esc(chanInput)}">
+          <button class="btn primary" type="submit" ${busy ? 'disabled' : ''}>
+            ${busy ? '<span class="spinner sm"></span>' : esc(t('admin.chanAddBtn'))}</button>
+        </form>
+      </section>
+      <section class="card users" aria-label="${esc(t('admin.tabChannels'))}">
+        ${list.map((c) => `
+          <div class="user">
+            <span class="avatar">${esc((c.title || c.handle.slice(1)).charAt(0).toUpperCase())}</span>
+            <span class="who">
+              <span class="line1"><b>${esc(c.title || c.handle)}</b>
+                <span class="pill ${c.active ? 'active' : 'expired'}"><span class="dot"></span>${esc(t(c.active ? 'admin.chanActive' : 'admin.chanPaused'))}</span></span>
+              <span class="line2 mono">${esc(c.handle)}</span>
+              <span class="line2">${esc(t('admin.chanSince', { d: fmtDate(c.changed_at || c.added_at) }))}</span>
+            </span>
+            <button class="icon-btn ghost" data-chan="${esc(c.handle)}" data-on="${c.active ? 1 : 0}"
+                    aria-label="${esc(t(c.active ? 'admin.pause' : 'admin.resume'))}">${icon(c.active ? 'pause' : 'play', 18)}</button>
+          </div>`).join('')}
+      </section>`;
+  }
+
   function sheetHTML() {
     const a = sheet.account;
-    const title = a ? a.login : sheet.request.full_name;
+    const title = a ? a.login : sheet.channel ? (sheet.channel.title || sheet.channel.handle) : sheet.request.full_name;
     let body = '';
-    if (sheet.mode === 'close') {
+    if (sheet.mode === 'pause') {                // a channel leaves the index: confirm first
+      body = `<p class="note">${esc(t('admin.pauseNote'))}</p>
+      <div class="menu"><button data-pause-ok class="danger"><span class="ic">${icon('pause', 18)}</span>
+        <span>${esc(t('admin.pause'))}</span></button></div>`;
+    } else if (sheet.mode === 'close') {
       body = `<div class="menu">
         <button data-finish="close"><span class="ic">${icon('check', 18)}</span>
           <span>${esc(t('admin.markDone'))}<small>${esc(t('admin.markDoneNote'))}</small></span></button>
@@ -170,6 +207,26 @@ export function renderAdmin(root, nav) {
     const on = (sel, fn) => root.querySelectorAll(sel).forEach((el) => el.addEventListener('click', (e) => fn(el, e)));
     if ($('#back')) $('#back').addEventListener('click', () => { haptic(); nav.go('dashboard'); });
     if ($('#reload')) $('#reload').addEventListener('click', () => { haptic(); load(); });
+    on('[data-view]', (el) => { haptic(); view = el.dataset.view; draw(); });
+    if ($('#chanForm')) $('#chanForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      chanInput = $('#chanInput').value.trim();
+      if (!chanInput) return;
+      busy = true; draw();
+      const r = await act('channel_add', { handle: chanInput });
+      busy = false;
+      if (r) { haptic('success'); chanInput = ''; toast(t('admin.chanAdded')); await load(); } else draw();
+    });
+    const findChan = (h) => (data.channels || []).find((c) => c.handle === h);
+    on('[data-chan]', async (el) => {
+      haptic();
+      if (el.dataset.on === '1') { sheet = { channel: findChan(el.dataset.chan), mode: 'pause' }; return draw(); }
+      if (await act('channel_resume', { handle: el.dataset.chan })) { toast(t('admin.done')); load(); }
+    });
+    on('[data-pause-ok]', async () => {
+      const c = sheet.channel;
+      if (await act('channel_pause', { handle: c.handle })) { sheet = null; draw(); toast(t('admin.done')); load(); }
+    });
     on('[data-copy]', (el) => copy(el.dataset.copy));
     on('[data-role]', (el) => { haptic(); form.role = el.dataset.role; draw(); });
     on('[data-term]', (el) => { haptic(); form.term = el.dataset.term; draw(); });

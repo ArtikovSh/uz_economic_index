@@ -46,7 +46,7 @@ def U(uid, username=None):
 @pytest.fixture(autouse=True)
 def fresh_db(monkeypatch):
     with psycopg.connect(DB, autocommit=True) as c:
-        c.execute("drop table if exists accounts, access_requests, auth_failures cascade")
+        c.execute("drop table if exists accounts, access_requests, auth_failures, channels cascade")
     index._SCHEMA_READY = False
     sent = []
     monkeypatch.setattr(index, "send", lambda chat, text, **kw: sent.append((chat, text, kw)) or True)
@@ -324,3 +324,42 @@ def test_dashboard_stats_and_posts(server):
     finally:
         with psycopg.connect(DB, autocommit=True) as c:
             c.execute(DATA_TABLES)
+
+
+# --------------------------------------------------------------- channels --
+def test_admin_manages_channels(server, monkeypatch):
+    looked_up = []
+
+    def lookup(handle):
+        looked_up.append(handle)
+        if handle == "@somegroup":
+            return {"ok": False, "error": "not_channel"}
+        return {"ok": True, "title": "Spot Uz News"}
+    monkeypatch.setattr(index, "channel_info", lookup)
+    admin = lambda action, body=None: call(server, U(OWNER), action, body)
+
+    code, ov = admin("admin")
+    assert code == 200 and [c["handle"] for c in ov["channels"]] == [
+        "@gazetauz", "@kunuzofficial", "@daryo", "@spotuz", "@uzdaily"]
+    assert all(c["active"] for c in ov["channels"])
+
+    assert admin("channel_add", {"handle": "not a handle!"}) == (400, {"ok": False, "error": "bad_handle"})
+    assert admin("channel_add", {"handle": "@Daryo"})[1]["error"] == "exists"
+    assert admin("channel_add", {"handle": "somegroup"})[1]["error"] == "not_channel"
+    code, r = admin("channel_add", {"handle": "https://t.me/Spot_UZ_News?x=1"})
+    assert code == 200 and r["channel"] == {"handle": "@spot_uz_news", "title": "Spot Uz News"}
+    assert looked_up == ["@somegroup", "@spot_uz_news"]          # existing ones are not looked up
+
+    assert admin("channel_pause", {"handle": "@daryo"})[0] == 200
+    chans = {c["handle"]: c["active"] for c in admin("admin")[1]["channels"]}
+    assert chans["@daryo"] is False and chans["@spot_uz_news"] is True
+    assert admin("channel_resume", {"handle": "@daryo"})[0] == 200
+    for h in ("@gazetauz", "@kunuzofficial", "@daryo", "@spotuz", "@uzdaily"):
+        assert admin("channel_pause", {"handle": h})[0] == 200
+    assert admin("channel_pause", {"handle": "@spot_uz_news"}) == (409, {"ok": False, "error": "last_channel"})
+    assert admin("channel_pause", {"handle": "@nobody"})[1]["error"] == "not_found"
+
+    acc = admin_create(server)
+    call(server, U(150), "login", {"login": acc["account"]["login"], "password": acc["password"]})
+    assert call(server, U(150), "channel_add", {"handle": "@x_news"})[0] == 403   # admins only
+
