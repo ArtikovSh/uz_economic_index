@@ -295,7 +295,7 @@ def test_dashboard_stats_and_posts(server):
         page = lambda **kw: call(server, U(140), "posts", {"from": "2026-09-01", "to": "2026-09-30", **kw})[1]
         r = page()
         assert r["total"] == 3 and [p["link"][-1] for p in r["items"]] == ["3", "2", "1"]
-        assert r["items"][2]["at"] == "2026-09-02T01:30" and r["items"][2]["text"] == "Post 1. Text."
+        assert r["items"][2]["at"] == "2026-09-02T01:30" and (r["items"][2]["head"], r["items"][2]["text"]) == ("Post 1", "Text.")
         assert [p["s"] for p in r["items"]] == [-1, 0, 1]
         assert page(tone="neu")["total"] == 1 and page(tone="pos")["total"] == 1
         assert page(sort="views")["items"][0]["v"] == 300

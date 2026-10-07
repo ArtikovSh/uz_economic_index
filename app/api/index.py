@@ -699,8 +699,9 @@ def posts_page(body):
     items = []
     for r in rows[0]:
         local = r["date_utc"].astimezone(timezone.utc) + timedelta(hours=5)
+        head, text = post_parts(r["raw_text"], 320)
         items.append({"ch": r["channel"], "at": local.strftime("%Y-%m-%dT%H:%M"), "v": r["views"],
-                      "t": r["primary_topic"], "s": r["tone"], "text": clean_text(r["raw_text"]),
+                      "t": r["primary_topic"], "s": r["tone"], "head": head, "text": text,
                       "link": _post_link(r["channel"], r["message_id"])})
     return {"ok": True, "total": total, "items": items, "more": offset + len(items) < total}
 

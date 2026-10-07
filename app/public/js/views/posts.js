@@ -39,7 +39,8 @@ export function renderPosts(ctx) {
     <article class="pcard">
       <div class="ptop"><span class="tone-chip ${cls}">${icon(ic, 13, 2.2)}${esc(t(label))}</span>
         <span class="ptopic">${esc(topicName(p.t))}</span><span class="ptime">${esc(postTime(p.at))}</span></div>
-      <p class="ptext">${esc(p.text)}</p>
+      ${p.head ? `<h3 class="phead">${esc(p.head)}</h3>` : ''}
+      ${p.text ? `<p class="ptext">${esc(p.text)}</p>` : ''}
       <div class="pfoot"><b>${esc(channelName(p.ch))}</b>
         <span class="pviews" aria-label="${esc(t('ps.views'))}">${icon('eye', 14, 1.9)}${esc(views(p.v))}</span>
         <a class="psrc" href="${esc(p.link)}" data-link="${esc(p.link)}">${esc(t('ps.source'))}${icon('external', 14, 2)}</a></div>

@@ -291,6 +291,17 @@ button.user { width: 100%; border: 0; background: transparent; color: inherit; t
 .l-neg, .b-neg { background: var(--negFill); }
 .legend .l-gap { width: 10px; height: 8px; background: var(--gap); border: 1px solid var(--line); }
 .charts { margin-top: 10px; }
+/* touch or hover a period: a guide line, the EAI point and the period's figures */
+.dyn { position: relative; touch-action: pan-y; cursor: crosshair; -webkit-user-select: none; user-select: none; }
+.dyn-guide { position: absolute; top: 0; width: 1px; background: var(--ink2); opacity: .45; pointer-events: none; }
+.dyn-dot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--primary);
+  border: 2px solid var(--surface); pointer-events: none; }
+.dyn-tip { position: absolute; top: -6px; min-width: 132px; padding: 8px 10px; border-radius: 10px; background: var(--chip);
+  color: var(--chipInk); font-size: 12px; line-height: 1.45; box-shadow: 0 6px 18px rgba(15, 27, 45, .18); pointer-events: none;
+  z-index: 2; }
+.dyn-tip b { display: block; margin-bottom: 2px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.dyn-tip span { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+.dyn-tip small { display: block; margin-top: 2px; opacity: .75; font-size: 11px; }
 .chart { display: block; overflow: visible; }
 .chart + .chart { margin-top: 4px; }
 .c-eai { stroke: var(--primary); }
@@ -382,8 +393,10 @@ button.user { width: 100%; border: 0; background: transparent; color: inherit; t
 .tone-chip.neg { background: var(--negSoft); color: var(--neg); }
 .ptopic { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ptime { margin-left: auto; flex: none; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.ptext { margin: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 6;
-  -webkit-box-orient: vertical; overflow: hidden; }
+.phead { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.4; letter-spacing: -.1px; color: var(--ink);
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ptext { margin: -4px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink2); overflow-wrap: anywhere; display: -webkit-box;
+  -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .pfoot { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
 .pfoot b { font-weight: 600; color: var(--ink); }
 .pviews { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }

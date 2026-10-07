@@ -97,7 +97,9 @@ export function dynamics(slots, width, labels) {
     return `<text x="${f1(Math.max(0, tx))}" y="88" text-anchor="${anchor}" class="c-txt">${esc(tick(slots[i]))}</text>`;
   }).join('');
 
+  const ey = eai.map((v) => (v == null ? '' : f1(yE(v)))).join(',');
   return `
+  <div class="dyn" data-slotw="${f1(slotW)}" data-plot="${f1(plot)}" data-ey="${ey}">
   <svg width="${W}" height="${H1}" viewBox="0 0 ${W} ${H1}" role="img" aria-label="${esc(labels.eai)}" class="chart">
     ${gaps(slots, x, slotW, H1)}${grid1}
     <path d="${path}" fill="none" class="c-eai" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
@@ -105,5 +107,6 @@ export function dynamics(slots, width, labels) {
   </svg>
   <svg width="${W}" height="92" viewBox="0 0 ${W} 92" role="img" aria-label="${esc(labels.esi)}" class="chart">
     ${gaps(slots, x, slotW, 74)}${grid2}${bars(esi, x, bw, zero, room / top)}${ticks}
-  </svg>`;
+  </svg>
+  </div>`;
 }

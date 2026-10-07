@@ -25,6 +25,41 @@ function delta(d, digits, unit, toned) {
   return `<span class="delta ${cls}">${arrow}${esc(signed(d, digits))}${unit ? ' ' + esc(unit) : ''}</span>`;
 }
 
+/** Touch, drag or hover over the dynamics chart: the period under the pointer and its figures. */
+function readOut(dyn, slots) {
+  const slotW = +dyn.dataset.slotw, plot = +dyn.dataset.plot, ey = dyn.dataset.ey.split(',');
+  const guide = document.createElement('div'), dot = document.createElement('div'), tip = document.createElement('div');
+  guide.className = 'dyn-guide'; dot.className = 'dyn-dot'; tip.className = 'dyn-tip';
+  [guide, dot, tip].forEach((n) => { n.hidden = true; dyn.appendChild(n); });
+  guide.style.height = `${dyn.offsetHeight - 18}px`;            // down to the bars, above the period ticks
+  let shown = -1;
+  const show = (clientX) => {
+    const box = dyn.getBoundingClientRect();
+    const i = Math.max(0, Math.min(slots.length - 1, Math.floor((clientX - box.left) / slotW)));
+    if (i === shown) return;
+    shown = i;
+    const s = slots[i], x = slotW * (i + 0.5);
+    guide.style.left = `${x}px`;
+    dot.hidden = !ey[i];
+    if (ey[i]) { dot.style.left = `${x}px`; dot.style.top = `${ey[i]}px`; }
+    tip.innerHTML = `<b>${esc(periodLabel(s))}</b>${s.empty ? `<small>${esc(t('ov.legGap'))}</small>` : `
+      <span>EAI<strong>${esc(num(s.eai, 1))}%</strong></span>
+      <span>ESI<strong>${esc(signed(s.esi, 1))}</strong></span>
+      <small>${esc(t('ov.econN', { n: num(s.econ) }))}</small>`}`;
+    guide.hidden = false; tip.hidden = false;
+    const w = tip.offsetWidth;
+    tip.style.left = `${Math.max(0, Math.min(plot - w, x - w / 2))}px`;
+    tip.style.top = `${-tip.offsetHeight - 8}px`;
+  };
+  const hide = () => { shown = -1; [guide, dot, tip].forEach((n) => { n.hidden = true; }); };
+  dyn.addEventListener('pointerdown', (e) => show(e.clientX));
+  dyn.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse' || e.buttons || shown >= 0) show(e.clientX); });
+  dyn.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') hide(); });
+  hideOutside = (e) => { if (!dyn.contains(e.target)) hide(); };
+}
+let hideOutside = null;            // a touch elsewhere closes the read-out of the chart on screen
+document.addEventListener('pointerdown', (e) => { if (hideOutside) hideOutside(e); }, { capture: true });
+
 export function renderOverview(ctx) {
   const { model, ui } = ctx;
   if (!model.last) {
@@ -116,6 +151,8 @@ export function renderOverview(ctx) {
       el.querySelectorAll('[data-type]').forEach((b) => b.addEventListener('click', () => ctx.setType(b.dataset.type)));
       el.querySelectorAll('[data-key]').forEach((b) => b.addEventListener('click', () => b.dataset.key && ctx.setKey(b.dataset.key)));
       el.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => ctx.go(b.dataset.tab)));
+      const dyn = el.querySelector('.dyn');
+      if (dyn) readOut(dyn, slots);
     },
   };
 }
