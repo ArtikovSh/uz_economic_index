@@ -45,6 +45,7 @@ oy, chorak va yil uchun formula bir xil.
 | `excel_exporter.py` | Excel hisobot ("Indekslar", "Xabarlar", "Metodika") |
 | `sync_to_db.py` | Supabase'ga sinxronlash (bot va Mini App uchun) |
 | `sheets_sync.py` | Jadvallarni Google Sheets'ga qo'shish |
+| `history.py` | Arxivni oyma-oy qurish: yig'ish, belgilash, indekslarni qayta hisoblash |
 | `rebuild.py` | Butun tarixni joriy belgilash qoidalari bilan qayta qurish (metodika o'zgarganda) |
 | `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, ishlatilayotgan LLM (nazorat to'plami bilan), Sheets, bot ogohlantirishi |
 | `evaluate.py` | LLM belgilarini 200 ta haqiqiy postda baholash; natija `eval/` papkasiga yoziladi |
@@ -53,12 +54,15 @@ oy, chorak va yil uchun formula bir xil.
 
 ## Natijalar
 
-- `data/messages.csv` — **Xabarlar**: har bir yakunlangan post, model belgilari va indeks
-  bayroqlari (`nonad`, `econ`, `tone`) bilan, sana tartibida
+- `data/messages/YYYY-MM.csv` — **Xabarlar**: har bir yakunlangan post, model belgilari
+  (mavzular, AI sarlavhasi) va indeks bayroqlari (`nonad`, `econ`, `tone`) bilan, har oy alohida
+  faylda (GitHub 100 MB dan katta faylni qabul qilmaydi)
 - `data/indices.csv` — **Indekslar**: har bir yopilgan kun, hafta, oy, chorak va yil
   (sanoqlar, EAI, ESI, izoh)
 - `data/pending.csv` — kuni hali yakunlanmagan postlar (odatda bo'sh)
-- `output/economic_index_latest.xlsx` — kunlik, haftalik, oylik, choraklik, yillik indekslar, mavzular hissasi va xabarlar; xabarlarda to'liq matn va model ham bor (Actions artifact sifatida ham)
+- Excel hisobot — kunlik, haftalik, oylik, choraklik, yillik indekslar, mavzular hissasi va xabarlar;
+  xabarlarda to'liq matn va model ham bor. Har run'ning **Actions artifact**'ida (90 kun saqlanadi);
+  repo'ga yozilmaydi
 
 ## GitHub sozlamalari
 
@@ -90,6 +94,15 @@ yuboriladi (`LLM_BATCH_SIZE`).
   belgilansa, yig'ish o'rniga butun tarix joriy qoidalar bilan qayta belgilanadi va baza
   hamda Sheets qaytadan yoziladi (`rebuild.py`; metodika o'zgarganda).
 - `health` — har 6 soatda bot va bazani tekshiradi; muammo bo'lsa botga xabar yuboradi.
+- `history` — arxivni oyma-oy quradi (`history.py`): oy(lar)ni kiriting, masalan `2026-01` yoki
+  `2026-01..2026-03`. Barcha faol kanallar o'sha oylar uchun yig'iladi, belgilanadi, indekslar,
+  baza va Sheets yangilanadi, bot qisqa hisobot yuboradi. `fresh` — arxivni boshidan boshlash.
+  Oylarni istalgan tartibda (keyinroq oldingi yillarni ham) qo'shish mumkin; allaqachon bor kunlar
+  qayta yig'ilmaydi. Belgilash bir run'da tugamasa, xuddi shu oy bilan yana ishga tushiring.
+
+**Kunlik yig'im** faqat repo o'zgaruvchisi `DAILY_COLLECTION` = `on` bo'lganda ishlaydi
+(Settings → Secrets and variables → Actions → Variables). Arxiv qurilayotganda u o'chiq turadi;
+yoqishdan oldin joriy oyni `history` bilan oxirgi kunlarigacha yig'ib oling.
 - `check` — post yig'masdan hamma narsani tekshiradi (Telegram, ishlatilayotgan LLM, Sheets) va
   natijani botga yuboradi. LLM nazorat to'plamidagi 27 ta postni belgilaydi; bot nechtasi
   to'g'ri ekanini va xatolarni ko'rsatadi. LLM tekshiruvi ko'pi bilan 4 daqiqa davom etadi.

@@ -6,9 +6,10 @@ Mini App can serve them. Run after the daily pipeline.
                         differently there); labels carry the FINAL flags (ad marker incl.)
   * indices           – the indices table (created here if missing)
 
-`--full` (after rebuild.py): the indices table is replaced and the bot's cached summary
-cards are dropped, since every number may have changed; posts are upserted as usual (their
-label version changed, so all of them are written).
+`--indices` (history.py adds months): the indices table is replaced, since every period may
+have changed, and the bot's cached summary cards are dropped; posts are upserted as usual.
+`--full` (rebuild.py, or history.py --fresh): posts are replaced too, so the database holds
+exactly the posts table — nothing from an earlier archive stays.
 
 Connection string comes from env SUPABASE_DB_URL (or DATABASE_URL) — use the
 Supabase "Connection pooler" URI (Transaction mode, port 6543). If neither is
@@ -49,9 +50,10 @@ TOPICS_DDL = """
 do $$ begin
   if to_regclass('labels') is not null and to_regclass('messages') is not null then
     alter table labels add column if not exists topics text[];
+    alter table labels add column if not exists headline text;
     create or replace view posts as
       select m.*, l.is_economic, l.primary_topic, l.relevance, l.sentiment,
-             l.is_ad, l.is_digest, l.is_foreign, l.label_version, l.topics
+             l.is_ad, l.is_digest, l.is_foreign, l.label_version, l.topics, l.headline
       from messages m left join labels l
         on m.channel = l.channel and m.message_id = l.message_id;
   end if;
@@ -98,7 +100,8 @@ def sync_posts(conn, ledger):
             _py(r.raw_text)) for r in todo.itertuples()]
     lab = [(_py(r.channel), int(r.message_id), bool(r.is_economic), _py(r.primary_topic),
             _py(r.relevance), _py(r.sentiment), bool(r.is_ad), bool(r.is_digest),
-            bool(r.is_foreign), _py(r.label_version), _topic_list(r)) for r in todo.itertuples()]
+            bool(r.is_foreign), _py(r.label_version), _topic_list(r), _py(getattr(r, "headline", None)))
+           for r in todo.itertuples()]
     with conn.cursor() as cur:
         cur.executemany("""
             insert into messages (channel, message_id, date_utc, views, forwards, raw_text)
@@ -108,27 +111,27 @@ def sync_posts(conn, ledger):
               forwards=excluded.forwards, raw_text=excluded.raw_text""", msg)
         cur.executemany("""
             insert into labels (channel, message_id, is_economic, primary_topic, relevance,
-                                sentiment, is_ad, is_digest, is_foreign, label_version, topics)
-            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                sentiment, is_ad, is_digest, is_foreign, label_version, topics, headline)
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             on conflict (channel, message_id) do update set
               is_economic=excluded.is_economic, primary_topic=excluded.primary_topic,
               relevance=excluded.relevance, sentiment=excluded.sentiment,
               is_ad=excluded.is_ad, is_digest=excluded.is_digest,
               is_foreign=excluded.is_foreign, label_version=excluded.label_version,
-              topics=excluded.topics""", lab)
+              topics=excluded.topics, headline=excluded.headline""", lab)
     conn.commit()
     print(f"  messages/labels: synced {len(todo)} posts")
 
 
-def sync_indices(conn, indices, full=False):
+def sync_indices(conn, indices, replace=False):
     with conn.cursor() as cur:
         cur.execute(INDICES_DDL)
-        if full:
+        if replace:
             cur.execute("delete from indices")
             cur.execute("""do $$ begin
                              if to_regclass('bot_cards') is not null then delete from bot_cards; end if;
                            end $$""")
-            print("  indices: replaced (full); cached bot cards dropped")
+            print("  indices: replaced; cached bot cards dropped")
     conn.commit()
     if indices.empty:
         print("  indices: nothing to sync")
@@ -146,19 +149,25 @@ def sync_indices(conn, indices, full=False):
     print(f"  indices: {len(rows)} rows checked")
 
 
-def main(full=False) -> int:
+def main(full=False, indices=False) -> int:
     if not DB_URL:
         print("SUPABASE_DB_URL not set -> skipping DB sync.")
         return 0
-    print("--- Sync to Supabase" + (" (full)" if full else "") + " ---")
+    print("--- Sync to Supabase" + (" (full)" if full else " (indices replaced)" if indices else "") + " ---")
     conn = _connect()
     try:
         with conn.cursor() as cur:
             cur.execute(LEGACY_DDL)
             cur.execute(TOPICS_DDL)
+            if full:
+                cur.execute("""do $$ begin
+                                 if to_regclass('labels') is not null then delete from labels; end if;
+                                 if to_regclass('messages') is not null then delete from messages; end if;
+                               end $$""")
+                print("  messages/labels: cleared (full)")
         conn.commit()
         sync_posts(conn, load_ledger())
-        sync_indices(conn, load_indices(), full)
+        sync_indices(conn, load_indices(), full or indices)
     finally:
         conn.close()
     print("DB sync done.")
@@ -166,4 +175,4 @@ def main(full=False) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(full="--full" in sys.argv[1:]))
+    sys.exit(main(full="--full" in sys.argv[1:], indices="--indices" in sys.argv[1:]))

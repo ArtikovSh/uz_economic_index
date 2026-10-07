@@ -129,8 +129,7 @@ jobs:
         run: |
           git config user.name "ArtikovSh"
           git config user.email "ortikovshokhrukh@gmail.com"
-          git add data/                          # posts table + indices table + pending
-          git add -f output/economic_index_latest.xlsx || true
+          git add -A data/                       # posts table (one file a month) + indices + pending
           if git diff --cached --quiet; then
             echo "Nothing new to commit."
           else

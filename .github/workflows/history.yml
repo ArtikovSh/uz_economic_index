@@ -1,0 +1,118 @@
+name: history
+
+# Build the archive month by month (history.py): collect every active channel for the given
+# months, label the posts, recompute the indices, then update Supabase, Google Sheets and the
+# repository. The owner gets a short report from the bot when the run ends.
+# "fresh" starts the archive anew: everything collected before is removed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      months:
+        description: "Oy yoki oylar: 2026-01 yoki 2026-01..2026-03"
+        required: true
+      fresh:
+        description: "Arxivni boshidan boshlash (oldingi barcha ma'lumot o'chiriladi)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uz-economic-index
+  cancel-in-progress: false
+
+jobs:
+  history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Collect and label
+        id: history
+        continue-on-error: true
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_SESSION_STRING: ${{ secrets.TG_SESSION_STRING }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+          LLM_MAX_REQUESTS: '6000'          # a busy month of many channels in one run
+          LLM_TIME_BUDGET_MIN: '240'
+          MONTHS: ${{ inputs.months }}
+        run: python history.py "$MONTHS" ${{ inputs.fresh && '--fresh' || '' }}
+
+      - name: Sync to Supabase
+        id: sync
+        if: steps.history.outcome == 'success'
+        continue-on-error: true
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python sync_to_db.py ${{ inputs.fresh && '--full' || '--indices' }}
+
+      - name: Sync to Google Sheets
+        id: sheets
+        if: steps.history.outcome == 'success'
+        continue-on-error: true
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GSHEET_ID: ${{ secrets.GSHEET_ID }}
+        run: python sheets_sync.py --full
+
+      - name: Upload Excel artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: economic-index-history
+          path: output/*.xlsx
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Commit the archive
+        if: always()
+        run: |
+          git config user.name "ArtikovSh"
+          git config user.email "ortikovshokhrukh@gmail.com"
+          git add -A data/
+          if git diff --cached --quiet; then
+            echo "Nothing new to commit."
+          else
+            git commit -m "data: archive ${{ inputs.months }} ($(date -u +'%Y-%m-%d %H:%M') UTC)"
+            git pull --rebase origin "$GITHUB_REF_NAME"
+            git push
+          fi
+
+      - name: Report on Telegram
+        if: always()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.BOT_ADMIN_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then echo "No bot secrets - report skipped."; exit 0; fi
+          BODY=$(head -c 3000 history_report.txt 2>/dev/null || echo "Hisobot yozilmadi - logni ko'ring.")
+          EXTRA=""
+          [ "${{ steps.history.outcome }}" = "failure" ] && EXTRA="$EXTRA
+          Yig'ish to'xtadi (logni ko'ring); ma'lumot o'zgarmadi yoki yarim yo'lda saqlandi - qayta ishga tushiring."
+          [ "${{ steps.sync.outcome }}" = "failure" ] && EXTRA="$EXTRA
+          Supabase'ga yozilmadi."
+          [ "${{ steps.sheets.outcome }}" = "failure" ] && EXTRA="$EXTRA
+          Google Sheets'ga yozilmadi."
+          curl -s -o /dev/null -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -d chat_id="$CHAT_ID" \
+            --data-urlencode text="Arxiv: ${{ inputs.months }}
+          ${BODY}${EXTRA}
+          ${RUN_URL}"
