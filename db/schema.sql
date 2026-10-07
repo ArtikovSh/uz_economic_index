@@ -34,6 +34,7 @@ create table if not exists labels (
     is_foreign     boolean default false,
     label_version  text,
     topics         text[],                 -- the topic first, then up to two more (labels v6)
+    headline       text,                   -- the post's headline, or one the model wrote (v6)
     primary key (channel, message_id),
     foreign key (channel, message_id) references messages (channel, message_id) on delete cascade
 );
@@ -42,7 +43,7 @@ create index if not exists idx_labels_topic on labels (primary_topic);
 -- convenience view: message joined with its label
 create or replace view posts as
     select m.*, l.is_economic, l.primary_topic, l.relevance, l.sentiment,
-           l.is_ad, l.is_digest, l.is_foreign, l.label_version, l.topics
+           l.is_ad, l.is_digest, l.is_foreign, l.label_version, l.topics, l.headline
     from messages m left join labels l
       on m.channel = l.channel and m.message_id = l.message_id;
 

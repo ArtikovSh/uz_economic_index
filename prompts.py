@@ -186,6 +186,12 @@ EXAMPLES (headline -> labels)
  "Кредит до 300 млн сумов без залога — оформите в приложении банка за 5 минут"
      -> is_ad
 
+STEP 8 — headline (text)
+The post's own headline, copied exactly without formatting, when it starts with one (a short
+first line or a bold title). A post without one gets a short headline you write in the post's
+language (at most 90 characters) that states its main fact and adds nothing that is not in
+the post. Ads and digests get one too.
+
 OUTPUT
 Return ONLY a JSON object {"results": [...]} with exactly one object per post, in the
 given order. Each object starts with "id" = the number of its POST."""
@@ -202,12 +208,13 @@ _ITEM = {
         "other_topics": {"type": "ARRAY", "items": {"type": "STRING", "enum": CATEGORIES}},
         "relevance": {"type": "NUMBER"},
         "sentiment": {"type": "NUMBER"},
+        "headline": {"type": "STRING"},
     },
     "required": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic", "other_topics",
-                 "relevance", "sentiment"],
+                 "relevance", "sentiment", "headline"],
     # answer in the order of the decision steps above
     "propertyOrdering": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic", "other_topics",
-                         "relevance", "sentiment"],
+                         "relevance", "sentiment", "headline"],
 }
 
 # Gemini structured-output schema (OpenAPI subset): object with a "results" array.

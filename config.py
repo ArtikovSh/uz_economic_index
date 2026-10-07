@@ -37,7 +37,8 @@ DATA_DIR = "data"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-MASTER_CSV = os.path.join(DATA_DIR, "messages.csv")    # "Xabarlar": every final post with its labels
+MESSAGES_DIR = os.path.join(DATA_DIR, "messages")      # "Xabarlar": every final post, one file per month
+MASTER_CSV = os.path.join(DATA_DIR, "messages.csv")    # the single-file layout before monthly files
 INDICES_CSV = os.path.join(DATA_DIR, "indices.csv")    # "Indekslar": day/week/month/quarter/year rows
 PENDING_CSV = os.path.join(DATA_DIR, "pending.csv")    # posts whose day is not final yet
 

@@ -15,23 +15,19 @@ import os
 
 import pandas as pd
 
-from config import MASTER_CSV, INDICES_CSV, PENDING_CSV, DATA_DIR, LLM_LABEL_VERSION
+from config import MASTER_CSV, MESSAGES_DIR, INDICES_CSV, PENDING_CSV
 
 RAW_COLS = ["channel", "message_id", "date", "views", "forwards", "raw_text", "scraped_at"]
-LABEL_COLS = ["is_economic", "primary_topic", "topics", "relevance", "sentiment",
+LABEL_COLS = ["is_economic", "primary_topic", "topics", "headline", "relevance", "sentiment",
               "is_ad", "is_digest", "is_foreign"]
 PENDING_COLS = RAW_COLS + LABEL_COLS + ["label_version", "label_model", "label_error"]
 LEDGER_COLS = ["date_local", "channel", "message_id", "date", "views", "forwards", "scraped_at",
-               "primary_topic", "topics", "is_economic", "relevance", "sentiment", "is_ad", "ad_marker",
+               "primary_topic", "topics", "headline", "is_economic", "relevance", "sentiment", "is_ad", "ad_marker",
                "is_digest", "is_foreign", "nonad", "econ", "tone", "label_version", "label_model",
                "raw_text"]
 INDEX_COLS = ["period_type", "period", "start", "end", "days", "days_expected", "posts",
               "nonad", "econ", "pos", "neu", "neg", "EAI", "ESI", "note"]
 
-# files of the pre-ledger layout (converted once by migrate_legacy)
-LEGACY_LABELS = os.path.join(DATA_DIR, "llm_labels.csv")
-LEGACY_FILES = [LEGACY_LABELS, os.path.join(DATA_DIR, "daily_index.csv"),
-                os.path.join(DATA_DIR, "monthly_index.csv")]
 
 
 def write_csv(df: pd.DataFrame, path: str) -> None:
@@ -41,7 +37,7 @@ def write_csv(df: pd.DataFrame, path: str) -> None:
     os.replace(tmp, path)
 
 
-TEXT_COLS = {"channel", "date", "raw_text", "scraped_at", "primary_topic", "topics", "label_version",
+TEXT_COLS = {"channel", "date", "raw_text", "scraped_at", "primary_topic", "topics", "headline", "label_version",
              "label_model", "label_error", "date_local", "period_type", "period", "start", "end",
              "note"}
 
@@ -68,8 +64,52 @@ def post_keys(df):
     return df["channel"].astype(str) + "|" + df["message_id"].astype(str)
 
 
+def _month_files():
+    if not os.path.isdir(MESSAGES_DIR):
+        return []
+    return sorted(os.path.join(MESSAGES_DIR, f) for f in os.listdir(MESSAGES_DIR)
+                  if len(f) == 11 and f.endswith(".csv"))         # 2026-01.csv
+
+
 def load_ledger():
-    return _read(MASTER_CSV, LEDGER_COLS)
+    """The posts table: data/messages/YYYY-MM.csv (or the older single messages.csv)."""
+    files = _month_files()
+    if not files:
+        return _read(MASTER_CSV, LEDGER_COLS)
+    parts = [_read(f, LEDGER_COLS) for f in files]
+    return typed(pd.concat(parts, ignore_index=True)) if len(parts) > 1 else parts[0]
+
+
+def _month_path(month):
+    return os.path.join(MESSAGES_DIR, f"{month}.csv")
+
+
+def write_ledger(df):
+    """The whole posts table, rewritten one file per month in date order (history, rebuild).
+    Months no longer present are removed, and so is the older single file."""
+    os.makedirs(MESSAGES_DIR, exist_ok=True)
+    df = df[LEDGER_COLS].sort_values(["date", "channel", "message_id"], kind="stable")
+    months = df["date_local"].astype(str).str[:7]
+    for month, part in df.groupby(months, sort=True):
+        write_csv(part, _month_path(month))
+    for f in _month_files():
+        if os.path.basename(f)[:7] not in set(months):
+            os.remove(f)
+    if os.path.exists(MASTER_CSV):
+        os.remove(MASTER_CSV)
+
+
+def append_ledger(ledger, rows):
+    """New final posts at the end of their month's file (the daily run)."""
+    if rows.empty:
+        return ledger
+    if not _month_files() and os.path.exists(MASTER_CSV):
+        write_ledger(ledger)                               # move to monthly files once
+    months = rows["date_local"].astype(str).str[:7]
+    for month, part in rows.groupby(months, sort=True):
+        os.makedirs(MESSAGES_DIR, exist_ok=True)
+        append_rows(_month_path(month), part.iloc[0:0], part, LEDGER_COLS)
+    return rows if ledger.empty else pd.concat([ledger, rows[LEDGER_COLS]], ignore_index=True)
 
 
 def load_pending():
@@ -123,36 +163,3 @@ def add_to_pending(pending, ledger, new):
     out = fresh if pending.empty else pd.concat([pending, fresh], ignore_index=True)
     print(f"Queued {len(fresh)} new posts ({len(out)} waiting to be finalised)")
     return out
-
-
-def migrate_legacy():
-    """One-time conversion of the old layout (raw messages.csv + llm_labels.csv +
-    daily/monthly CSVs): every stored post moves to pending.csv, keeping any label
-    already made with the current LLM_LABEL_VERSION, and messages.csv restarts as the
-    empty ledger. The posts are then finalised day by day in date order."""
-    if not os.path.exists(MASTER_CSV):
-        return False
-    head = pd.read_csv(MASTER_CSV, nrows=0).columns
-    if "econ" in head:
-        return False                                    # already the ledger layout
-    raw = pd.read_csv(MASTER_CSV)
-    pending = typed(raw.reindex(columns=PENDING_COLS))
-    if os.path.exists(LEGACY_LABELS):
-        lab = pd.read_csv(LEGACY_LABELS)
-        lab = lab[lab["label_version"].astype(str) == LLM_LABEL_VERSION].set_index("key")
-        keys = post_keys(pending)
-        hit = keys.isin(lab.index)
-        for c in LABEL_COLS:
-            pending.loc[hit, c] = lab.loc[keys[hit], c].values
-        pending.loc[hit, "label_version"] = LLM_LABEL_VERSION
-        if "model" in lab.columns:
-            pending.loc[hit, "label_model"] = lab.loc[keys[hit], "model"].values
-    write_csv(pending, PENDING_CSV)                     # data is safe in pending first
-    write_csv(pd.DataFrame(columns=LEDGER_COLS), MASTER_CSV)
-    for f in LEGACY_FILES:
-        if os.path.exists(f):
-            os.remove(f)
-    labelled = int((pending["label_version"] == LLM_LABEL_VERSION).sum())
-    print(f"Migrated {len(pending)} posts to the new layout ({labelled} already labelled "
-          f"with {LLM_LABEL_VERSION}); they are finalised day by day as labels complete.")
-    return True

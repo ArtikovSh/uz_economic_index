@@ -123,9 +123,10 @@ POSTS_DDL = """
 do $$ begin
   if to_regclass('labels') is not null and to_regclass('messages') is not null then
     alter table labels add column if not exists topics text[];
+    alter table labels add column if not exists headline text;
     create or replace view posts as
       select m.*, l.is_economic, l.primary_topic, l.relevance, l.sentiment,
-             l.is_ad, l.is_digest, l.is_foreign, l.label_version, l.topics
+             l.is_ad, l.is_digest, l.is_foreign, l.label_version, l.topics, l.headline
       from messages m left join labels l
         on m.channel = l.channel and m.message_id = l.message_id;
   end if;
@@ -678,10 +679,21 @@ def _cut(text, limit):
     return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0].rstrip(".,;:—– ") + "…"
 
 
-def post_parts(raw, body_limit=100):
-    """(headline, text) of a post: the first line in full (or the first sentence of a one-line
-    post), and at most `body_limit` characters of the rest."""
+def _same(a, b):
+    key = lambda s: re.sub(r"[\W_]+", "", str(s)).lower()
+    return bool(key(a)) and key(a) == key(b)
+
+
+def post_parts(raw, body_limit=100, headline=None):
+    """(headline, text) of a post, with at most `body_limit` characters of text. The model's
+    headline (labels v6) wins: when it is the post's own first line the text is the rest, else
+    the text is the whole post. Without one: the first line (or the first sentence of a
+    one-line post) and the rest."""
     lines = _clean_lines(raw)
+    if headline and str(headline).strip():
+        head = " ".join(str(headline).split())
+        rest = lines[1:] if lines and _same(lines[0], head) else lines
+        return _cut(head, 240), _cut(" ".join(rest), body_limit)
     if not lines:
         return "", ""
     head, rest = lines[0], " ".join(lines[1:])
@@ -736,7 +748,7 @@ def posts_page(body):
     queries = [(f"select count(*) n from posts where {cond}", params)]
     if not body.get("count_only"):
         queries.append((f"""select channel, message_id, date_utc, views, primary_topic, raw_text,
-                                   {TOPICS_OF} ts,
+                                   {TOPICS_OF} ts, headline,
                                    case when {POS} then 1 when {NEG} then -1 else 0 end tone
                             from posts where {cond}
                             order by {POST_ORDER.get(body.get("sort"), POST_ORDER["new"])}
@@ -751,7 +763,7 @@ def posts_page(body):
     items = []
     for r in rows[0]:
         local = r["date_utc"].astimezone(timezone.utc) + timedelta(hours=5)
-        head, text = post_parts(r["raw_text"], 320)
+        head, text = post_parts(r["raw_text"], 320, r["headline"])
         items.append({"ch": r["channel"], "at": local.strftime("%Y-%m-%dT%H:%M"), "v": r["views"],
                       "t": r["primary_topic"], "ts": list(r["ts"]), "s": r["tone"], "head": head, "text": text,
                       "link": _post_link(r["channel"], r["message_id"])})

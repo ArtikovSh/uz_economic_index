@@ -223,6 +223,7 @@ def _to_label(d):
         "is_economic": int(econ),
         "primary_topic": topic if econ else "non_economic",
         "topics": ",".join(topics),
+        "headline": " ".join(str(d.get("headline") or "").split())[:240] or None,
         "relevance": _num(d.get("relevance"), 0.0, 1.0) if econ else 0.0,
         "sentiment": _num(d.get("sentiment"), -1.0, 1.0) if econ else 0.0,
         "is_ad": int(bool(d.get("is_ad"))),
@@ -378,7 +379,7 @@ def label_pending(pending, save=None, sticky=None):
     being labelled).
     """
     status = {"error": None, "warnings": [], "new": 0, "todo": 0, "quota": False}
-    for c in ("primary_topic", "topics"):                 # text labels into possibly empty columns
+    for c in ("primary_topic", "topics", "headline"):     # text labels into possibly empty columns
         pending[c] = (pending[c] if c in pending else None)
         pending[c] = pending[c].astype(object)
     todo = pending[pending["label_version"].astype(str) != LLM_LABEL_VERSION]

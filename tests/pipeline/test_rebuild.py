@@ -55,6 +55,7 @@ def run(monkeypatch, labeller):
     monkeypatch.setattr(rebuild, "label_pending", labeller)
     monkeypatch.setattr(rebuild, "target_day", lambda: date(2026, 10, 3))
     monkeypatch.setattr(rebuild, "write_csv", lambda df, path: written.__setitem__(path, df.copy()))
+    monkeypatch.setattr(rebuild, "write_ledger", lambda df: written.__setitem__("ledger", df.copy()))
     monkeypatch.setattr(rebuild, "save_pending", lambda df: saved.append(df.copy()))
     monkeypatch.setattr(rebuild, "export_results", lambda *a, **k: None)
     return rebuild.main(), written, saved
@@ -63,7 +64,7 @@ def run(monkeypatch, labeller):
 def test_rebuild_relabels_everything_and_recomputes(monkeypatch):
     code, written, saved = run(monkeypatch, fake_labeller())
     assert code == 0
-    ledger = written[rebuild.MASTER_CSV]
+    ledger = written["ledger"]
     assert len(ledger) == 5 and set(ledger["label_version"]) == {LLM_LABEL_VERSION}
     assert ledger.set_index("message_id")["tone"].to_dict() == {1: 1, 2: -1, 3: 0, 4: 1, 5: 0}
     assert len(saved[0]) == 1 and saved[0]["label_version"].iloc[0] == LLM_LABEL_VERSION   # still waiting

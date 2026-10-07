@@ -451,7 +451,7 @@ def contributions(topics, econ):
 
 
 def top_posts(q, lo, hi, n=5):
-    return q(f"""select channel, message_id, views, primary_topic, raw_text,
+    return q(f"""select channel, message_id, views, primary_topic, raw_text, headline,
                         case when {POS} then 'pos' when {NEG} then 'neg' else 'neu' end tone
                  from posts where {DAY} between %s and %s and {COUNTED}
                  order by relevance*ln(1+views+2*forwards) desc, views desc limit %s""", (lo, hi, n)) or []
@@ -517,7 +517,7 @@ def top_text(rows, data, lang, titles, parts, em=None):
         ch = str(r["channel"])
         link = f"https://t.me/{ch.lstrip('@')}/{r['message_id']}"
         name = escape(titles.get(ch, ch.lstrip("@")))
-        head, body = parts(r["raw_text"])
+        head, body = parts(r["raw_text"], headline=r.get("headline"))
         mark = ic(em, {"pos": "rise", "neg": "fall"}.get(r["tone"], ""))
         meta = (f'<a href="{escape(link)}">{name}</a> · {escape(topic_name(lang, r["primary_topic"]))} · '
                 f'{mark}{escape(tr(lang, "tone")[r["tone"]])}')

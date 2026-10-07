@@ -14,12 +14,12 @@ import sys
 
 import pandas as pd
 
-from config import INDICES_CSV, LLM_LABEL_VERSION, MASTER_CSV
+from config import INDICES_CSV, LLM_LABEL_VERSION
 from excel_exporter import export_results
 from indicator import ledger_rows, new_index_rows
 from llm_classifier import label_pending
 from store import (INDEX_COLS, LABEL_COLS, PENDING_COLS, RAW_COLS, load_indices, load_ledger, load_pending,
-                   post_keys, save_pending, typed, write_csv)
+                   post_keys, save_pending, typed, write_csv, write_ledger)
 
 
 def target_day():
@@ -80,7 +80,7 @@ def main() -> int:
                              target_day(), channels)
     indices = fix_day_notes(indices, new_ledger)
 
-    write_csv(new_ledger, MASTER_CSV)
+    write_ledger(new_ledger)
     write_csv(indices[INDEX_COLS], INDICES_CSV)
     save_pending(new_pending)
     export_results(indices, new_ledger, len(new_pending))

@@ -32,8 +32,8 @@ HEADERS = {"Kunlik": DAILY, "Haftalik": PERIOD, "Oylik": PERIOD, "Choraklik": PE
 
 @pytest.fixture(scope="module")
 def real_data():
-    return (pd.read_csv(ROOT / "data/indices.csv").reindex(columns=store.INDEX_COLS),
-            pd.read_csv(ROOT / "data/messages.csv").reindex(columns=store.LEDGER_COLS))
+    return (pd.read_csv(ROOT / "tests/fixtures/indices_w40.csv").reindex(columns=store.INDEX_COLS),
+            pd.read_csv(ROOT / "tests/fixtures/messages_w40.csv").reindex(columns=store.LEDGER_COLS))
 
 
 @pytest.fixture(scope="module")
@@ -60,7 +60,7 @@ def test_real_tables_schema_counts_and_types(real_data, real_tables):
     assert daily["Sana"].is_monotonic_increasing
     channels = ledger.groupby(ledger["date_local"].str[:10])["channel"].nunique()
     assert daily["Kanallar"].tolist() == [channels[d] for d in daily["Sana"]]
-    assert daily["Hafta kuni"].iloc[0] == "chorshanba"
+    assert daily["Hafta kuni"].iloc[0] == "dushanba"                # the sample starts on Mon 28 Sep
     assert len(real_tables["Xabarlar"]) == len(ledger)
 
 
@@ -301,7 +301,8 @@ def test_sheets_migration_and_chunking(monkeypatch, real_data, real_tables, full
     for name, frame in real_tables.items():
         assert sheet.tabs[name].values == [HEADERS[name], *sheets_sync._rows(frame)]
     assert old_posts.clears == 1
-    assert old_posts.appends == [2000, 2000, len(real_data[1]) - 4000]
+    n = len(real_data[1])
+    assert old_posts.appends == [2000] * (n // 2000) + ([n % 2000] if n % 2000 else [])
     info = dict(sheet.tabs["Info"].values[1:])
     assert info["Label versiyasi"] == sheets_sync.LLM_LABEL_VERSION
     assert info["Kun yakunlanishini kutayotgan xabarlar"] == 3

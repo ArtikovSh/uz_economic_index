@@ -14,13 +14,13 @@ import sys
 import pandas as pd
 
 from channel_list import active_channels
-from config import MASTER_CSV, INDICES_CSV
+from config import INDICES_CSV
 from excel_exporter import export_results
 from indicator import finalize_days, new_index_rows
 from llm_classifier import label_pending
 from scraper import target_day_range, collected_channels, run_scraper, SessionError
-from store import (RAW_COLS, LEDGER_COLS, INDEX_COLS, load_ledger, load_pending, load_indices,
-                   save_pending, add_to_pending, append_rows, migrate_legacy)
+from store import (RAW_COLS, INDEX_COLS, load_ledger, load_pending, load_indices,
+                   save_pending, add_to_pending, append_rows, append_ledger)
 
 PROBLEMS_FILE = "run_problems.txt"     # read by the workflow's alert step
 
@@ -28,7 +28,6 @@ PROBLEMS_FILE = "run_problems.txt"     # read by the workflow's alert step
 def main() -> int:
     channels = active_channels()
     problems = []
-    migrate_legacy()
     ledger, pending, indices = load_ledger(), load_pending(), load_indices()
 
     start_utc, end_utc, target = target_day_range()
@@ -65,7 +64,7 @@ def main() -> int:
 
     print("--- STEP 3: Finalise days and append to the posts table ---")
     rows, pending, days = finalize_days(pending, ledger, target, channels)
-    ledger = append_rows(MASTER_CSV, ledger, rows, LEDGER_COLS)    # ledger first, then pending
+    ledger = append_ledger(ledger, rows)                            # ledger first, then pending
     save_pending(pending)
     print(f"  finalised {len(days)} day(s): {', '.join(map(str, days)) or '-'} | "
           f"{len(pending)} posts still waiting")

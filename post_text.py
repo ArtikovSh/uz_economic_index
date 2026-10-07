@@ -25,10 +25,21 @@ def _cut(text, limit):
     return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0].rstrip(".,;:—– ") + "…"
 
 
-def post_parts(raw, body_limit=100):
-    """(headline, text) of a post: the first line in full (or the first sentence of a one-line
-    post), and at most `body_limit` characters of the rest."""
+def _same(a, b):
+    key = lambda s: re.sub(r"[\W_]+", "", str(s)).lower()
+    return bool(key(a)) and key(a) == key(b)
+
+
+def post_parts(raw, body_limit=100, headline=None):
+    """(headline, text) of a post, with at most `body_limit` characters of text. The model's
+    headline (labels v6) wins: when it is the post's own first line the text is the rest, else
+    the text is the whole post. Without one: the first line (or the first sentence of a
+    one-line post) and the rest."""
     lines = _clean_lines(raw)
+    if headline and str(headline).strip():
+        head = " ".join(str(headline).split())
+        rest = lines[1:] if lines and _same(lines[0], head) else lines
+        return _cut(head, 240), _cut(" ".join(rest), body_limit)
     if not lines:
         return "", ""
     head, rest = lines[0], " ".join(lines[1:])

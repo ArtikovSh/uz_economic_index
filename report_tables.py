@@ -75,7 +75,8 @@ def _posts(ledger):
             reason = next((label for flag, label in (("is_ad", "reklama"), ("is_digest", "dayjest"),
                                                     ("is_foreign", "xorijiy"))
                            if pd.notna(post[flag]) and post[flag]), "iqtisodiy emas")
-        head, body = post_parts(None if pd.isna(post["raw_text"]) else post["raw_text"], body_limit=200)
+        head, body = post_parts(None if pd.isna(post["raw_text"]) else post["raw_text"], body_limit=200,
+                                headline=None if pd.isna(post.get("headline")) else post.get("headline"))
         local = pd.Timestamp(post["date_local"])
         link = f"https://t.me/{post['channel'].lstrip('@')}/{int(post['message_id'])}"
         rows.append([local.strftime("%Y-%m-%d"), local.strftime("%H:%M"), post["channel"], head, body,
