@@ -18,7 +18,8 @@ import time
 
 import requests
 
-from config import CHANNELS, GEMINI_API_KEY, OPENAI_API_KEY, LLM_PROVIDER, is_openai_key
+from channel_list import active_channels
+from config import GEMINI_API_KEY, OPENAI_API_KEY, LLM_PROVIDER, is_openai_key
 
 GOLD_PASS = 0.85        # share of the control set the model must get right
 LLM_CHECK_SECONDS = 240  # the LLM check gives up after this
@@ -27,12 +28,14 @@ LLM_CHECK_SECONDS = 240  # the LLM check gives up after this
 def check_telegram():
     from scraper import SessionError, open_client
 
+    channels = active_channels()
+
     async def run():
         client = await open_client()
         try:
             me = await client.get_me()
             bad = []
-            for ch in CHANNELS:
+            for ch in channels:
                 try:
                     await client.get_entity(ch)
                 except Exception as e:
@@ -40,7 +43,7 @@ def check_telegram():
             who = me.username or me.first_name
             if bad:
                 return False, f"sessiya ishlayapti ({who}), lekin kanal topilmadi: {', '.join(bad)}"
-            return True, f"sessiya ishlayapti ({who}), {len(CHANNELS)} ta kanal topildi"
+            return True, f"sessiya ishlayapti ({who}), {len(channels)} ta kanal topildi"
         finally:
             await client.disconnect()
 

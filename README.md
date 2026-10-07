@@ -141,6 +141,10 @@ Hosil bo'lgan `session_string.txt` ichidagini `TG_SESSION_STRING` secret'iga qo'
 faylni o'chiring. Bu sessiyani **faqat CI'da** ishlating va Telegram → Sozlamalar →
 Qurilmalar ro'yxatidagi "Telethon" seansini o'chirmang.
 
+Kanallar admin panelidan boshqariladi; quvur bazadagi `channels` jadvalidan faol kanallarni oladi.
+Baza sozlanmagan, jadval yo'q, o'qishda xato yoki faol kanallar ro'yxati bo'sh bo'lsa,
+`config.CHANNELS` zaxira ro'yxati ishlatiladi.
+
 ## Testlar
 
 `tests/api` kirish tizimi, admin amallari va Mini App API'ni lokal Postgres bilan tekshiradi.

@@ -36,7 +36,10 @@ soni bo'yicha hisoblanadi, kunlik qiymatlarning o'rtachasi emas.
 
 ## 2. Xabarlarni yig'ish
 
-- **Kanallar:** umumiy va biznes/iqtisod media (`config.CHANNELS`).
+- **Kanallar:** umumiy va biznes/iqtisod media. Ro'yxatni admin Mini App'da boshqaradi
+  (`channels` jadvali); qo'shilgan yoki to'xtatilgan kanal keyingi kunlik yig'imdan
+  kuchga kiradi, yakunlangan kunlar o'zgarmaydi. Baza ishlamasa `config.CHANNELS`
+  zaxira ro'yxati ishlatiladi.
 - **Bir kun — bir run:** run har kuni Toshkent vaqti bilan **00:05** da boshlanadi va
   **2 kun oldingi** to'liq kunni yig'adi. Masalan, 6-oktabr 00:05 dagi run 4-oktabr
   postlarini (00:00:00–23:59:59) yig'adi. Shu sababli kunning oxirgi posti yig'ish

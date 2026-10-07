@@ -53,6 +53,7 @@ jobs:
         if: inputs.backfill_days != '' || github.event_name == 'schedule'
         continue-on-error: true
         env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION_STRING: ${{ secrets.TG_SESSION_STRING }}
@@ -63,6 +64,7 @@ jobs:
         id: pipeline
         continue-on-error: true
         env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION_STRING: ${{ secrets.TG_SESSION_STRING }}

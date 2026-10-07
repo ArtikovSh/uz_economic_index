@@ -13,7 +13,8 @@ import sys
 
 import pandas as pd
 
-from config import CHANNELS, MASTER_CSV, INDICES_CSV
+from channel_list import active_channels
+from config import MASTER_CSV, INDICES_CSV
 from excel_exporter import export_results
 from indicator import finalize_days, new_index_rows
 from llm_classifier import label_pending
@@ -25,6 +26,7 @@ PROBLEMS_FILE = "run_problems.txt"     # read by the workflow's alert step
 
 
 def main() -> int:
+    channels = active_channels()
     problems = []
     migrate_legacy()
     ledger, pending, indices = load_ledger(), load_pending(), load_indices()
@@ -34,7 +36,7 @@ def main() -> int:
           f"[{start_utc:%Y-%m-%d %H:%M} .. {end_utc:%Y-%m-%d %H:%M}) ---")
     seen = pd.concat([ledger[RAW_COLS], pending[RAW_COLS]], ignore_index=True)
     done = collected_channels(seen, start_utc, end_utc)
-    todo = [ch for ch in CHANNELS if ch not in done]
+    todo = [ch for ch in channels if ch not in done]
     if not todo:
         print("All channels already collected for this day — nothing to scrape "
               "(each post is measured once).")
@@ -62,14 +64,14 @@ def main() -> int:
                         + ("; ".join(status["warnings"]) or "no reason given")[:400])
 
     print("--- STEP 3: Finalise days and append to the posts table ---")
-    rows, pending, days = finalize_days(pending, ledger, target, CHANNELS)
+    rows, pending, days = finalize_days(pending, ledger, target, channels)
     ledger = append_rows(MASTER_CSV, ledger, rows, LEDGER_COLS)    # ledger first, then pending
     save_pending(pending)
     print(f"  finalised {len(days)} day(s): {', '.join(map(str, days)) or '-'} | "
           f"{len(pending)} posts still waiting")
 
     print("--- STEP 4: Append closed periods to the indices table ---")
-    idx_new = new_index_rows(ledger, indices, pending, target, CHANNELS)
+    idx_new = new_index_rows(ledger, indices, pending, target, channels)
     indices = append_rows(INDICES_CSV, indices, idx_new, INDEX_COLS)
     for r in idx_new.itertuples(index=False):
         print(f"  {r.period_type:6} {r.period:10}  EAI {r.EAI:5}%  ESI {r.ESI:+6}  "

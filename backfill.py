@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from config import CHANNELS
+from channel_list import active_channels
 from scraper import TASHKENT, SessionError, collected_channels, run_scraper
 from store import RAW_COLS, add_to_pending, load_ledger, load_pending, save_pending
 
@@ -35,6 +35,7 @@ def window(day):
 
 
 def main(spec):
+    channels = active_channels()
     ledger, pending = load_ledger(), load_pending()
     last_final = pd.to_datetime(ledger["date_local"].astype(str).str[:10]).max().date() if len(ledger) else None
     refused, failed = [], []
@@ -44,7 +45,7 @@ def main(spec):
             continue
         start, end = window(day)
         seen = pd.concat([ledger[RAW_COLS], pending[RAW_COLS]], ignore_index=True)
-        todo = [ch for ch in CHANNELS if ch not in collected_channels(seen, start, end)]
+        todo = [ch for ch in channels if ch not in collected_channels(seen, start, end)]
         if not todo:
             print(f"{day}: already collected")
             continue

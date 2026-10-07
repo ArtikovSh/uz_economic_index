@@ -33,7 +33,7 @@ def test_collects_only_missing_days_and_channels(monkeypatch):
         rows = [raw(ch, 100 + len(calls) * 10 + i, end.strftime("%Y-%m-%d 08:00:00")) for i, ch in enumerate(channels)]
         return pd.DataFrame(rows, columns=RAW_COLS), ({"@b": "ValueError: no such channel"} if len(calls) == 2 else {})
 
-    monkeypatch.setattr(backfill, "CHANNELS", ["@a", "@b"])
+    monkeypatch.setattr(backfill, "active_channels", lambda: ["@a", "@b"])
     monkeypatch.setattr(backfill, "load_ledger", lambda: ledger)
     monkeypatch.setattr(backfill, "load_pending", lambda: pending)
     monkeypatch.setattr(backfill, "save_pending", lambda df: saved.append(len(df)))
