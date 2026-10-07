@@ -17,7 +17,7 @@ export function renderTopics(ctx) {
   const { cur } = ctx.period();
   const rows = topicsOf(model, cur);
   const maxN = Math.max(1, ...rows.map((x) => x.n));
-  const parts = rows.map((x) => ({ key: x.key, v: 100 * (x.pos - x.neg) / cur.econ }))
+  const parts = rows.map((x) => ({ key: x.key, v: 100 * (x.wpos - x.wneg) / cur.econ }))
     .filter((x) => Math.abs(x.v) > 0.005).sort((a, b) => b.v - a.v);
   const maxV = Math.max(0.1, ...parts.map((x) => Math.abs(x.v)));
 

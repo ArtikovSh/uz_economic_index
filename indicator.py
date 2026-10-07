@@ -58,6 +58,8 @@ def ledger_rows(df):
     df[flags] = df[flags].astype(float).fillna(0).astype(int)
     df["ad_marker"] = df["raw_text"].apply(has_ad_marker).astype(int)
     df["is_ad"] = (df["is_ad"] | df["ad_marker"]).astype(int)
+    topics = df["topics"] if "topics" in df else pd.Series(index=df.index, dtype=object)
+    df["topics"] = topics.where(topics.notna() & (topics.astype(str) != ""), df["primary_topic"])
     df["nonad"] = 1 - df["is_ad"]
     df["econ"] = ((df["nonad"] == 1) & (df["is_economic"] == 1)
                   & (df["is_digest"] == 0) & (df["is_foreign"] == 0)).astype(int)

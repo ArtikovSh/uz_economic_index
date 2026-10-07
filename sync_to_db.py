@@ -44,6 +44,18 @@ create table if not exists indices (
 );
 alter table indices enable row level security;
 """
+# labels v6 carry every topic of a post; the view the app reads exposes them
+TOPICS_DDL = """
+do $$ begin
+  if to_regclass('labels') is not null and to_regclass('messages') is not null then
+    alter table labels add column if not exists topics text[];
+    create or replace view posts as
+      select m.*, l.is_economic, l.primary_topic, l.relevance, l.sentiment,
+             l.is_ad, l.is_digest, l.is_foreign, l.label_version, l.topics
+      from messages m left join labels l
+        on m.channel = l.channel and m.message_id = l.message_id;
+  end if;
+end $$"""
 # tables of the pre-ledger layout, no longer read or written by anything
 LEGACY_DDL = "drop table if exists subscriptions, app_users, daily_index, monthly_index cascade"
 
@@ -65,6 +77,11 @@ def _py(v):
     return v.item() if hasattr(v, "item") else v
 
 
+def _topic_list(r):
+    raw = _py(getattr(r, "topics", None))
+    return [t for t in str(raw).split(",") if t] if raw else [_py(r.primary_topic)]
+
+
 def sync_posts(conn, ledger):
     if ledger.empty:
         print("  messages/labels: nothing to sync")
@@ -81,7 +98,7 @@ def sync_posts(conn, ledger):
             _py(r.raw_text)) for r in todo.itertuples()]
     lab = [(_py(r.channel), int(r.message_id), bool(r.is_economic), _py(r.primary_topic),
             _py(r.relevance), _py(r.sentiment), bool(r.is_ad), bool(r.is_digest),
-            bool(r.is_foreign), _py(r.label_version)) for r in todo.itertuples()]
+            bool(r.is_foreign), _py(r.label_version), _topic_list(r)) for r in todo.itertuples()]
     with conn.cursor() as cur:
         cur.executemany("""
             insert into messages (channel, message_id, date_utc, views, forwards, raw_text)
@@ -91,13 +108,14 @@ def sync_posts(conn, ledger):
               forwards=excluded.forwards, raw_text=excluded.raw_text""", msg)
         cur.executemany("""
             insert into labels (channel, message_id, is_economic, primary_topic, relevance,
-                                sentiment, is_ad, is_digest, is_foreign, label_version)
-            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                sentiment, is_ad, is_digest, is_foreign, label_version, topics)
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             on conflict (channel, message_id) do update set
               is_economic=excluded.is_economic, primary_topic=excluded.primary_topic,
               relevance=excluded.relevance, sentiment=excluded.sentiment,
               is_ad=excluded.is_ad, is_digest=excluded.is_digest,
-              is_foreign=excluded.is_foreign, label_version=excluded.label_version""", lab)
+              is_foreign=excluded.is_foreign, label_version=excluded.label_version,
+              topics=excluded.topics""", lab)
     conn.commit()
     print(f"  messages/labels: synced {len(todo)} posts")
 
@@ -137,6 +155,7 @@ def main(full=False) -> int:
     try:
         with conn.cursor() as cur:
             cur.execute(LEGACY_DDL)
+            cur.execute(TOPICS_DDL)
         conn.commit()
         sync_posts(conn, load_ledger())
         sync_indices(conn, load_indices(), full)

@@ -51,7 +51,7 @@ OPENAI_API = "https://api.openai.com/v1"
 OPENAI_DEFAULTS = ["gpt-6-luna", "gpt-5-mini"]
 OPENAI_MAX_OUTPUT = 32000          # a cap on reasoning + answer tokens per request
 
-UNLABELLED = {"is_economic": 0, "primary_topic": "non_economic", "relevance": 0.0,
+UNLABELLED = {"is_economic": 0, "primary_topic": "non_economic", "topics": "non_economic", "relevance": 0.0,
               "sentiment": 0.0, "is_ad": 0, "is_digest": 0, "is_foreign": 0}
 
 
@@ -217,9 +217,12 @@ def _to_label(d):
     if topic not in CATEGORIES:
         topic = "non_economic"
     econ = bool(d.get("economic")) and topic != "non_economic"
+    others = [t for t in (d.get("other_topics") or []) if t in CATEGORIES and t != "non_economic"]
+    topics = list(dict.fromkeys([topic] + others))[:3] if econ else ["non_economic"]
     return {
         "is_economic": int(econ),
         "primary_topic": topic if econ else "non_economic",
+        "topics": ",".join(topics),
         "relevance": _num(d.get("relevance"), 0.0, 1.0) if econ else 0.0,
         "sentiment": _num(d.get("sentiment"), -1.0, 1.0) if econ else 0.0,
         "is_ad": int(bool(d.get("is_ad"))),
@@ -375,6 +378,9 @@ def label_pending(pending, save=None, sticky=None):
     being labelled).
     """
     status = {"error": None, "warnings": [], "new": 0, "todo": 0, "quota": False}
+    for c in ("primary_topic", "topics"):                 # text labels into possibly empty columns
+        pending[c] = (pending[c] if c in pending else None)
+        pending[c] = pending[c].astype(object)
     todo = pending[pending["label_version"].astype(str) != LLM_LABEL_VERSION]
     status["todo"] = len(todo)
     if todo.empty:
@@ -416,7 +422,7 @@ def label_pending(pending, save=None, sticky=None):
         nonlocal since_save, changed
         for i, lab in zip(bidx, labels):
             for c in LABEL_COLS:
-                pending.at[i, c] = lab[c]
+                pending.at[i, c] = lab.get(c)
             pending.at[i, "label_version"] = LLM_LABEL_VERSION
             pending.at[i, "label_model"] = label_model
             pending.at[i, "label_error"] = None

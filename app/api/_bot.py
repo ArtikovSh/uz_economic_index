@@ -381,11 +381,16 @@ def _f(v):
 
 
 def _topics(q, lo, hi):
-    rows = q(f"""select primary_topic t, count(*) n, count(*) filter (where {POS}) p,
-                        count(*) filter (where {NEG}) g
-                 from posts where {COUNTED} and {DAY} between %s and %s
+    """Per topic: posts touching it (n, p, g) and its share of ESI (wp - wg; a post with k topics
+    gives each 1/k, so the shares add up to ESI)."""
+    ts = "coalesce(topics, array[primary_topic])"
+    rows = q(f"""select t, count(*) n, count(*) filter (where {POS}) p, count(*) filter (where {NEG}) g,
+                        sum(case when {POS} then 1.0 / k else 0 end)::float wp,
+                        sum(case when {NEG} then 1.0 / k else 0 end)::float wg
+                 from (select *, cardinality({ts}) k from posts
+                       where {COUNTED} and {DAY} between %s and %s) x, unnest({ts}) t
                  group by 1 order by 2 desc, 1""", (lo, hi)) or []
-    return [{"t": r["t"], "n": r["n"], "p": r["p"], "g": r["g"]} for r in rows]
+    return [{"t": r["t"], "n": r["n"], "p": r["p"], "g": r["g"], "wp": r["wp"], "wg": r["wg"]} for r in rows]
 
 
 def _series(rows, end, step, n):
@@ -438,7 +443,8 @@ def contributions(topics, econ):
     """Topics that lifted and pulled down ESI most (net contribution, two of each)."""
     if not econ:
         return [], []
-    net = sorted(((x["p"] - x["g"], x["n"], x["t"]) for x in topics if x["p"] != x["g"]), key=lambda v: (-v[0], -v[1]))
+    share = lambda x: round(x.get("wp", x["p"]) - x.get("wg", x["g"]), 4)
+    net = sorted(((share(x), x["n"], x["t"]) for x in topics if share(x)), key=lambda v: (-v[0], -v[1]))
     up = [t for v, _, t in net if v > 0][:2]
     down = [t for v, _, t in sorted(net, key=lambda v: (v[0], -v[1])) if v < 0][:2]
     return up, down

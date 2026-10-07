@@ -79,10 +79,18 @@ def _posts(ledger):
         local = pd.Timestamp(post["date_local"])
         link = f"https://t.me/{post['channel'].lstrip('@')}/{int(post['message_id'])}"
         rows.append([local.strftime("%Y-%m-%d"), local.strftime("%H:%M"), post["channel"], head, body,
-                     TOPICS.get(post["primary_topic"]), {1: "ijobiy", 0: "neytral", -1: "salbiy"}.get(post["tone"]),
+                     ", ".join(TOPICS.get(t, t) for t in _topic_keys(post)),
+                     {1: "ijobiy", 0: "neytral", -1: "salbiy"}.get(post["tone"]),
                      "ha" if counted else "yo'q", reason, _number(post["views"], True),
                      _number(post["forwards"], True), link])
     return _table(rows, POST_COLUMNS)
+
+
+def _topic_keys(post):
+    """Every topic of a post (labels v6), else its one topic."""
+    raw = post.get("topics")
+    keys = [t for t in str(raw).split(",") if t] if isinstance(raw, str) and raw else []
+    return keys or [post["primary_topic"]]
 
 
 def _topics(ledger, days):
@@ -90,13 +98,18 @@ def _topics(ledger, days):
     posts["_day"] = posts["date_local"].str[:10]
     posts = posts.loc[posts["_day"].isin(days)]
     totals = posts.groupby("_day").size()
+    # a post counts in each of its topics; its share of ESI is split equally between them
+    posts["_topic"] = [_topic_keys(p) for p in posts.to_dict("records")]
+    posts["_weight"] = [1.0 / len(keys) for keys in posts["_topic"]]
+    posts = posts.explode("_topic")
     rows = []
-    for (day, topic), group in posts.groupby(["_day", "primary_topic"], sort=True):
+    for (day, topic), group in posts.groupby(["_day", "_topic"], sort=True):
         n = len(group)
         pos, neu, neg = (int((group["tone"] == tone).sum()) for tone in (1, 0, -1))
+        share = (group["_weight"] * group["tone"].fillna(0)).sum()
         # Keep contributions additive; exporters display one decimal without rounding the values.
         rows.append([day, TOPICS.get(topic), n, pos, neu, neg, round(100 * (pos - neg) / n, 1),
-                     100 * (pos - neg) / int(totals[day])])
+                     100 * float(share) / int(totals[day])])
     return _table(rows, TOPIC_COLUMNS).sort_values(["Sana", "Xabarlar"], ascending=[True, False],
                                                   kind="stable").reset_index(drop=True)
 

@@ -117,6 +117,19 @@ def q_many(*queries):
 
 
 _SCHEMA_READY = False
+# labels v6 carry every topic of a post (sync_to_db.py adds them too; whichever runs first)
+POSTS_DDL = """
+do $$ begin
+  if to_regclass('labels') is not null and to_regclass('messages') is not null then
+    alter table labels add column if not exists topics text[];
+    create or replace view posts as
+      select m.*, l.is_economic, l.primary_topic, l.relevance, l.sentiment,
+             l.is_ad, l.is_digest, l.is_foreign, l.label_version, l.topics
+      from messages m left join labels l
+        on m.channel = l.channel and m.message_id = l.message_id;
+  end if;
+end $$"""
+TOPICS_OF = "coalesce(topics, array[primary_topic])"
 
 
 def ensure_schema():
@@ -125,6 +138,7 @@ def ensure_schema():
     if not _SCHEMA_READY:
         q(auth.SCHEMA)
         q(bot.SCHEMA)
+        q(POSTS_DDL)
         channels.ensure(q)
         _SCHEMA_READY = True
 
@@ -596,9 +610,14 @@ def _build_stats():
                 where period_type='kun' order by period""", None),
             (f"select {DAY}::text d, channel, count(*) n from posts where {DAY} in {FINAL_DAYS} group by 1, 2",
              None),
-            (f"""select {DAY}::text d, primary_topic t, count(*) n,
-                        count(*) filter (where {POS}) p, count(*) filter (where {NEG}) g
-                 from posts where {COUNTED} and {DAY} in {FINAL_DAYS} group by 1, 2""", None))
+            # a post counts in each of its topics; its share of ESI (wp, wg) is split between them
+            (f"""select {DAY}::text d, t, count(*) n,
+                        count(*) filter (where {POS}) p, count(*) filter (where {NEG}) g,
+                        round(sum(case when {POS} then 1.0 / k else 0 end), 4)::float wp,
+                        round(sum(case when {NEG} then 1.0 / k else 0 end), 4)::float wg
+                 from (select *, cardinality({TOPICS_OF}) k from posts
+                       where {COUNTED} and {DAY} in {FINAL_DAYS}) x, unnest({TOPICS_OF}) t
+                 group by 1, 2""", None))
     except psycopg.errors.UndefinedTable:
         return {"days": [], "topics": [], "channels": [], "channels_total": 0}
     day_ix = {r["d"]: i for i, r in enumerate(days)}
@@ -621,8 +640,9 @@ def _build_stats():
         # [day, posts, nonad, econ, pos, neg, channels collected]
         "days": [[r["d"], r["posts"], r["nonad"], r["econ"], r["pos"], r["neg"], per_day.get(r["d"], 0)]
                  for r in days],
-        # [index into days, topic, counted posts, positive, negative]
-        "topics": [[day_ix[r["d"]], r["t"], r["n"], r["p"], r["g"]] for r in topics if r["d"] in day_ix],
+        # [index into days, topic, counted posts, positive, negative, ESI share: positive, negative]
+        "topics": [[day_ix[r["d"]], r["t"], r["n"], r["p"], r["g"], r["wp"], r["wg"]]
+                   for r in topics if r["d"] in day_ix],
         "channels": [{"id": c, "name": names.get(c, str(c).lstrip("@"))}
                      for c, _ in sorted(per_channel.items(), key=lambda x: -x[1])],
         "channels_total": len(recent_channels),
@@ -697,7 +717,7 @@ def posts_page(body):
     where, params = [COUNTED, f"{DAY} between %s and %s", f"{DAY} in {FINAL_DAYS}"], [lo, hi]
     topics = [t for t in body.get("topics") or [] if t in TOPICS]
     if topics:
-        where.append("primary_topic = any(%s)"); params.append(topics)
+        where.append(f"{TOPICS_OF} && %s::text[]"); params.append(topics)
     channels = [str(c) for c in body.get("channels") or [] if isinstance(c, str)][:20]
     if channels:
         where.append("channel = any(%s)"); params.append(channels)
@@ -711,6 +731,7 @@ def posts_page(body):
     queries = [(f"select count(*) n from posts where {cond}", params)]
     if not body.get("count_only"):
         queries.append((f"""select channel, message_id, date_utc, views, primary_topic, raw_text,
+                                   {TOPICS_OF} ts,
                                    case when {POS} then 1 when {NEG} then -1 else 0 end tone
                             from posts where {cond}
                             order by {POST_ORDER.get(body.get("sort"), POST_ORDER["new"])}
@@ -727,7 +748,7 @@ def posts_page(body):
         local = r["date_utc"].astimezone(timezone.utc) + timedelta(hours=5)
         head, text = post_parts(r["raw_text"], 320)
         items.append({"ch": r["channel"], "at": local.strftime("%Y-%m-%dT%H:%M"), "v": r["views"],
-                      "t": r["primary_topic"], "s": r["tone"], "head": head, "text": text,
+                      "t": r["primary_topic"], "ts": list(r["ts"]), "s": r["tone"], "head": head, "text": text,
                       "link": _post_link(r["channel"], r["message_id"])})
     return {"ok": True, "total": total, "items": items, "more": offset + len(items) < total}
 

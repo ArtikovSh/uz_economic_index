@@ -18,11 +18,11 @@ import pandas as pd
 from config import MASTER_CSV, INDICES_CSV, PENDING_CSV, DATA_DIR, LLM_LABEL_VERSION
 
 RAW_COLS = ["channel", "message_id", "date", "views", "forwards", "raw_text", "scraped_at"]
-LABEL_COLS = ["is_economic", "primary_topic", "relevance", "sentiment",
+LABEL_COLS = ["is_economic", "primary_topic", "topics", "relevance", "sentiment",
               "is_ad", "is_digest", "is_foreign"]
 PENDING_COLS = RAW_COLS + LABEL_COLS + ["label_version", "label_model", "label_error"]
 LEDGER_COLS = ["date_local", "channel", "message_id", "date", "views", "forwards", "scraped_at",
-               "primary_topic", "is_economic", "relevance", "sentiment", "is_ad", "ad_marker",
+               "primary_topic", "topics", "is_economic", "relevance", "sentiment", "is_ad", "ad_marker",
                "is_digest", "is_foreign", "nonad", "econ", "tone", "label_version", "label_model",
                "raw_text"]
 INDEX_COLS = ["period_type", "period", "start", "end", "days", "days_expected", "posts",
@@ -41,7 +41,7 @@ def write_csv(df: pd.DataFrame, path: str) -> None:
     os.replace(tmp, path)
 
 
-TEXT_COLS = {"channel", "date", "raw_text", "scraped_at", "primary_topic", "label_version",
+TEXT_COLS = {"channel", "date", "raw_text", "scraped_at", "primary_topic", "topics", "label_version",
              "label_model", "label_error", "date_local", "period_type", "period", "start", "end",
              "note"}
 
@@ -98,7 +98,12 @@ def append_rows(path, existing, new, cols):
             f.seek(-1, os.SEEK_END)
             ends_with_newline = f.read(1) == b"\n"
         if header != ",".join(cols):
-            raise RuntimeError(f"{path}: unexpected header, refusing to append")
+            have = header.split(",")
+            if not set(have) < set(cols):
+                raise RuntimeError(f"{path}: unexpected header, refusing to append")
+            # a column added to the layout: rewrite once with it (blank in old rows), values unchanged
+            write_csv(pd.read_csv(path, dtype=str, keep_default_na=False).reindex(columns=cols, fill_value=""), path)
+            ends_with_newline = True
         with open(path, "a", encoding="utf-8", newline="") as f:
             if not ends_with_newline:
                 f.write("\n")

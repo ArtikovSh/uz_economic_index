@@ -38,7 +38,7 @@ export function renderPosts(ctx) {
     return `
     <article class="pcard">
       <div class="ptop"><span class="tone-chip ${cls}">${icon(ic, 13, 2.2)}${esc(t(label))}</span>
-        <span class="ptopic">${esc(topicName(p.t))}</span><span class="ptime">${esc(postTime(p.at))}</span></div>
+        <span class="ptopic">${esc((p.ts || [p.t]).map(topicName).join(' · '))}</span><span class="ptime">${esc(postTime(p.at))}</span></div>
       ${p.head ? `<h3 class="phead">${esc(p.head)}</h3>` : ''}
       ${p.text ? `<p class="ptext">${esc(p.text)}</p>` : ''}
       <div class="pfoot"><b>${esc(channelName(p.ch))}</b>

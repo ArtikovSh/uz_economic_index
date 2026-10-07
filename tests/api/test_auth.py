@@ -285,13 +285,15 @@ def test_dashboard_stats_and_posts(server):
                 c.execute("insert into labels values (%s,%s,%s,%s,0.5,%s,%s,false,false,'v4')", (ch, mid, econ, topic, s, ad))
             c.execute("""insert into indices (period_type, period, start_date, end_date, posts, nonad, econ, pos, neg)
                          values ('kun', '2026-09-02', '2026-09-02', '2026-09-02', 5, 4, 3, 1, 1)""")
+            c.execute("update labels set topics = array['trade', 'business'] where message_id = 1")   # two topics
         acc = admin_create(server)
         call(server, U(140), "login", {"login": acc["account"]["login"], "password": acc["password"]})
 
         stats = call(server, U(140))[1]["stats"]
         assert call(server, U(140))[1]["stats"] == stats              # served from the cache
         assert stats["days"] == [["2026-09-02", 5, 4, 3, 1, 1, 2]]         # two channels collected
-        assert sorted(stats["topics"]) == [[0, "fiscal", 1, 0, 1], [0, "trade", 2, 1, 0]]
+        assert sorted(stats["topics"]) == [[0, "business", 1, 1, 0, 0.5, 0.0], [0, "fiscal", 1, 0, 1, 0.0, 1.0],
+                                           [0, "trade", 2, 1, 0, 0.5, 0.0]]       # shares still add up
         assert stats["channels_total"] == 2
         assert [c["id"] for c in stats["channels"]][:2] == ["@daryo", "@kunuzofficial"]
         assert "@spotuz" in [c["id"] for c in stats["channels"]]      # active, no final posts yet
@@ -305,6 +307,7 @@ def test_dashboard_stats_and_posts(server):
         assert page(sort="views")["items"][0]["v"] == 300
         assert page(channels=["@kunuzofficial"])["total"] == 1
         assert page(topics=["trade"], count_only=True) == {"ok": True, "total": 2}
+        assert page(topics=["business"])["items"][0]["ts"] == ["trade", "business"]   # found by its second topic
         with psycopg.connect(DB, autocommit=True) as c:             # a new final day: fresh numbers
             c.execute("""insert into indices (period_type, period, start_date, end_date, posts, nonad, econ, pos, neg)
                          values ('kun', '2026-09-03', '2026-09-03', '2026-09-03', 1, 1, 1, 1, 0)""")

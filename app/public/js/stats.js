@@ -106,14 +106,16 @@ export function series(model, p) {
   return out;
 }
 
-/** Counted posts by topic within the period: [{key, n, pos, neg, neu, esi}] by size. */
+/** Counted posts by topic within the period: [{key, n, pos, neg, neu, esi, wpos, wneg}] by size.
+ *  A post counts in each of its topics; wpos/wneg split its ESI share between them, so the
+ *  topics' shares add up to ESI. */
 export function topicsOf(model, p) {
   const acc = new Map();
-  model.topics.forEach(([i, key, n, pos, neg]) => {
+  model.topics.forEach(([i, key, n, pos, neg, wpos = pos, wneg = neg]) => {
     const d = model.days[i].d;
     if (d < p.start || d > p.end) return;
-    const t = acc.get(key) || { key, n: 0, pos: 0, neg: 0 };
-    t.n += n; t.pos += pos; t.neg += neg;
+    const t = acc.get(key) || { key, n: 0, pos: 0, neg: 0, wpos: 0, wneg: 0 };
+    t.n += n; t.pos += pos; t.neg += neg; t.wpos += wpos; t.wneg += wneg;
     acc.set(key, t);
   });
   return [...acc.values()].map((t) => ({ ...t, neu: t.n - t.pos - t.neg, esi: Math.round(100 * (t.pos - t.neg) / t.n) }))

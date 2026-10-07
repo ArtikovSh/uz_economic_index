@@ -95,6 +95,11 @@ Central Bank of Uzbekistan is central_bank even when it is about inflation, the 
 rate or banks. The daily official exchange-rate post, and news that only cites CBU data,
 keep their own topic (currency_fx, banking_finance, ...). Other countries' central banks
 are banking_finance.
+other_topics: up to two MORE topics from the same list when the post is clearly and
+substantially about them as well — e.g. a tariff rise for households: prices_inflation +
+energy_utility; a company's export deal: trade + business. A passing mention is not
+enough; most posts have []. Never repeat "topic" or use "non_economic"; [] when
+economic=false.
 
 STEP 6 — relevance (0.0–1.0)
 How central the economy is to the post: 1.0 = the whole post is an economic story,
@@ -166,6 +171,8 @@ EXAMPLES (headline -> labels)
      -> economic, central_bank, +0.4 (better forecast)
  "Markaziy bank O'zbekistondagi bir bankning litsenziyasini qaytarib oldi"
      -> economic, central_bank, -0.5 (a bank closed)
+ "Аҳоли учун электр энергияси тарифи 1 январдан 20 фоизга оширилади"
+     -> economic, prices_inflation, other_topics [energy_utility], -0.6
  "Фарғонада электр таъминоти 6 соатга узилди"
      -> economic, energy_utility, -0.5 (outage)
  "Rossiyada O'zbekiston fuqarolari uchun mehnat patenti narxi oshirildi"
@@ -192,13 +199,14 @@ _ITEM = {
         "economic": {"type": "BOOLEAN"},
         "is_foreign": {"type": "BOOLEAN"},
         "topic": {"type": "STRING", "enum": CATEGORIES},
+        "other_topics": {"type": "ARRAY", "items": {"type": "STRING", "enum": CATEGORIES}},
         "relevance": {"type": "NUMBER"},
         "sentiment": {"type": "NUMBER"},
     },
-    "required": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic",
+    "required": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic", "other_topics",
                  "relevance", "sentiment"],
     # answer in the order of the decision steps above
-    "propertyOrdering": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic",
+    "propertyOrdering": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic", "other_topics",
                          "relevance", "sentiment"],
 }
 
