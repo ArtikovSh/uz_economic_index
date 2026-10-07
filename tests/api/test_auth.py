@@ -291,6 +291,8 @@ def test_dashboard_stats_and_posts(server):
         assert stats["days"] == [["2026-09-02", 5, 4, 3, 1, 1, 2]]         # two channels collected
         assert sorted(stats["topics"]) == [[0, "fiscal", 1, 0, 1], [0, "trade", 2, 1, 0]]
         assert stats["channels_total"] == 2
+        assert [c["id"] for c in stats["channels"]][:2] == ["@daryo", "@kunuzofficial"]
+        assert "@spotuz" in [c["id"] for c in stats["channels"]]      # active, no final posts yet
 
         page = lambda **kw: call(server, U(140), "posts", {"from": "2026-09-01", "to": "2026-09-30", **kw})[1]
         r = page()

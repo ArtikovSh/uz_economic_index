@@ -589,8 +589,12 @@ def build_stats():
             recent_channels.add(r["channel"])
     try:
         names = channels.titles(q)
+        active = [r["handle"] for r in channels.listing(q) if r["active"]]
     except psycopg.errors.UndefinedTable:
-        names = channels.NAMES
+        names, active = channels.NAMES, []
+    # every active channel is offered in the filters, also one added after the last final day
+    for c in active:
+        per_channel.setdefault(c, 0)
     return {
         # [day, posts, nonad, econ, pos, neg, channels collected]
         "days": [[r["d"], r["posts"], r["nonad"], r["econ"], r["pos"], r["neg"], per_day.get(r["d"], 0)]
