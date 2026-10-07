@@ -171,6 +171,43 @@ textarea.input { height: auto; min-height: 92px; padding: 12px 14px; line-height
 .chan-add .btn { width: auto; height: 46px; padding: 0 18px; }
 .user .line1 b { font-size: 14px; font-weight: 600; }
 .empty { padding: 18px 4px; text-align: center; font-size: 13.5px; color: var(--muted); }
+/* tabs: a long label takes more room instead of being cut */
+.admin-tabs { display: flex; }
+.admin-tabs button { flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.seg .count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--negFill); color: #FFFFFF;
+  font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+#newUser { margin-bottom: 12px; }
+button.user { width: 100%; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; }
+.user .chev { display: flex; justify-content: flex-end; color: var(--muted); }
+.topbar .pill { margin-left: auto; }
+.label-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.label-row .label { font-size: 13px; font-weight: 600; }
+.readonly svg { flex: none; color: var(--muted); }
+.hint { margin: 0; min-height: 18px; display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.hint:empty { display: none; }
+.hint.ok { color: var(--pos); }
+.hint.bad { color: var(--neg); }
+.spinner.xs { width: 12px; height: 12px; border-width: 1.5px; }
+.rules { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
+.rules li { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.rules li svg { flex: none; }
+.rules li.ok { color: var(--pos); }
+.rules li.bad { color: var(--neg); }
+.kv { margin: 0; display: flex; flex-direction: column; }
+.kv div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; }
+.kv div + div { border-top: 1px solid var(--line); }
+.kv dt { font-size: 13px; color: var(--muted); }
+.kv dd { margin: 0; font-size: 13.5px; font-weight: 500; text-align: right; overflow-wrap: anywhere; }
+.menu-card { padding: 4px 14px; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.btn.primary.danger { background: var(--negFill); }
+.link.write { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; }
+.hist { margin-top: 6px; }
+.hrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; }
+.hrow + .hrow { border-top: 1px solid var(--line); }
+.hrow .who { min-width: 0; display: flex; flex-direction: column; }
+.hrow .who b { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hrow .who small { font-size: 12px; color: var(--muted); }
 
 /* --------------------------------------------------------- sheet + toast -- */
 .sheet-wrap { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; }

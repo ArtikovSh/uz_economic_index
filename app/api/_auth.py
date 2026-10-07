@@ -24,6 +24,9 @@ from datetime import datetime, timedelta, timezone
 
 ROLES = ("analyst", "economist", "admin")
 TERMS = {"30": 30, "90": 90, "0": None}           # days; "0" = no expiry
+LOGIN_RE = re.compile(r"[a-z][a-z0-9._-]{2,31}")  # the Mini App checks the same rules as you type
+RESERVED_LOGINS = ("admin",)                       # the owner's display name
+PASSWORD_MIN, PASSWORD_MAX = 8, 64
 REASONS = ("access", "reset", "other")
 TG_MAX_FAILS, TG_LOCK_MIN = 5, 15                 # per Telegram account
 LOGIN_MAX_FAILS, LOGIN_LOCK_MIN = 10, 30          # per login
@@ -107,6 +110,32 @@ def new_password():
     """12 random characters in three groups of four, e.g. K7m4-Qx2p-9Ldw."""
     raw = "".join(secrets.choice(_ALPHABET) for _ in range(12))
     return "-".join(raw[i:i + 4] for i in range(0, 12, 4))
+
+
+def password_problems(password, login=""):
+    """Rules an admin-typed password breaks: length | mix (letter and digit) | space | login."""
+    out = []
+    if not PASSWORD_MIN <= len(password) <= PASSWORD_MAX:
+        out.append("length")
+    if not (re.search(r"[^\W\d_]", password) and re.search(r"\d", password)):
+        out.append("mix")
+    if re.search(r"\s", password):
+        out.append("space")
+    if login and login.lower() in password.lower():
+        out.append("login")
+    return out
+
+
+def normalize_login(value):
+    return str(value or "").strip().lower()[:64]
+
+
+def login_status(q, name):
+    """free | taken | bad for a login an admin typed (already normalised)."""
+    if not LOGIN_RE.fullmatch(name) or name in RESERVED_LOGINS:
+        return "bad"
+    taken = q("select 1 x from accounts where lower(login)=%s", (name,), one=True)
+    return "taken" if taken else "free"
 
 
 _DUMMY_HASH = None
@@ -266,25 +295,49 @@ def overview(q):
     for r in requests:
         acc = requester_account(q, r["telegram_id"])
         r["account"] = {"id": acc["id"], "login": acc["login"], "state": account_state(acc)} if acc else None
+    handled = q("""select id, tg_username, tg_name, full_name, organization, reason, message, status,
+                          created_at, handled_at
+                   from access_requests where status<>'new'
+                   order by handled_at desc nulls last, id desc limit 20""") or []
     count = {s: sum(1 for a in accounts if a["state"] == s)
              for s in ("active", "pending", "expired", "blocked")}
-    return {"ok": True, "accounts": accounts, "requests": requests, "count": count}
+    return {"ok": True, "accounts": accounts, "requests": requests, "handled": handled, "count": count,
+            "next_login": {r: _next_from([a["login"] for a in accounts], r) for r in ROLES}}
 
 
-def create_account(q, admin_tg, role, term, request_id=None):
-    """New login + password (returned once). From a request: reserved for the requester."""
+def _next_from(logins, role):
+    nums = [int(m.group(1)) for x in logins if (m := re.fullmatch(re.escape(role) + r"\.(\d+)", x))]
+    return "%s.%02d" % (role, (max(nums) + 1) if nums else 1)
+
+
+def _open_request(q, request_id):
+    return q("select * from access_requests where id=%s and status='new'", (request_id,), one=True)
+
+
+def create_account(q, admin_tg, role, term, request_id=None, login_name=None, password=None):
+    """New login + password (returned once). The admin may type either; otherwise the login is
+    the role's next number and the password is random. From a request: reserved for the requester."""
     if role not in ROLES or term not in TERMS:
         return {"ok": False, "error": "bad_input"}
     req = None
     if request_id:
-        req = q("select * from access_requests where id=%s and status='new'", (request_id,), one=True)
+        req = _open_request(q, request_id)
         if not req:
             return {"ok": False, "error": "no_request"}
+    if login_name:
+        login_name = normalize_login(login_name)
+        state = login_status(q, login_name)
+        if state != "free":
+            return {"ok": False, "error": "login_taken" if state == "taken" else "bad_login"}
+    name = login_name or next_login(q, role)
+    if password is not None and password_problems(str(password), name):
+        return {"ok": False, "error": "weak_password"}
+    password = str(password) if password is not None else new_password()
     days = TERMS[term]
     expires = now() + timedelta(days=days) if days else None
-    password = new_password()
-    for _ in range(3):                                   # retry if two admins race for a login
-        name = next_login(q, role)
+    for attempt in range(3):                             # retry if two admins race for a login
+        if attempt:
+            name = next_login(q, role)
         try:
             row = q("""insert into accounts (login, password_hash, role, expires_at, created_by,
                                              reserved_tg, full_name, organization, request_id)
@@ -296,6 +349,8 @@ def create_account(q, admin_tg, role, term, request_id=None):
         except Exception as e:                           # unique violation on login
             if "unique" not in str(e).lower():
                 raise
+            if login_name:
+                return {"ok": False, "error": "login_taken"}
     else:
         return {"ok": False, "error": "busy"}
     if req:
@@ -304,19 +359,25 @@ def create_account(q, admin_tg, role, term, request_id=None):
     return {"ok": True, "account": row, "password": password, "request": req}
 
 
-def reset_password(q, account_id, admin_tg=None, request_id=None):
-    """New password; the account is unbound so it must be signed in again. For a reset request
-    the requester's own login is reset, reserved for them, and the request is closed."""
+def reset_password(q, account_id, admin_tg=None, request_id=None, password=None):
+    """New password (typed by the admin or random); the account is unbound so it must be signed in
+    again. For a reset request the requester's own login is reset, reserved for them, and the
+    request is closed."""
     req = None
     if request_id:
-        req = q("select * from access_requests where id=%s and status='new'", (request_id,), one=True)
+        req = _open_request(q, request_id)
         if not req:
             return {"ok": False, "error": "no_request"}
         acc = requester_account(q, req["telegram_id"])
         if not acc:
             return {"ok": False, "error": "no_account"}
         account_id = acc["id"]
-    password = new_password()
+    acc = q("select login from accounts where id=%s", (account_id,), one=True) if account_id else None
+    if not acc:
+        return {"ok": False, "error": "not_found"}
+    if password is not None and password_problems(str(password), acc["login"]):
+        return {"ok": False, "error": "weak_password"}
+    password = str(password) if password is not None else new_password()
     row = q("""update accounts set password_hash=%s, telegram_id=null, failed_logins=0, locked_until=null,
                  reserved_tg=coalesce(%s, reserved_tg)
                where id=%s returning id, login, role, expires_at""",
@@ -337,11 +398,14 @@ def set_status(q, account_id, status):
 
 
 def extend(q, account_id, term):
+    """Extend from the current end date if it is still ahead, else from today; "0" = no expiry."""
     if term not in TERMS:
         return {"ok": False, "error": "bad_input"}
     days = TERMS[term]
-    row = q("update accounts set expires_at=%s where id=%s returning id, expires_at",
-            (now() + timedelta(days=days) if days else None, account_id), one=True)
+    row = q("""update accounts
+               set expires_at = case when %s::int is null then null
+                                     else greatest(now(), coalesce(expires_at, now())) + make_interval(days => %s::int) end
+               where id=%s returning id, expires_at""", (days, days, account_id), one=True)
     return {"ok": True, "account": row} if row else {"ok": False, "error": "not_found"}
 
 

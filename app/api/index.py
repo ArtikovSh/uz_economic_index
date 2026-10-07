@@ -7,15 +7,17 @@ method and header:
                                     (needs the X-Telegram-Init-Data header)
   * GET   /api/index             -> Mini App data JSON (needs X-Telegram-Init-Data),
                                     or a health message in a plain browser.
+  * GET   /api/index?cron=digest -> morning summaries (Vercel cron, needs CRON_SECRET)
 
 Index figures come from the `indices` table (one row per closed day / week / month /
 quarter / year): EAI = % of non-ad posts that are economic, ESI = 100*(pos-neg)/econ.
 
 Access: only accounts an admin created (login + password, see _auth.py) can use the bot
 and the Mini App; BOT_ADMIN_ID is always the owner-admin. Roles: analyst / economist / admin.
-Admins also manage the channel list the pipeline collects (_channels.py).
+Admins also manage the channel list the pipeline collects (_channels.py). The bot's words in
+three languages are in _bot.py; /setup (_botsetup.py) configures its profile and icons.
 
-Env: TELEGRAM_BOT_TOKEN, BOT_ADMIN_ID, SUPABASE_DB_URL, [WEBAPP_URL], [WEBHOOK_SECRET].
+Env: TELEGRAM_BOT_TOKEN, BOT_ADMIN_ID, SUPABASE_DB_URL, [WEBAPP_URL], [WEBHOOK_SECRET], [CRON_SECRET].
 """
 from http.server import BaseHTTPRequestHandler
 import hashlib
@@ -28,13 +30,15 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from html import escape
-from urllib.parse import parse_qs, parse_qsl, quote, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlparse
 
 import psycopg
 import requests
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _auth as auth  # noqa: E402  (helper modules next to this file, not endpoints)
+import _bot as bot  # noqa: E402
+import _botsetup as botsetup  # noqa: E402
 import _channels as channels  # noqa: E402
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
@@ -42,11 +46,10 @@ ADMIN_ID = os.getenv("BOT_ADMIN_ID", "").strip()
 DB_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL") or ""
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
+CRON_SECRET = os.getenv("CRON_SECRET", "").strip()     # Vercel sends it with its cron calls
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 TZ = "5 hours"
 INIT_DATA_MAX_AGE = 24 * 3600          # Mini App initData older than this is rejected
-ROLE_NAMES = {"admin": "Admin", "analyst": "Analitik", "economist": "Iqtisodchi"}
-REASON_NAMES = {"access": "Kirish olish", "reset": "Parolni tiklash", "other": "Boshqa"}
 TOPICS = {
     "prices_inflation": "Narx/inflatsiya", "currency_fx": "Valyuta/kurs",
     "fiscal": "Byudjet/soliq", "trade": "Tashqi savdo", "macro": "Makro",
@@ -92,6 +95,7 @@ def ensure_schema():
     global _SCHEMA_READY
     if not _SCHEMA_READY:
         q(auth.SCHEMA)
+        q(bot.SCHEMA)
         channels.ensure(q)
         _SCHEMA_READY = True
 
@@ -107,17 +111,6 @@ def me_json(acc):
             "owner": bool(acc.get("owner")), "expires_at": acc.get("expires_at")}
 
 
-def index_rows(ptype, n):
-    """Latest n rows of one period type, oldest first ([] until the table exists)."""
-    try:
-        rows = q("""select period, start_date::text s, end_date::text e, days, days_expected,
-                           nonad, econ, pos, neg, eai, esi, note
-                    from indices where period_type=%s order by end_date desc limit %s""", (ptype, n)) or []
-    except psycopg.errors.UndefinedTable:
-        return []                          # created by the pipeline's first DB sync
-    return list(reversed(rows))
-
-
 # ------------------------------------------------------------------- telegram --
 def send(chat_id, text, **kw):
     """Send a message; returns whether Telegram accepted it."""
@@ -130,32 +123,25 @@ def send(chat_id, text, **kw):
             "disable_web_page_preview": True, **kw})
         if not r.ok:
             print(f"Telegram sendMessage FAILED {r.status_code}: {r.text[:300]}")
+            if r.status_code == 403:                     # the user blocked the bot: stop the summaries
+                q("update bot_users set blocked_bot=true where telegram_id=%s", (chat_id,))
         return r.ok
     except Exception as e:
         print("send error:", e)
         return False
 
 
-def main_kb():
-    """Interactive navigation keyboard shown under bot messages."""
-    rows = [
-        [{"text": "Bugun", "callback_data": "nav:today"},
-         {"text": "Asosiy xabarlar", "callback_data": "nav:top"}],
-        [{"text": "Mavzular", "callback_data": "nav:topics"},
-         {"text": "Grafik", "callback_data": "nav:chart"}],
-    ]
-    if WEBAPP_URL:
-        rows.append([{"text": "Dashboard", "web_app": {"url": WEBAPP_URL}}])
-    return {"inline_keyboard": rows}
-
-
-def app_kb(text, screen=""):
-    """One button that opens the Mini App, optionally on a screen (?screen=admin). A query
-    parameter, not a #fragment: Telegram passes its launch data in the URL fragment."""
-    if not WEBAPP_URL:
-        return None
-    url = WEBAPP_URL.rstrip("/") + "/" + (f"?screen={screen}" if screen else "")
-    return {"inline_keyboard": [[{"text": text, "web_app": {"url": url}}]]}
+def tg(method, params=None, files=None, timeout=30):
+    """Any Bot API method -> its result; raises TgError with Telegram's description."""
+    data = {k: json.dumps(v) if isinstance(v, (dict, list, bool)) else v for k, v in (params or {}).items()}
+    try:
+        r = requests.post(f"{API}/{method}", data=data, files=files, timeout=timeout)
+        out = r.json()
+    except (requests.RequestException, ValueError) as e:
+        raise botsetup.TgError(type(e).__name__)
+    if not out.get("ok"):
+        raise botsetup.TgError(out.get("description") or str(r.status_code))
+    return out["result"]
 
 
 def edit(chat_id, mid, text, kb=None):
@@ -181,192 +167,229 @@ def answer_cb(cb_id, text=None):
         print("answer_cb error:", e)
 
 
-def send_photo(chat_id, url, caption="", kb=None):
-    if not BOT_TOKEN:
-        return
-    payload = {"chat_id": chat_id, "photo": url, "caption": caption, "parse_mode": "HTML"}
-    if kb:
-        payload["reply_markup"] = kb
+_EMOJI_IDS = None
+
+
+def emoji():
+    """Custom emoji ids saved by /setup, only if Telegram let the bot use them."""
+    global _EMOJI_IDS
+    if _EMOJI_IDS is None:
+        try:
+            row = q("select value from bot_settings where key='emoji'", one=True)
+        except psycopg.errors.UndefinedTable:
+            row = None
+        value = row["value"] if row else {}
+        _EMOJI_IDS = value if value.get("ok") else {}
+    return _EMOJI_IDS
+
+
+def app_url(screen=""):
+    """The Mini App, optionally on a screen (?screen=admin). A query parameter, not a #fragment:
+    Telegram passes its launch data in the URL fragment."""
+    return WEBAPP_URL.rstrip("/") + "/" + (f"?screen={screen}" if screen else "")
+
+
+def app_kb(text, screen="", em=None, glyph="dashboard"):
+    """One button that opens the Mini App."""
+    if not WEBAPP_URL:
+        return None
+    return {"inline_keyboard": [[bot.button(text, em, glyph, "primary", web_app={"url": app_url(screen)})]]}
+
+
+def main_kb(lang, em):
+    tr = lambda k: bot.tr(lang, k)
+    rows = [[bot.button(tr("today"), em, "esi", callback_data="nav:today"),
+             bot.button(tr("week"), em, "week", callback_data="nav:week")],
+            [bot.button(tr("topics"), em, "topics", callback_data="nav:topics"),
+             bot.button(tr("top"), em, "news", callback_data="nav:top")]]
+    if WEBAPP_URL:
+        rows.append([bot.button(tr("app"), em, "dashboard", "primary", web_app={"url": app_url()})])
+    return {"inline_keyboard": rows}
+
+
+def summary_kb(data, lang, em):
+    """Under a daily or weekly card: the dashboard, its topics and posts, the other summary."""
+    tr = lambda k: bot.tr(lang, k)
+    rows = []
+    if WEBAPP_URL:
+        rows.append([bot.button(tr("open_app"), em, "dashboard", "primary", web_app={"url": app_url()})])
+    ref = f"{data['kind']}:{data['start']}"
+    rows.append([bot.button(tr("topics"), em, "topics", callback_data=f"nav:topics:{ref}"),
+                 bot.button(tr("top"), em, "news", callback_data=f"nav:top:{ref}")])
+    other = ("week", "week", "nav:week") if data["kind"] == "kun" else ("today", "esi", "nav:today")
+    rows.append([bot.button(tr(other[0]), em, other[1], callback_data=other[2])])
+    return {"inline_keyboard": rows}
+
+
+def lang_kb(src):
+    """Language choice; src says where it was opened: w = welcome, m = /me, p = /lang."""
+    return {"inline_keyboard": [[{"text": bot.LANG_NAMES[c], "callback_data": f"lang:{c}:{src}"}
+                                 for c in bot.LANGS]]}
+
+
+def me_kb(lang, em, digest, owner):
+    tr = lambda k: bot.tr(lang, k)
+    rows = [[bot.button(tr("digest_turn_off" if digest else "digest_turn_on"), em, "bell", callback_data="me:digest")],
+            [bot.button(tr("lang_btn"), em, "globe", callback_data="me:lang")]]
+    if not owner:
+        rows.append([bot.button(tr("logout_btn"), callback_data="me:logout")])
+    return {"inline_keyboard": rows}
+
+
+# ------------------------------------------------------------- summaries -----
+CARD_VERSION = 1                       # bump when the card design changes: cached uploads are per version
+CARD_KEYS = ("kind", "start", "end", "eai", "esi", "d_eai", "d_esi", "nonad", "econ", "channels", "series")
+
+
+def render_card(data, lang):
+    """The summary card as PNG bytes, or None (no renderer or it failed): the text goes alone."""
     try:
-        r = requests.post(f"{API}/sendPhoto", json=payload, timeout=25)
-        if not r.ok:
-            print("sendPhoto failed:", r.status_code, r.text[:200])
+        import _card
+        return _card.render({**{k: data[k] for k in CARD_KEYS}, "lang": lang})
     except Exception as e:
-        print("send_photo error:", e)
+        print("card error:", repr(e))
+        return None
 
 
-def sparkline(vals):
-    blocks = "▁▂▃▄▅▆▇█"
-    vals = [v for v in vals if v is not None]
-    if not vals:
-        return ""
-    lo, hi = min(vals), max(vals)
-    rng = (hi - lo) or 1
-    return "".join(blocks[min(7, int(7 * (v - lo) / rng))] for v in vals)
+def send_card(chat_id, data, lang, caption, kb):
+    """The card with its caption; each (period, language) card is uploaded once, then reused."""
+    key = (data["kind"], f"{data['period']}#v{CARD_VERSION}", lang)
+    row = q("select file_id from bot_cards where kind=%s and period=%s and lang=%s", key, one=True)
+    payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML", "reply_markup": kb}
+    try:
+        if row:
+            return bool(tg("sendPhoto", {**payload, "photo": row["file_id"]}))
+        png = render_card(data, lang)
+        if png is None:
+            return send(chat_id, caption, reply_markup=kb)
+        msg = tg("sendPhoto", payload, files={"photo": ("card.png", png, "image/png")})
+        q("""insert into bot_cards (kind, period, lang, file_id) values (%s,%s,%s,%s)
+             on conflict (kind, period, lang) do nothing""", (*key, msg["photo"][-1]["file_id"]))
+        return True
+    except botsetup.TgError as e:
+        print("sendPhoto failed:", e)
+        if "blocked" in str(e) or "deactivated" in str(e):
+            q("update bot_users set blocked_bot=true where telegram_id=%s", (chat_id,))
+        return False
 
 
-def quickchart_url(n=30):
-    d = index_rows("kun", n)
-    cfg = {"type": "line",
-           "data": {"labels": [x["period"][5:] for x in d],
-                    "datasets": [
-                        {"label": "E'tibor (EAI, %)", "data": [x["eai"] for x in d], "yAxisID": "y",
-                         "borderColor": "#3b82f6", "backgroundColor": "rgba(59,130,246,.15)",
-                         "fill": True, "tension": 0.35, "pointRadius": 0},
-                        {"label": "Kayfiyat (ESI)", "data": [x["esi"] for x in d], "yAxisID": "y1",
-                         "borderColor": "#22c55e", "fill": False, "tension": 0.35, "pointRadius": 0}]},
-           "options": {"plugins": {"title": {"display": True, "text": f"UZ Economic Index — {len(d)} kun"}},
-                       "scales": {"y": {"min": 0, "max": 100, "position": "left",
-                                        "title": {"display": True, "text": "EAI, %"}},
-                                  "y1": {"min": -100, "max": 100, "position": "right",
-                                         "grid": {"drawOnChartArea": False},
-                                         "title": {"display": True, "text": "ESI"}}}}}
-    return "https://quickchart.io/chart?v=4&w=640&h=360&bkg=white&c=" + quote(json.dumps(cfg))
+def summary(kind, start=None):
+    try:
+        return bot.summary(q, kind, start)
+    except psycopg.errors.UndefinedTable:              # before the pipeline's first DB sync
+        return None
 
 
-# --------------------------------------------------------------------- stats ---
-def _day():
-    rows = index_rows("kun", 1)
-    return rows[-1]["period"] if rows else None
+def send_summary(chat_id, kind, lang, em):
+    data = summary(kind)
+    if not data:
+        return send(chat_id, bot.tr(lang, "no_data"))
+    return send_card(chat_id, data, lang, bot.caption(data, lang, em), summary_kb(data, lang, em))
 
 
-def _arrow(v):
-    return "▲" if v > 0 else ("▼" if v < 0 else "▬")
+def send_details(chat_id, what, ref, lang, em):
+    """Topics or top posts of a summary's period (ref = 'kun:2026-10-05'), or of the latest day."""
+    kind, _, start = (ref or "kun:").partition(":")
+    data = summary(kind if kind in ("kun", "hafta") else "kun", _date(start) if start else None)
+    if not data:
+        return send(chat_id, bot.tr(lang, "no_data"))
+    if what == "topics":
+        return send(chat_id, bot.topics_text(data, lang, em))
+    try:
+        names = channels.titles(q)
+    except psycopg.errors.UndefinedTable:
+        names = channels.NAMES
+    rows = bot.top_posts(q, data["start"], data["end"])
+    return send(chat_id, bot.top_text(rows, data, lang, names, clean_text, em))
 
 
-def _mood(esi):
-    if esi is None:
-        return "⚪"
-    return "🟢 ijobiy" if esi >= 10 else ("🔴 salbiy" if esi <= -10 else "🟡 neytral")
-
-
-def _num(v, fmt):
-    return "—" if v is None else format(v, fmt)
-
-
-def fmt_index():
-    hist = index_rows("kun", 14)
-    if not hist:
-        return "Hozircha ma'lumot yo'q. Quvur birinchi kunni yakunlashini kuting."
-    d = hist[-1]
-    prev = hist[-2] if len(hist) > 1 else None
-    de = (d["eai"] - prev["eai"]) if prev and d["eai"] is not None and prev["eai"] is not None else 0
-    ds = (d["esi"] - prev["esi"]) if prev and d["esi"] is not None and prev["esi"] is not None else 0
-    week = (index_rows("hafta", 1) or [None])[-1]
-    month = (index_rows("oy", 1) or [None])[-1]
-    lines = [f"📊 <b>Iqtisodiy manzara — {d['period']}</b> <i>(Toshkent)</i>",
-             "<i>2 kun oldingi to'liq kun</i>", "",
-             f"🎯 <b>E'tibor (EAI): {_num(d['eai'], '.1f')}%</b>  {_arrow(de)}{abs(de):.1f}",
-             "   <i>iqtisodiy xabarlar ulushi</i>",
-             f"   <code>{sparkline([r['eai'] for r in hist])}</code>",
-             f"💬 <b>Kayfiyat (ESI): {_num(d['esi'], '+.0f')}</b>  {_arrow(ds)}{abs(ds):.0f}  <i>({_mood(d['esi'])})</i>",
-             "   <i>ijobiy − salbiy, foiz punkt</i>",
-             f"   <code>{sparkline([r['esi'] for r in hist])}</code>", "",
-             f"📰 Iqtisodiy xabarlar: <b>{d['econ']}</b> / {d['nonad']}"]
-    if week:
-        lines.append(f"📅 Hafta {week['s'][5:]}–{week['e'][5:]}: EAI {_num(week['eai'], '.1f')}%, "
-                     f"ESI {_num(week['esi'], '+.0f')}")
-    if month:
-        lines.append(f"🗓 Oy {month['period']}: EAI {_num(month['eai'], '.1f')}%, "
-                     f"ESI {_num(month['esi'], '+.0f')} ({month['days']}/{month['days_expected']} kun)")
-    lines.append("<i>ESI: 0 = neytral · so'nggi 14 kun trendi</i>")
-    return "\n".join(lines)
-
-
-def fmt_top(n):
-    day = _day()
-    if not day:
-        return "Ma'lumot yo'q."
-    rows = q(f"""select channel, sentiment, views, raw_text from posts
-                 where {DAY}=%s and {COUNTED}
-                 order by relevance*ln(1+views+2*forwards) desc limit %s""", (day, n))
-    if not rows:
-        return "Bu kun uchun iqtisodiy post topilmadi."
-    out = [f"🔝 <b>Top {len(rows)} iqtisodiy post — {day}</b>\n"]
-    for i, r in enumerate(rows, 1):
-        t = escape(" ".join(str(r["raw_text"]).split())[:160])
-        mood = "🟢" if r["sentiment"] > 0.15 else ("🔴" if r["sentiment"] < -0.15 else "⚪")
-        out.append(f"{i}. {mood} <i>{escape(str(r['channel']))}</i> · 👁{r['views']}\n{t}\n")
-    return "\n".join(out)
-
-
-def fmt_topics():
-    day = _day()
-    rows = q(f"""select primary_topic, count(*) n, round(avg(sentiment)::numeric,2) s
-                 from posts where {DAY}=%s and {COUNTED}
-                 group by primary_topic order by n desc""", (day,))
-    if not rows:
-        return "Ma'lumot yo'q."
-    out = [f"🗂 <b>Mavzular — {day}</b>\n"]
-    for r in rows:
-        mood = "🟢" if r["s"] > 0.15 else ("🔴" if r["s"] < -0.15 else "⚪")
-        out.append(f"{mood} {escape(TOPICS.get(r['primary_topic'], str(r['primary_topic'])))}: "
-                   f"<b>{r['n']}</b> post (kayfiyat {r['s']:+.2f})")
-    return "\n".join(out)
-
-
-def fmt_topic(key):
-    day = _day()
-    name = escape(TOPICS.get(key, key))
-    rows = q(f"""select channel, raw_text from posts
-                 where {DAY}=%s and primary_topic=%s and {COUNTED}
-                 order by relevance*ln(1+views+2*forwards) desc limit 5""", (day, key))
-    if not rows:
-        return f"'{name}' bo'yicha bu kun post topilmadi."
-    out = [f"🗂 <b>{name} — {day}</b>\n"]
-    for r in rows:
-        out.append(f"• <i>{escape(str(r['channel']))}</i>: "
-                   f"{escape(' '.join(str(r['raw_text']).split())[:150])}\n")
-    return "\n".join(out)
+def run_digest():
+    """Morning summaries (Vercel cron): the latest closed day, and the latest closed week when
+    it is new, to every signed-in user and the owner who keep them on. Each goes once."""
+    ensure_schema()
+    day, week = summary("kun"), summary("hafta")
+    if not day and not week:
+        return {"ok": True, "sent": 0}
+    people = q("""select t.tg, b.lang, b.digest_day, b.digest_week
+                  from (select telegram_id tg from accounts
+                        where telegram_id is not null and status='active' and (expires_at is null or expires_at > now())
+                        union select %s::bigint) t
+                  left join bot_users b on b.telegram_id = t.tg
+                  where t.tg is not null and coalesce(b.digest, true) and not coalesce(b.blocked_bot, false)""",
+               (int(ADMIN_ID) if ADMIN_ID else None,)) or []
+    em, sent = emoji(), 0
+    for p in people:
+        lang = p["lang"] or "uz"
+        for data, col in ((day, "digest_day"), (week, "digest_week")):
+            start = _date(data["start"]) if data else None
+            if not data or (p[col] and p[col] >= start):
+                continue
+            if send_card(p["tg"], data, lang, bot.caption(data, lang, em), summary_kb(data, lang, em)):
+                sent += 1
+                q(f"""insert into bot_users (telegram_id, {col}) values (%s, %s)
+                      on conflict (telegram_id) do update set {col} = excluded.{col}""", (p["tg"], start))
+    return {"ok": True, "sent": sent, "day": day and day["start"], "week": week and week["start"]}
 
 
 # ------------------------------------------------------------- access ----------
-GATE = {
-    "login": "<b>UZ Economic Index</b>\nO‘zbekiston iqtisodiy yangiliklar indeksi.\n\n"
-             "Kirish uchun quyidagi tugmani bosing.",
-    "blocked": "Hisobingiz bloklangan. Kirish uchun administratorga murojaat qiling.",
-    "expired": "Kirish muddati tugagan. Uzaytirish uchun administratorga murojaat qiling.",
-}
-HELP = ("<b>UZ Economic Index</b>\n\n"
-        "/today — kunlik iqtisodiy manzara\n/top — kunning asosiy postlari\n"
-        "/topics — mavzular kesimi\n/topic &lt;nom&gt; — bitta mavzu (masalan: /topic currency_fx)\n"
-        "/app — dashboard\n/me — hisobim\n/logout — hisobdan chiqish\n/help — yordam")
 OLD_ADMIN_CMDS = ("/pending", "/approve", "/setrole", "/block", "/users")
 
 
-def gate(chat_id, state):
-    send(chat_id, GATE[state] if WEBAPP_URL else GATE[state] + "\n\nMini App hali ulanmagan.",
-         reply_markup=app_kb("Kirish"))
+def gate(chat_id, state, lang, em=None):
+    """Not signed in, blocked or expired: what to do next, with the button that does it."""
+    if not WEBAPP_URL:
+        return send(chat_id, bot.gate_text(state, lang, em) + "\n\n" + bot.tr(lang, "no_app"))
+    label, glyph = (bot.tr(lang, "login_btn"), "login") if state == "login" else (bot.tr(lang, "contact_btn"), "user")
+    return send(chat_id, bot.gate_text(state, lang, em), reply_markup=app_kb(label, em=em, glyph=glyph))
 
 
-def fmt_me(acc):
-    if acc.get("owner"):
-        return "<b>Hisobim</b>\nAdmin (bot egasi)"
-    until = acc["expires_at"].strftime("%d.%m.%Y") if acc.get("expires_at") else "muddatsiz"
-    return (f"<b>Hisobim</b>\nLogin: <code>{escape(acc['login'])}</code>\n"
-            f"Rol: {ROLE_NAMES.get(acc['role'], acc['role'])}\nAmal qiladi: {until}")
+def home(chat_id, state, acc, lang, em):
+    if state != "ok":
+        return gate(chat_id, state, lang, em)
+    return send(chat_id, bot.home_text(lang, em), reply_markup=main_kb(lang, em))
+
+
+def digest_on(tg_id):
+    row = bot.user_row(q, tg_id)
+    return row["digest"] if row else True
 
 
 def notify_new_request(req):
     """Tell the owner-admin about a new access request."""
     if not ADMIN_ID:
         return
+    lang, em = bot.lang_of(q, {"id": int(ADMIN_ID)}), emoji()
     name = escape(req["full_name"]) + (f" · {escape(req['organization'])}" if req.get("organization") else "")
-    tg = f"@{escape(req['tg_username'])}" if req.get("tg_username") else escape(req.get("tg_name") or "")
-    text = f"<b>Yangi kirish so‘rovi</b>\n{name}\n{tg} · {REASON_NAMES.get(req['reason'], '')}"
+    who_ = f"@{escape(req['tg_username'])}" if req.get("tg_username") else escape(req.get("tg_name") or "")
+    text = (f"{bot.ic(em, 'user')}<b>{escape(bot.tr(lang, 'new_request'))}</b>\n{name}\n"
+            f"{who_} · {escape(bot.tr(lang, 'reasons').get(req['reason'], ''))}")
     if req.get("message"):
         text += f"\n\n{escape(req['message'])}"
-    send(int(ADMIN_ID), text, reply_markup=app_kb("Admin panelini ochish", "admin"))
+    send(int(ADMIN_ID), text, reply_markup=app_kb(bot.tr(lang, "requests_btn"), "requests", em, "user"))
 
 
 def deliver_credentials(req, account, password):
     """Send the new login to the requester; it works only from their Telegram account."""
+    lang, em = bot.lang_of(q, {"id": req["telegram_id"]}), emoji()
     return send(req["telegram_id"],
-                "<b>Kirish ma’lumoti</b>\n"
+                f"{bot.ic(em, 'lock')}<b>{escape(bot.tr(lang, 'creds_title'))}</b>\n"
                 f"Login: <code>{escape(account['login'])}</code>\n"
-                f"Parol: <code>{escape(password)}</code>\n\n"
-                "Kirish uchun quyidagi tugmani bosing. Login faqat shu Telegram hisobida ishlaydi.",
-                reply_markup=app_kb("Kirish"))
+                + bot.tr(lang, "creds_password", x=f"<code>{escape(password)}</code>") + "\n\n"
+                + escape(bot.tr(lang, "creds_note")),
+                reply_markup=app_kb(bot.tr(lang, "login_btn"), em=em, glyph="login"))
+
+
+def welcome_after_login(user):
+    """The bot confirms a successful sign-in in the Mini App and shows what comes next."""
+    state, acc = who(user)
+    if state != "ok":
+        return
+    bot.remember(q, user["id"])
+    lang, em = bot.lang_of(q, user), emoji()
+    kb = {"inline_keyboard": [[bot.button(bot.tr(lang, "today"), em, "esi", callback_data="nav:today")]
+                              + ([bot.button(bot.tr(lang, "app"), em, "dashboard", "primary",
+                                             web_app={"url": app_url()})] if WEBAPP_URL else [])]}
+    send(user["id"], bot.activated_text(acc, lang, em), reply_markup=kb)
 
 
 def handle_callback(cq):
@@ -375,20 +398,63 @@ def handle_callback(cq):
     m = cq.get("message", {})
     chat_id = m.get("chat", {}).get("id")
     mid = m.get("message_id")
-    answer_cb(cq["id"])
+    ensure_schema()
+    em = emoji()
+    parts = data.split(":")
+    if parts[0] == "lang":                               # anyone, signed in or not
+        answer_cb(cq["id"])
+        code, src = (parts + ["", ""])[1:3]
+        if not bot.set_lang(q, frm["id"], code):
+            return
+        state, acc = who(frm)
+        if src == "w":                                   # the welcome, now in that language; then next step
+            edit(chat_id, mid, bot.welcome_text(code, em, with_pick=False))
+            return home(chat_id, state, acc, code, em)
+        if src == "m" and state == "ok":
+            on = digest_on(frm["id"])
+            return edit(chat_id, mid, bot.me_text(acc, on, code, em), me_kb(code, em, on, acc.get("owner")))
+        return edit(chat_id, mid, f"{escape(bot.tr(code, 'lang_title'))}: {bot.LANG_NAMES[code]}")
     state, acc = who(frm)
+    lang = bot.lang_of(q, frm)
     if state != "ok":
-        gate(chat_id, state)
-        return
-    kb = main_kb()
-    if data == "nav:today":
-        edit(chat_id, mid, fmt_index(), kb)
-    elif data == "nav:top":
-        edit(chat_id, mid, fmt_top(8), kb)
-    elif data == "nav:topics":
-        edit(chat_id, mid, fmt_topics(), kb)
-    elif data == "nav:chart":
-        send_photo(chat_id, quickchart_url(), "<b>EAI va ESI — 30 kunlik trend</b>", kb)
+        answer_cb(cq["id"])
+        return gate(chat_id, state, lang, em)
+    if data == "me:digest":
+        on = bot.toggle_digest(q, frm["id"])
+        answer_cb(cq["id"], bot.tr(lang, "digest_done_on" if on else "digest_done_off"))
+        return edit(chat_id, mid, bot.me_text(acc, on, lang, em), me_kb(lang, em, on, acc.get("owner")))
+    answer_cb(cq["id"])
+    if parts[0] == "nav":
+        what = parts[1] if len(parts) > 1 else "today"
+        if what in ("topics", "top"):
+            return send_details(chat_id, what, ":".join(parts[2:4]), lang, em)
+        return send_summary(chat_id, "hafta" if what == "week" else "kun", lang, em)   # also old "nav:chart"
+    if data == "me:lang":
+        return edit(chat_id, mid, bot.welcome_text(lang, em).rsplit("\n\n", 1)[1], lang_kb("m"))
+    if data == "me:logout" and not acc.get("owner"):
+        kb = {"inline_keyboard": [[bot.button(bot.tr(lang, "logout_yes"), style="danger", callback_data="me:out"),
+                                   bot.button(bot.tr(lang, "cancel"), callback_data="me:back")]]}
+        return edit(chat_id, mid, escape(bot.tr(lang, "logout_ask")), kb)
+    if data == "me:out" and not acc.get("owner"):
+        auth.logout(q, frm["id"])
+        return edit(chat_id, mid, bot.gate_text("login", lang, em),
+                    app_kb(bot.tr(lang, "login_btn"), em=em, glyph="login"))
+    if data == "me:back":
+        on = digest_on(frm["id"])
+        return edit(chat_id, mid, bot.me_text(acc, on, lang, em), me_kb(lang, em, on, acc.get("owner")))
+
+
+def setup(chat_id, lang):
+    """/setup: the bot's profile, menus and icons (owner only)."""
+    global _EMOJI_IDS
+
+    def fetch(url):
+        r = requests.get(url, timeout=20)
+        r.raise_for_status()
+        return r.content
+    report = botsetup.run(tg, q, fetch, ADMIN_ID, lang, WEBAPP_URL.rstrip("/"), bool(CRON_SECRET))
+    _EMOJI_IDS = None                                    # pick up the new icons
+    send(chat_id, report)
 
 
 def handle_update(update):
@@ -397,47 +463,49 @@ def handle_update(update):
     msg = update.get("message") or update.get("edited_message")
     if not msg or "text" not in msg or msg.get("chat", {}).get("type") != "private":
         return
-    chat_id = msg["chat"]["id"]
+    chat_id, user = msg["chat"]["id"], msg["from"]
     text = msg["text"].strip()
     cmd = text.split()[0].lower().split("@")[0] if text else ""
-    state, acc = who(msg["from"])
-    if state != "ok":
-        gate(chat_id, state)
-        return
-
+    ensure_schema()
+    em = emoji()
     if cmd == "/start":
-        send(chat_id, "<b>UZ Economic Index</b>\nO‘zbekiston iqtisodiy yangiliklar indeksi.\n"
-                      "Quyidagi tugmalar orqali indeks, mavzular va asosiy xabarlarni ko‘ring.",
-             reply_markup=main_kb()); return
+        row = bot.user_row(q, user["id"])
+        if not row or not row["lang"]:                   # first visit: introduce the bot, ask the language
+            bot.remember(q, user["id"])
+            return send(chat_id, bot.welcome_text(bot.detect(user), em), reply_markup=lang_kb("w"))
+        state, acc = who(user)
+        return home(chat_id, state, acc, row["lang"], em)
+    lang = bot.lang_of(q, user)
+    if cmd == "/lang":
+        return send(chat_id, bot.welcome_text(lang, em).rsplit("\n\n", 1)[1], reply_markup=lang_kb("p"))
+    state, acc = who(user)
+    if state != "ok":
+        return gate(chat_id, state, lang, em)
+
     if cmd == "/help":
-        send(chat_id, HELP); return
+        return send(chat_id, bot.tr(lang, "help"))
     if cmd == "/me":
-        send(chat_id, fmt_me(acc)); return
+        on = digest_on(user["id"])
+        return send(chat_id, bot.me_text(acc, on, lang, em), reply_markup=me_kb(lang, em, on, acc.get("owner")))
     if cmd == "/logout":
         if acc.get("owner"):
-            send(chat_id, "Bot egasi hisobdan chiqmaydi."); return
-        auth.logout(q, msg["from"]["id"])
-        gate(chat_id, "login"); return
+            return send(chat_id, bot.tr(lang, "owner_stays"))
+        auth.logout(q, user["id"])
+        return gate(chat_id, "login", lang, em)
+    if cmd == "/setup" and acc.get("owner"):
+        return setup(chat_id, lang)
     if cmd in OLD_ADMIN_CMDS and acc.get("is_admin"):
-        send(chat_id, "Foydalanuvchilar endi Mini App’dagi admin panelida boshqariladi.",
-             reply_markup=app_kb("Admin panelini ochish", "admin")); return
+        return send(chat_id, bot.tr(lang, "admin_moved"),
+                    reply_markup=app_kb(bot.tr(lang, "admin_btn"), "admin", em, "user"))
     if cmd == "/app":
-        send(chat_id, "Dashboard:" if WEBAPP_URL else "Mini App hali ulanmagan.",
-             reply_markup=main_kb()); return
+        return send(chat_id, bot.home_text(lang, em), reply_markup=main_kb(lang, em))
     if cmd in ("/today", "/index"):
-        send(chat_id, fmt_index(), reply_markup=main_kb()); return
-    if cmd == "/top":
-        send(chat_id, fmt_top(8)); return
-    if cmd == "/topics":
-        send(chat_id, fmt_topics()); return
-    if cmd == "/topic":
-        pp = text.split()
-        if len(pp) < 2:
-            send(chat_id, "Masalan: /topic currency_fx\nMavzular: " + ", ".join(TOPICS))
-        else:
-            send(chat_id, fmt_topic(pp[1]))
-        return
-    send(chat_id, "Buyruq tushunilmadi. /help")
+        return send_summary(chat_id, "kun", lang, em)
+    if cmd == "/week":
+        return send_summary(chat_id, "hafta", lang, em)
+    if cmd in ("/top", "/topics"):
+        return send_details(chat_id, cmd[1:], None, lang, em)
+    send(chat_id, bot.tr(lang, "unknown"))
 
 
 # ----------------------------------------------------------- Mini App data -----
@@ -591,10 +659,16 @@ def _int(v):
         return None
 
 
+def _password(body):
+    """The password an admin typed, or None for a random one."""
+    pw = body.get("password")
+    return pw if isinstance(pw, str) and pw else None
+
+
 ERROR_CODES = {"invalid": 401, "locked": 429, "too_many": 429, "blocked": 403, "expired": 403,
                "other_account": 403, "forbidden": 403, "not_found": 404, "no_request": 404,
                "no_account": 404, "exists": 409, "last_channel": 409, "not_channel": 404,
-               "tg_unavailable": 503}
+               "tg_unavailable": 503, "login_taken": 409}
 
 
 def channel_info(handle):
@@ -618,6 +692,10 @@ def app_action(user, action, body):
     """One Mini App action for a verified Telegram user -> (http code, json)."""
     if action == "login":
         r = auth.login(q, user, body.get("login"), body.get("password"))
+        if r["ok"]:
+            welcome_after_login(user)
+    elif action == "lang":                            # the Mini App's language is the bot's too
+        r = {"ok": bot.set_lang(q, user["id"], body.get("lang"))}
     elif action == "logout":
         r = auth.logout(q, user["id"])
     elif action == "request":
@@ -638,14 +716,17 @@ def app_action(user, action, body):
             r = channels.add(q, user["id"], body.get("handle"), channel_info)
         elif action in ("channel_pause", "channel_resume"):
             r = channels.set_active(q, str(body.get("handle") or ""), action == "channel_resume")
+        elif action == "check_login":
+            r = {"ok": True, "state": auth.login_status(q, auth.normalize_login(body.get("login")))}
         elif action == "create":
             r = auth.create_account(q, user["id"], body.get("role"), str(body.get("term")),
-                                    _int(body.get("request_id")))
+                                    _int(body.get("request_id")), body.get("login") or None, _password(body))
             req = r.pop("request", None)
             if r["ok"] and req:
                 r["delivered"] = deliver_credentials(req, r["account"], r["password"])
         elif action == "reset":                      # an account, or the requester's own login
-            r = auth.reset_password(q, _int(body.get("id")), user["id"], _int(body.get("request_id")))
+            r = auth.reset_password(q, _int(body.get("id")), user["id"], _int(body.get("request_id")),
+                                    _password(body))
             req = r.pop("request", None)
             if r["ok"] and req:
                 r["delivered"] = deliver_credentials(req, r["account"], r["password"])
@@ -658,7 +739,7 @@ def app_action(user, action, body):
                                     "rejected" if action == "reject" else "done")
             req = r.pop("request", None)
             if r["ok"] and action == "reject":
-                send(req["telegram_id"], "Kirish so‘rovingiz rad etildi.")
+                send(req["telegram_id"], bot.tr(bot.lang_of(q, {"id": req["telegram_id"]}), "rejected"))
         else:
             r = {"ok": False, "error": "unknown_action"}
     code = 200 if r.get("ok") else ERROR_CODES.get(r.get("error"), 400)
@@ -738,6 +819,8 @@ class handler(BaseHTTPRequestHandler):
             return self._json(500, {"ok": False, "error": "server"})
 
     def do_GET(self):
+        if parse_qs(urlparse(self.path).query).get("cron") == ["digest"]:
+            return self._cron()
         init = self.headers.get("X-Telegram-Init-Data", "")
         if not init:
             self.send_response(200); self.end_headers()
@@ -748,10 +831,24 @@ class handler(BaseHTTPRequestHandler):
             return self._json(401, {"error": "unauthorized"})
         try:
             state, acc = who(user)
+            lang = (bot.user_row(q, user["id"]) or {}).get("lang")
             if state != "ok":
-                return self._json(200, {"auth": state,
+                return self._json(200, {"auth": state, "lang": lang,
                                         "request_open": auth.has_open_request(q, user["id"])})
-            return self._json(200, {"auth": "ok", "me": me_json(acc), "stats": build_stats()})
+            return self._json(200, {"auth": "ok", "lang": lang, "me": me_json(acc), "stats": build_stats()})
         except Exception as e:
             print("data error:", repr(e))
             return self._json(500, {"error": "server"})
+
+    def _cron(self):
+        """Vercel cron (vercel.json): the morning summaries. Only with the CRON_SECRET it sends."""
+        if not CRON_SECRET or not hmac.compare_digest(self.headers.get("Authorization", ""),
+                                                      f"Bearer {CRON_SECRET}"):
+            return self._json(401, {"ok": False, "error": "unauthorized"})
+        try:
+            return self._json(200, run_digest())
+        except Exception as e:
+            import traceback
+            print("DIGEST ERROR:", repr(e))
+            traceback.print_exc()
+            return self._json(500, {"ok": False, "error": "server"})

@@ -155,6 +155,31 @@ create table if not exists channels (
     changed_at  timestamptz
 );
 
+-- ---------- the bot's own state (app/api/_bot.py) --------------------
+-- Language and morning-summary choice per Telegram user, /setup results, card uploads.
+create table if not exists bot_users (
+    telegram_id   bigint primary key,
+    lang          text check (lang in ('uz','ru','en')),
+    digest        boolean not null default true,
+    digest_day    date,                 -- last daily summary sent
+    digest_week   date,                 -- start of the last weekly summary sent
+    blocked_bot   boolean not null default false,
+    started_at    timestamptz not null default now()
+);
+create table if not exists bot_settings (
+    key        text primary key,         -- 'emoji' (custom emoji ids), 'avatar_sha'
+    value      jsonb not null,
+    changed_at timestamptz not null default now()
+);
+create table if not exists bot_cards (     -- Telegram file id of each rendered card, uploaded once
+    kind       text not null,
+    period     text not null,
+    lang       text not null,
+    file_id    text not null,
+    created_at timestamptz not null default now(),
+    primary key (kind, period, lang)
+);
+
 -- ---------- legacy (pre-login, no longer used) ------------------------
 create table if not exists app_users (
     telegram_id  bigint primary key,
@@ -194,3 +219,6 @@ alter table accounts        enable row level security;
 alter table access_requests enable row level security;
 alter table auth_failures   enable row level security;
 alter table channels        enable row level security;
+alter table bot_users       enable row level security;
+alter table bot_settings    enable row level security;
+alter table bot_cards       enable row level security;

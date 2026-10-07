@@ -58,6 +58,7 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
    | `SUPABASE_DB_URL` | 1-qismdagi pooler URI (parol bilan) |
    | `WEBHOOK_SECRET` | ixtiyoriy — istalgan tasodifiy satr |
    | `WEBAPP_URL` | deploy'dan keyingi manzil, masalan `https://<app>.vercel.app` (Mini App tugmasi uchun) |
+   | `CRON_SECRET` | istalgan uzun tasodifiy satr — ertalabki xulosani faqat Vercel cron ishga tushira oladi |
 5. **Deploy** bosing → app manzilini oling: `https://<app>.vercel.app`.
    Tekshirish: brauzerda `https://<app>.vercel.app/api/index` → "bot is running" chiqadi.
 6. **Webhook o'rnating** (brauzerda bir marta oching, `<TOKEN>` va `<app>` ni almashtiring;
@@ -68,9 +69,28 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
    `{"ok":true,...}` chiqishi kerak.
 7. **Botga `/start`** yozing → bot egasi (admin) sifatida tan olinasiz. Boshqa foydalanuvchilar
    faqat siz bergan login va parol bilan kiradi (pastdagi *Kirish va foydalanuvchilar* bo'limi).
+8. **Botga `/setup`** yozing (faqat bot egasi). Bot o'zini sozlaydi va natijani yozib beradi:
+   nomi, tavsifi (bo'sh chatda ko'rinadigan matn) va qisqa tavsifi 3 tilda, buyruqlar menyusi
+   3 tilda, *Dashboard* menyu tugmasi, avatar (`app/public/bot/avatar.png`) va Premium ikonkalar.
+   Avatar yoki ikonka fayllari o'zgarsa, `/setup` ni qayta yuboring. Tavsif rasmi faqat
+   @BotFather orqali qo'yiladi: `/setdescriptionpic`.
 
-**Bot buyruqlari:** `/today` `/index` `/top` `/topics` `/topic <nom>` `/app` `/me` `/logout` `/help`.
-Statistikalar 1-qismdagi Supabase ma'lumotidan olinadi (avval workflow sync qilgan bo'lsin).
+**Bot buyruqlari:** `/today` (kunlik xulosa) `/week` (haftalik xulosa) `/topics` `/top` `/app` `/me`
+`/lang` `/help`; bot egasi uchun `/setup`. Statistikalar 1-qismdagi Supabase ma'lumotidan olinadi
+(avval workflow sync qilgan bo'lsin).
+
+**Bot qanday ishlaydi:**
+- Birinchi `/start`: bot haqida qisqa matn va til tanlash (o'zbek, rus, ingliz). Keyin kirmagan
+  foydalanuvchiga *Kirish* tugmasi chiqadi; parol chatga yozilmaydi, Mini App'da kiritiladi.
+- Mini App'da kirgandan so'ng bot "Hisob faollashtirildi" xabarini yuboradi.
+- **Ertalabki xulosa:** har kuni Toshkent vaqti bilan 09:00–10:00 orasida (Vercel cron,
+  `app/vercel.json`) har bir faol foydalanuvchiga oxirgi yakunlangan kunning kartasi va qisqa
+  xulosasi boradi; yangi hafta yopilgan kuni haftalik xulosa ham boradi. Quvur kechiksa, 13:00 dagi
+  ikkinchi cron yetkazadi. Har bir xulosa bir marta yuboriladi. Foydalanuvchi uni `/me` da o'chira oladi.
+  `CRON_SECRET` qo'yilmasa, ertalabki xulosa yuborilmaydi.
+- Mini App'da tanlangan til bot uchun ham saqlanadi va aksincha.
+- **Premium ikonkalar:** bot egasida Telegram Premium bo'lsa, xabar va tugmalarda botning o'z
+  ikonkalari ko'rinadi. Premium bo'lmasa, xabarlar ikonkasiz chiqadi (emoji ishlatilmaydi).
 
 ## 3-qism — Mini App (TAYYOR: `app/public/` — `index.html`, `css/`, `js/` + `app/api/index.py`)
 
@@ -79,9 +99,7 @@ Vercel uni ildizda beradi: `https://<app>.vercel.app/`.
 
 1. **Bot'ga `WEBAPP_URL` qo'shing** (2-qism env jadvaliga): `https://<app>.vercel.app`
    (deploy manzili). Endi bot `/app` va `/today` da "Dashboard" tugmasini ko'rsatadi.
-2. **Menu tugmasi (ixtiyoriy, chiroyliroq):** @BotFather → `/setmenubutton` → botni tanlang →
-   *URL* → `https://<app>.vercel.app` → nomi "Dashboard". Endi bot chatida doim "Open App"
-   tugmasi turadi.
+2. **Menu tugmasi:** `/setup` uni o'zi qo'yadi — bot chatida doim *Dashboard* tugmasi turadi.
 3. **Xavfsizlik:** Mini App har so'rovda Telegram `initData` yuboradi; backend uni bot-token
    bilan **HMAC** tekshiradi (soxta yoki 24 soatdan eski bo'lsa rad etiladi), so'ng login
    holatini aniqlaydi. Ma'lumot faqat kirgan foydalanuvchiga beriladi. Baza faqat backend
@@ -110,18 +128,24 @@ Indekslar jadvali bilan bir xil chiqadi; hali yopilmagan davr "Yakunlanmagan" de
 Bot va Mini App faqat admin bergan login va parol bilan ishlaydi. `BOT_ADMIN_ID` (bot egasi)
 doim kiradi va hisobdan chiqmaydi.
 
-- **Login yaratish:** Mini App → yuqoridagi *Foydalanuvchilar* tugmasi (yoki bot xabaridagi
-  *Admin panelini ochish*) → *Yangi kirish ma'lumoti* → rol va muddat → *Login va parol
-  yaratish*. Parol **bir marta** ko'rsatiladi; bazada faqat uning xeshi (scrypt) saqlanadi.
+- **Admin paneli** uch bo'limdan iborat: *Foydalanuvchilar*, *Murojaatlar*, *Kanallar*.
+- **Login yaratish:** *Foydalanuvchilar* → *Yangi foydalanuvchi* → rol va muddat; login va parol
+  avtomatik yoki qo'lda. Qo'lda yozilgan login yozish paytida tekshiriladi (bo'sh yoki band;
+  3–32 belgi: kichik lotin harflari, raqamlar va `. _ -`, harf bilan boshlanadi). Qo'lda yozilgan
+  parol qoidalari: 8–64 belgi, harf va raqam bor, bo'sh joy yo'q, loginni o'z ichiga olmaydi.
+  Parol **bir marta** ko'rsatiladi; bazada faqat uning xeshi (scrypt) saqlanadi.
+- **Foydalanuvchi sahifasi** (ro'yxatdagi qatorni bosing): ma'lumotlar, *Parolni o'zgartirish*
+  (avtomatik yoki qo'lda), *Muddatni uzaytirish* (joriy muddat tugamagan bo'lsa, o'shandan
+  boshlab), *Bloklash*. Har bir amal tasdiqlash tugmasi bilan bajariladi.
 - **Birinchi kirishda** login foydalanuvchining Telegram hisobiga bog'lanadi va boshqa Telegram
   hisobidan ishlamaydi. Foydalanuvchi hisobdan chiqsa (Mini App → *Hisob* → *Hisobdan chiqish*
   yoki botda `/logout`), bog'lanish bekor bo'ladi.
-- **Kirish so'rovlari:** logini yo'q foydalanuvchi kirish ekranidagi *Administratorga* havolasi
-  orqali so'rov yuboradi, sizga bot xabar beradi. So'rovdan yaratilgan login va parol
+- **Murojaatlar:** logini yo'q foydalanuvchi kirish ekranidagi *Administratorga* havolasi
+  orqali so'rov yuboradi, sizga bot xabar beradi (tugma to'g'ridan-to'g'ri *Murojaatlar*ni ochadi).
+  Ko'rib chiqilgan murojaatlar shu bo'limning pastida qoladi. So'rovdan yaratilgan login va parol
   foydalanuvchiga bot orqali boradi va faqat uning Telegram hisobida ishlaydi. *Parolni
   tiklash* so'rovida foydalanuvchining mavjud logini uchun yangi parol yuboriladi. So'rovni
   xabarsiz yopish yoki rad etish (foydalanuvchiga xabar boradi) mumkin.
-- **Boshqaruv:** har bir login uchun parolni tiklash, muddatni uzaytirish, bloklash.
 - **Kanallar:** admin paneli → *Kanallar*. Ochiq kanal `@nom` yoki `t.me/nom` ko'rinishida
   qo'shiladi (bot Telegram'dan tekshiradi) yoki to'xtatiladi. O'zgarish keyingi kunlik
   yig'imdan kuchga kiradi; yakunlangan kunlar o'zgarmaydi. Kamida bitta kanal faol qoladi.

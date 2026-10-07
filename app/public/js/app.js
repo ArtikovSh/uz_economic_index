@@ -1,12 +1,12 @@
 // Mini App entry: asks the server who the Telegram user is and opens the right screen.
-import { api, applyTheme, errorText, tg } from './lib.js';
+import { api, applyTheme, errorText, syncLang, tg } from './lib.js';
 import { renderContact, renderDenied, renderError, renderLogin, renderOutside, renderSent } from './screens.js';
 import { renderAdmin } from './admin.js';
 import { renderDashboard } from './dashboard.js';
 
 const root = document.getElementById('root');
 const state = { auth: null, data: null, requestOpen: false };
-let deepLink = new URLSearchParams(location.search).get('screen');   // bot buttons open ?screen=admin
+let deepLink = new URLSearchParams(location.search).get('screen');   // bot buttons open ?screen=admin or =requests
 const SCREENS = {
   login: renderLogin, contact: renderContact, sent: renderSent, denied: renderDenied,
   outside: renderOutside, error: renderError, admin: renderAdmin, dashboard: renderDashboard,
@@ -28,6 +28,7 @@ async function boot() {
   try { r = await api(); } catch (e) { r = null; }
   if (r && r.status === 401) return nav.go('outside');
   if (!r || !r.auth) return nav.go('error', { text: errorText(r) });
+  syncLang(r.lang);
   state.auth = r.auth;
   state.requestOpen = !!r.request_open;
   state.data = r.auth === 'ok' ? r : null;
@@ -35,7 +36,10 @@ async function boot() {
   if (r.auth !== 'ok') return nav.go('denied');
   const want = deepLink;
   deepLink = null;                                   // only the first screen after sign-in
-  return nav.go(want === 'admin' && r.me && r.me.is_admin ? 'admin' : 'dashboard');
+  if ((want === 'admin' || want === 'requests') && r.me && r.me.is_admin) {
+    return nav.go('admin', { view: want === 'requests' ? 'requests' : 'users' });
+  }
+  return nav.go('dashboard');
 }
 
 if (tg) {

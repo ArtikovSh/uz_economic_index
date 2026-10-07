@@ -16,7 +16,8 @@ oy, chorak va yil uchun formula bir xil.
 1. **Yig'ish** — har kuni Toshkent vaqti bilan 00:05 da 2 kun oldingi to'liq kun
    yig'iladi (6-oktabr 00:05 → 4-oktabr postlari). Har post **bir marta** o'lchanadi.
    02:05 dagi zaxira run faqat birinchi run yig'a olmagan kanallarni yig'adi.
-   Yig'ilmay qolgan kunlar keyinroq to'ldirilmaydi. Ko'rishlar va forward'lar indeksda
+   Yig'ilmay qolgan kunlar avtomatik to'ldirilmaydi: ularni qo'lda yig'ish uchun workflow'ni
+   `backfill_days` (masalan `2026-09-28..2026-10-03`) bilan ishga tushiring. Ko'rishlar va forward'lar indeksda
    ishlatilmaydi, lekin yig'ib boriladi.
 2. **Tasniflash** — har post **OpenAI** yoki **Gemini** bilan bir marta belgilanadi: reklamami, dayjestmi,
    iqtisodiymi, xorijiymi, mavzu va sentiment. Prompt qoidalari `METHODOLOGY.md` ning
@@ -47,7 +48,7 @@ oy, chorak va yil uchun formula bir xil.
 | `check.py` | Oldindan tekshiruv: Telegram sessiyasi va kanallar, ishlatilayotgan LLM (nazorat to'plami bilan), Sheets, bot ogohlantirishi |
 | `evaluate.py` | LLM belgilarini 200 ta haqiqiy postda baholash; natija `eval/` papkasiga yoziladi |
 | `export_session.py` | CI uchun Telegram sessiya satrini yaratish |
-| `app/` | Telegram bot + Mini App (Vercel): login va parol bilan kirish, admin paneli — `docs/DEPLOYMENT.md` |
+| `app/` | Telegram bot + Mini App (Vercel): login va parol bilan kirish, admin paneli, 3 tilli bot va ertalabki xulosa — `docs/DEPLOYMENT.md` |
 
 ## Natijalar
 
