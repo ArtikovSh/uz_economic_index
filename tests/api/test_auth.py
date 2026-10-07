@@ -534,8 +534,8 @@ def test_top_posts_headline_and_short_text():
     rows = [{"channel": "@kunuzofficial", "message_id": 5, "primary_topic": "trade", "tone": "pos", "raw_text": raw}]
     data = {"kind": "kun", "start": "2026-10-05", "end": "2026-10-05"}
     text = index.bot.top_text(rows, data, "uz", {"@kunuzofficial": "Kun.uz"}, index.post_parts)
-    assert "<b>1. Eksport 9 oyda 18% oshdi</b>\nStatistika" in text
-    assert '<i><a href="https://t.me/kunuzofficial/5">Kun.uz</a> · Tashqi savdo · ijobiy xabar</i>' in text
+    assert ('1. <i><a href="https://t.me/kunuzofficial/5">Kun.uz</a> · Tashqi savdo · ijobiy</i>\n'
+            '<b>Eksport 9 oyda 18% oshdi</b>\nStatistika') in text
 
 
 # --------------------------------------------------------------- channels --

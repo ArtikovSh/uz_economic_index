@@ -66,25 +66,54 @@ FINAL_DAYS = "(select start_date from indices where period_type='kun')"
 
 
 # ------------------------------------------------------------------ database ---
+_CONN = None
+
+
+def _rows(cur):
+    cols = [c.name for c in cur.description]
+    return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+
+def _run(work):
+    """work(cursor) on the process's one database connection. Opening a connection costs several
+    round trips, more than the queries themselves, so it is kept while the instance lives; a
+    connection the pooler dropped is reopened once. Autocommit: every statement stands alone."""
+    global _CONN
+    for attempt in (0, 1):
+        if _CONN is None or _CONN.closed:
+            _CONN = psycopg.connect(DB_URL, prepare_threshold=None, autocommit=True, connect_timeout=10)
+        try:
+            with _CONN.cursor() as cur:
+                return work(cur)
+        except psycopg.OperationalError:
+            try:
+                _CONN.close()
+            except Exception:
+                pass
+            _CONN = None
+            if attempt:
+                raise
+
+
 def q(sql, params=(), one=False):
-    with psycopg.connect(DB_URL, prepare_threshold=None) as conn, conn.cursor() as cur:
+    def work(cur):
         cur.execute(sql, params)
         if cur.description is None:
             return None
-        cols = [c.name for c in cur.description]
-        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        rows = _rows(cur)
         return (rows[0] if rows else None) if one else rows
+    return _run(work)
 
 
 def q_many(*queries):
-    """Several (sql, params) on one connection -> list of row lists (saves a pooler round trip)."""
-    out = []
-    with psycopg.connect(DB_URL, prepare_threshold=None) as conn, conn.cursor() as cur:
+    """Several (sql, params) -> list of row lists."""
+    def work(cur):
+        out = []
         for sql, params in queries:
             cur.execute(sql, params)
-            cols = [c.name for c in cur.description]
-            out.append([dict(zip(cols, r)) for r in cur.fetchall()])
-    return out
+            out.append(_rows(cur))
+        return out
+    return _run(work)
 
 
 _SCHEMA_READY = False

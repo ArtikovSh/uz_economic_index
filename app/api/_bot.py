@@ -71,7 +71,7 @@ T = {
         "lifted": "ESI ni ko‘targan: {x}", "pulled": "ESI ni tushirgan: {x}",
         "topics_title": "Mavzular · {d}", "topics_sub": "{n} ta iqtisodiy xabar",
         "top_title": "Asosiy xabarlar · {d}",
-        "tone": {"pos": "ijobiy xabar", "neu": "neytral xabar", "neg": "salbiy xabar"},
+        "tone": {"pos": "ijobiy", "neu": "neytral", "neg": "salbiy"},
         "no_data": "Hozircha ma’lumot yo‘q.", "no_posts": "Bu kun uchun iqtisodiy xabar yo‘q.",
         "me_title": "Hisobim", "me_owner": "Admin (bot egasi)", "me_login": "Login: {x}", "me_role": "Rol: {x}",
         "me_until": "Amal qiladi: {x} gacha", "me_forever": "Amal qiladi: muddatsiz",
@@ -137,7 +137,7 @@ T = {
         "lifted": "Подняли ESI: {x}", "pulled": "Снизили ESI: {x}",
         "topics_title": "Темы · {d}", "topics_sub": "Экономических новостей: {n}",
         "top_title": "Главные новости · {d}",
-        "tone": {"pos": "позитивная новость", "neu": "нейтральная новость", "neg": "негативная новость"},
+        "tone": {"pos": "позитив", "neu": "нейтрально", "neg": "негатив"},
         "no_data": "Данных пока нет.", "no_posts": "За этот день экономических новостей нет.",
         "me_title": "Мой аккаунт", "me_owner": "Админ (владелец бота)", "me_login": "Логин: {x}",
         "me_role": "Роль: {x}", "me_until": "Действует до {x}", "me_forever": "Действует бессрочно",
@@ -203,7 +203,7 @@ T = {
         "lifted": "Lifted ESI: {x}", "pulled": "Pulled ESI down: {x}",
         "topics_title": "Topics · {d}", "topics_sub": "Economic posts: {n}",
         "top_title": "Top posts · {d}",
-        "tone": {"pos": "positive news", "neu": "neutral news", "neg": "negative news"},
+        "tone": {"pos": "positive", "neu": "neutral", "neg": "negative"},
         "no_data": "No data yet.", "no_posts": "No economic posts on this day.",
         "me_title": "My account", "me_owner": "Admin (bot owner)", "me_login": "Login: {x}", "me_role": "Role: {x}",
         "me_until": "Valid until {x}", "me_forever": "Valid with no end date",
@@ -502,8 +502,8 @@ def period_label(data, lang):
 
 
 def top_text(rows, data, lang, titles, parts, em=None):
-    """Each post: its headline in bold, up to 100 characters of the text, then the channel (a link
-    to the post), topic and tone. `parts(raw)` splits a post into (headline, text)."""
+    """Each post: the channel (a link to the post), topic and tone first, then the headline in
+    bold and up to 100 characters of the text. `parts(raw)` splits a post into (headline, text)."""
     if not rows:
         return tr(lang, "no_posts")
     out = [ic(em, "news") + "<b>" + escape(tr(lang, "top_title", d=period_label(data, lang))) + "</b>"]
@@ -515,7 +515,7 @@ def top_text(rows, data, lang, titles, parts, em=None):
         mark = ic(em, {"pos": "rise", "neg": "fall"}.get(r["tone"], ""))
         meta = (f'<a href="{escape(link)}">{name}</a> · {escape(topic_name(lang, r["primary_topic"]))} · '
                 f'{mark}{escape(tr(lang, "tone")[r["tone"]])}')
-        out.append(f"\n<b>{i}. {escape(head)}</b>" + (f"\n{escape(body)}" if body else "") + f"\n<i>{meta}</i>")
+        out.append(f"\n{i}. <i>{meta}</i>\n<b>{escape(head)}</b>" + (f"\n{escape(body)}" if body else ""))
     return "\n".join(out)
 
 
