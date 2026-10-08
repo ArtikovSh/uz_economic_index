@@ -30,7 +30,10 @@ export function renderTopics(ctx) {
     ${rows.map((x) => `
       <button class="tlrow" data-topic="${esc(x.key)}">
         <span class="tl-main">
-          <span class="tl-name"><span>${esc(topicName(x.key))}</span><b>${esc(num(x.n))}</b></span>
+          <span class="tl-name"><span class="tl-label">${esc(topicName(x.key))}</span>
+            <span class="tl-tones" aria-label="${esc(`${t('ov.pos')} ${x.pos}, ${t('ov.neu')} ${x.neu}, ${t('ov.neg')} ${x.neg}`)}">
+              <span class="t-pos">${esc(num(x.pos))}</span><i>|</i><span class="t-neu">${esc(num(x.neu))}</span><i>|</i><span class="t-neg">${esc(num(x.neg))}</span></span>
+            <b>${esc(num(x.n))}</b></span>
           <span class="tl-track"><span style="width:${Math.round(100 * x.n / maxN)}%">
             <i class="b-pos" style="flex:${x.pos}"></i><i class="b-neu" style="flex:${x.neu}"></i><i class="b-neg" style="flex:${x.neg}"></i></span></span>
         </span>

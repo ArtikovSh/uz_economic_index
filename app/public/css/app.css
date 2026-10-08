@@ -350,9 +350,14 @@ button.user { width: 100%; border: 0; background: transparent; color: inherit; t
   border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink); text-align: left; }
 .tl-head + .tlrow { border-top: 0; }
 .tl-main { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
-.tl-name { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; }
-.tl-name span { font-weight: 500; }
-.tl-name b { font-weight: 600; font-variant-numeric: tabular-nums; }
+/* topic name, then its positive | neutral | negative counts, the total on the right;
+   on a narrow screen the counts move under the name */
+.tl-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 13.5px; }
+.tl-label { font-weight: 500; }
+.tl-tones { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tl-tones i { font-style: normal; font-weight: 400; color: var(--field); margin: 0 4px; }
+.tl-tones .t-neu { color: var(--muted); }
+.tl-name b { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
 .tl-track { display: block; height: 8px; border-radius: 999px; background: var(--surface2); overflow: hidden; }
 .tl-track > span { display: flex; gap: 2px; height: 100%; }
 .tl-track i { display: block; height: 100%; }

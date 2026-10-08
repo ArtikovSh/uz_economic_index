@@ -143,7 +143,7 @@ const D = {
       top: 'Asosiy mavzular', all: 'Barchasi', empty: 'Hozircha ma’lumot yo‘q',
     },
     tp: {
-      sub: '{period} · {n} iqtisodiy xabar', byTone: 'Mavzular bo‘yicha kayfiyat', head: 'Mavzu · xabarlar soni',
+      sub: '{period} · {n} iqtisodiy xabar', byTone: 'Mavzular bo‘yicha kayfiyat', head: 'Mavzu · ijobiy | neytral | salbiy',
       how: 'ESI qanday shakllandi', total: 'Jami = ESI',
       howText: 'Mavzu ulushi = (ijobiy − salbiy) ÷ {n} iqtisodiy xabar × 100. Barcha ulushlar yig‘indisi ESI ga teng.',
     },
@@ -257,7 +257,7 @@ const D = {
       top: 'Главные темы', all: 'Все', empty: 'Данных пока нет',
     },
     tp: {
-      sub: '{period} · экономических новостей: {n}', byTone: 'Настроение по темам', head: 'Тема · число новостей',
+      sub: '{period} · экономических новостей: {n}', byTone: 'Настроение по темам', head: 'Тема · позитив | нейтрально | негатив',
       how: 'Как сложился ESI', total: 'Итого = ESI',
       howText: 'Вклад темы = (позитив − негатив) ÷ {n} экономических новостей × 100. Сумма вкладов равна ESI.',
     },
@@ -371,7 +371,7 @@ const D = {
       top: 'Main topics', all: 'All', empty: 'No data yet',
     },
     tp: {
-      sub: '{period} · {n} economic news', byTone: 'Sentiment by topic', head: 'Topic · number of news',
+      sub: '{period} · {n} economic news', byTone: 'Sentiment by topic', head: 'Topic · positive | neutral | negative',
       how: 'How ESI is made up', total: 'Total = ESI',
       howText: 'Topic share = (positive − negative) ÷ {n} economic news × 100. The shares add up to ESI.',
     },
