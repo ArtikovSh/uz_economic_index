@@ -13,7 +13,7 @@ on:
   workflow_dispatch:            # manual "Run workflow" button
     inputs:
       rebuild:
-        description: "Relabel every post with the current rules and rebuild all tables (rebuild.py)"
+        description: "Relabel the posts labelled with older rules and rebuild all tables (rebuild.py)"
         type: boolean
         default: false
       backfill_days:
@@ -67,7 +67,7 @@ jobs:
           BACKFILL_DAYS: ${{ inputs.backfill_days }}
         run: python backfill.py "$BACKFILL_DAYS"
 
-      # Manual only: a methodology change relabels the whole history at once.
+      # Manual only: after a methodology change, relabels every post with an older label.
       - name: Rebuild history
         id: rebuild
         if: inputs.rebuild

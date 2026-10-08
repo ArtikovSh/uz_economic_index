@@ -1,5 +1,6 @@
 """rebuild.py on in-memory tables with a fake labeller (no network, no files)."""
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 
@@ -30,10 +31,14 @@ def tables():
     return ledger, pending
 
 
-def fake_labeller(missing=0):
+def fake_labeller(missing=0, seen=None):
+    """Labels, like label_pending, only the posts without a current label (all but `missing`)."""
     def label(work, save=None, sticky=None):
         work = work.copy()
-        for n, i in enumerate(work.index):
+        todo = work.index[work["label_version"].astype(str) != LLM_LABEL_VERSION]
+        if seen is not None:
+            seen.extend(work.loc[todo, "message_id"].tolist())
+        for n, i in enumerate(todo):
             if n < missing:
                 continue
             text = str(work.at[i, "raw_text"])
@@ -46,9 +51,10 @@ def fake_labeller(missing=0):
     return label
 
 
-def run(monkeypatch, labeller):
+def run(monkeypatch, labeller, tmp_path=None, tables=tables):
     ledger, pending = tables()
     written, saved = {}, []
+    monkeypatch.setattr(rebuild, "RELABEL_CSV", str(Path(tmp_path or "no-such-dir") / "no-relabel.csv"))
     monkeypatch.setattr(rebuild, "load_ledger", lambda: ledger)
     monkeypatch.setattr(rebuild, "load_pending", lambda: pending)
     monkeypatch.setattr(rebuild, "load_indices", lambda: typed(pd.DataFrame(columns=rebuild.INDEX_COLS)))
@@ -79,4 +85,30 @@ def test_rebuild_relabels_everything_and_recomputes(monkeypatch):
 
 def test_rebuild_writes_nothing_when_a_post_is_left(monkeypatch):
     code, written, saved = run(monkeypatch, fake_labeller(missing=1))
-    assert code == 1 and written == {} and saved == []
+    assert code == 1 and list(written) == [rebuild.RELABEL_CSV] and saved == []   # only the progress
+    progress = written[rebuild.RELABEL_CSV]
+    assert len(progress) == 5 and "raw_text" not in progress                     # 6 posts, 1 left
+
+
+def test_rebuild_relabels_only_older_labels(monkeypatch):
+    def mixed():                                 # one month already labelled with the current rules
+        ledger, pending = tables()
+        ledger.loc[ledger["message_id"].isin([4, 5]), "label_version"] = LLM_LABEL_VERSION
+        return ledger, pending
+    seen = []
+    code, written, _ = run(monkeypatch, fake_labeller(seen=seen), tables=mixed)
+    assert code == 0 and sorted(seen) == [1, 2, 3, 6]
+    assert set(written["ledger"]["label_version"]) == {LLM_LABEL_VERSION}
+
+
+def test_a_stopped_rebuild_goes_on_from_its_labels(monkeypatch, tmp_path):
+    progress = tmp_path / "no-relabel.csv"
+    ledger, _ = tables()
+    got = ledger[ledger["message_id"].isin([1, 2])][rebuild.LABELLED].copy()
+    got["label_version"], got["sentiment"] = LLM_LABEL_VERSION, 0.9
+    got.to_csv(progress, index=False)
+    seen = []
+    code, written, _ = run(monkeypatch, fake_labeller(seen=seen), tmp_path=tmp_path)
+    assert code == 0 and sorted(seen) == [3, 4, 5, 6]                   # 1 and 2 are not paid for again
+    assert written["ledger"].set_index("message_id").loc[[1, 2], "tone"].tolist() == [1, 1]
+    assert not progress.exists()                                         # removed after a full rebuild

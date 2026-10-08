@@ -60,10 +60,13 @@ soni bo'yicha hisoblanadi, kunlik qiymatlarning o'rtachasi emas.
 
 ## 3. Tasniflash — OpenAI yoki Gemini (`llm_classifier.py`, `prompts.py`)
 
-Har bir post bir marta belgilanadi (belgi versiyasi `v6`). Qoida o'zgarganda butun tarix bitta
-versiya bilan qayta quriladi (`rebuild.py`, workflow'da `rebuild`): barcha postlar qayta
-belgilanadi, Xabarlar va Indekslar jadvallari, baza va Sheets qaytadan yoziladi. Bu jadvallar
-o'zgarmasligi qoidasidan yagona istisno.
+Har bir post bir marta belgilanadi (belgi versiyasi `v7`: reklama va iqtisodiy filtr
+aniqlashtirildi, heshteg va yorliq sarlavha bo'lmaydi; `v6`: reja va kelishuvlar ohangi
+hisoblanadi). Qoida o'zgarganda tarix bitta versiyaga keltiriladi (`rebuild.py`, workflow'da
+`rebuild`): eski versiyadagi postlar qayta belgilanadi (joriy versiyadagilariga tegilmaydi,
+ular uchun qayta pul to'lanmaydi), Xabarlar va Indekslar jadvallari, baza va Sheets qaytadan
+yoziladi. Run to'xtab qolsa, olingan belgilar `data/relabel.csv` da qoladi va keyingi run
+ulardan davom etadi. Bu jadvallar o'zgarmasligi qoidasidan yagona istisno.
 Postlarni bitta model belgilaydi:
 - `OPENAI_API_KEY` da OpenAI kaliti (`sk-...`) bo'lsa — OpenAI (`gpt-6-luna`, u ishlamasa
   `gpt-5-mini`). Javob qat'iy JSON sxema bo'yicha olinadi, OpenAI postlarni saqlamaydi

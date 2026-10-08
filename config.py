@@ -86,7 +86,9 @@ LLM_RPM = float(os.getenv("LLM_RPM") or (30 if LLM_PROVIDER == "openai" else 5))
 LLM_WORKERS = int(os.getenv("LLM_WORKERS") or (4 if LLM_PROVIDER == "openai" else 1))
 LLM_MAX_REQUESTS = int(os.getenv("LLM_MAX_REQUESTS") or (240 if LLM_PROVIDER == "openai" else 60))  # per run
 LLM_TIME_BUDGET_MIN = float(os.getenv("LLM_TIME_BUDGET_MIN", "30"))  # stop labelling after this
-LLM_LABEL_VERSION = "v6"     # bump to re-label everything (v6: tone of plans and agreements counts)
+# bump when the rules change: posts with an older label are labelled again by rebuild.py
+# (v6: tone of plans and agreements counts; v7: stricter ad and economic filters, no labels as headlines)
+LLM_LABEL_VERSION = "v7"
 
 # =============================================================================
 # Index parameters (see METHODOLOGY.md)

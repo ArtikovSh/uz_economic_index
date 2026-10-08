@@ -91,8 +91,8 @@ yuboriladi (`LLM_BATCH_SIZE`).
 **Workflow'lar:**
 - `uz-economic-index` — kunlik (00:05 va 02:05 Toshkent) + qo'lda. Barcha davrlar
   (kun, hafta, oy, chorak, yil) shu run'da yopiladi. Qo'lda ishga tushirishda `rebuild`
-  belgilansa, yig'ish o'rniga butun tarix joriy qoidalar bilan qayta belgilanadi va baza
-  hamda Sheets qaytadan yoziladi (`rebuild.py`; metodika o'zgarganda).
+  belgilansa, yig'ish o'rniga eski versiya bilan belgilangan postlar joriy qoidalar bilan qayta
+  belgilanadi va baza hamda Sheets qaytadan yoziladi (`rebuild.py`; metodika o'zgarganda).
 - `health` — har 6 soatda bot va bazani tekshiradi; muammo bo'lsa botga xabar yuboradi.
 - `history` — arxivni oyma-oy quradi (`history.py`): oy(lar)ni kiriting, masalan `2026-01` yoki
   `2026-01..2026-03`. Barcha faol kanallar o'sha oylar uchun yig'iladi, belgilanadi, indekslar,
