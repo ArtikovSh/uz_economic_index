@@ -30,7 +30,7 @@ PARALLEL = int(os.getenv("EVAL_PARALLEL", "4"))
 BUDGET_MIN = float(os.getenv("EVAL_BUDGET_MIN", "10"))     # per setting
 SEED = 2026
 PRICES = {"gpt-6-luna": (0.10, 0.50), "gpt-5-mini": (0.25, 2.00)}   # $ per 1M tokens in/out
-LABELS = ["is_ad", "is_digest", "is_economic", "is_foreign", "primary_topic", "relevance",
+LABELS = ["is_ad", "is_digest", "is_economic", "is_foreign", "primary_topic",
           "sentiment"]
 
 

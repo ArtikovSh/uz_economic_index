@@ -215,8 +215,7 @@ export function renderAdmin(root, nav, state, opts = {}) {
               <span class="line2 mono">${esc(c.handle)}</span>
               <span class="line2">${esc(t('admin.chanSince', { d: fmtDate(c.changed_at || c.added_at) }))}</span>
             </span>
-            <button class="icon-btn ghost" data-chan="${esc(c.handle)}" data-on="${c.active ? 1 : 0}"
-                    aria-label="${esc(t(c.active ? 'admin.pause' : 'admin.resume'))}">${icon(c.active ? 'pause' : 'play', 18)}</button>
+            <button class="icon-btn ghost" data-chan="${esc(c.handle)}" aria-label="${esc(c.title || c.handle)}">${icon('more', 18)}</button>
           </div>`).join('')}
       </section>`;
   }
@@ -256,6 +255,7 @@ export function renderAdmin(root, nav, state, opts = {}) {
         ${a.status === 'blocked'
           ? `<button data-do="unblock"><span class="ic">${icon('unlock', 18)}</span>${esc(t('admin.unblock'))}</button>`
           : `<button data-do="block" class="danger"><span class="ic">${icon('ban', 18)}</span>${esc(t('admin.block'))}</button>`}
+        <button data-do="delete" class="danger"><span class="ic">${icon('trash', 18)}</span>${esc(t('admin.removeUser'))}</button>
       </div></section>`}`;
   }
 
@@ -284,6 +284,12 @@ export function renderAdmin(root, nav, state, opts = {}) {
         <div class="seg" role="group">${segHTML(TERMS.map((x) => [x, t('admin.terms.' + x)]), form.term, 'term')}</div>
         <p class="note">${esc(a.expires_at ? t('admin.nowUntil', { d: fmtDate(a.expires_at) }) : t('admin.nowForever'))}<br><b>${esc(result)}</b></p>
         ${buttons(t('admin.confirm'))}</section>`;
+    }
+    if (page.action === 'delete') {
+      return `<section class="card stack">
+        <h2>${esc(t('admin.removeUser'))}</h2>
+        <p class="note">${esc(t('admin.removeUserNote'))}</p>
+        ${buttons(t('admin.remove'), true)}</section>`;
     }
     const blocking = page.action === 'block';
     return `<section class="card stack">
@@ -382,21 +388,40 @@ export function renderAdmin(root, nav, state, opts = {}) {
       }));
     });
   }
-  function pauseChannel(c) {
-    const close = openSheet(document.body, c.title || c.handle, `
-      <p class="note">${esc(t('admin.pauseNote'))}</p>
+  /** A channel's actions: pause or switch back on, delete; pausing and deleting ask first. */
+  function channelSheet(c) {
+    const menu = `<div class="menu">
+        ${c.active
+          ? `<button data-step="pause"><span class="ic">${icon('pause', 18)}</span>${esc(t('admin.pause'))}</button>`
+          : `<button data-step="resume"><span class="ic">${icon('play', 18)}</span>${esc(t('admin.resume'))}</button>`}
+        <button data-step="delete" class="danger"><span class="ic">${icon('trash', 18)}</span>${esc(t('admin.removeChannel'))}</button>
+      </div>`;
+    const confirm = (note, label) => `
+      <p class="note">${esc(note)}</p>
       <div class="pair">
-        <button class="btn secondary" data-close-sheet>${esc(t('cancel'))}</button>
-        <button class="btn primary danger" data-pause-ok>${esc(t('admin.pause'))}</button>
-      </div>`, (body) => {
-      body.querySelector('[data-close-sheet]').addEventListener('click', () => { haptic(); close(); setBack(back); });
-      const ok = body.querySelector('[data-pause-ok]');
-      ok.addEventListener('click', async () => {
-        ok.disabled = true;
-        if (await act('channel_pause', { handle: c.handle })) { close(); setBack(back); toast(t('admin.done')); load(); }
-        else ok.disabled = false;
-      });
-    });
+        <button class="btn secondary" data-step="menu">${esc(t('cancel'))}</button>
+        <button class="btn primary danger" data-ok>${esc(label)}</button>
+      </div>`;
+    let close = null;
+    const run = async (action, button) => {
+      button.disabled = true;
+      if (await act(action, { handle: c.handle })) {
+        close(); setBack(back); toast(t(action === 'channel_delete' ? 'admin.removed' : 'admin.done')); load();
+      } else button.disabled = false;
+    };
+    const mount = (body, _close, fill) => {
+      body.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => {
+        haptic();
+        const step = b.dataset.step;
+        if (step === 'menu') return fill(menu);
+        if (step === 'resume') return run('channel_resume', b);
+        fill(step === 'pause' ? confirm(t('admin.pauseNote'), t('admin.pause'))
+          : confirm(t('admin.removeChannelNote'), t('admin.remove')));
+        body.querySelector('[data-ok]').addEventListener('click', (e) =>
+          run(step === 'pause' ? 'channel_pause' : 'channel_delete', e.currentTarget));
+      }));
+    };
+    close = openSheet(document.body, c.title || c.handle, menu, mount);
   }
 
   // -------------------------------------------------------------- bind ----
@@ -433,11 +458,9 @@ export function renderAdmin(root, nav, state, opts = {}) {
       busy = false;
       if (r) { haptic('success'); chanInput = ''; toast(t('admin.chanAdded')); await load(); } else draw();
     });
-    on('[data-chan]', async (el) => {
+    on('[data-chan]', (el) => {
       haptic();
-      const c = (data.channels || []).find((x) => x.handle === el.dataset.chan);
-      if (el.dataset.on === '1') return pauseChannel(c);
-      if (await act('channel_resume', { handle: c.handle })) { toast(t('admin.done')); load(); }
+      channelSheet((data.channels || []).find((x) => x.handle === el.dataset.chan));
     });
 
     // credential form (new user) and account actions share the segmented choices
@@ -510,6 +533,7 @@ export function renderAdmin(root, nav, state, opts = {}) {
       busy = false;
       if (!r) return draw();
       haptic('success');
+      if (what === 'delete') { page = null; form = null; toast(t('admin.removed')); draw(); return load(); }
       if (what === 'password') {
         page.creds = { title: t('admin.newPassword'), login: r.account.login, password: r.password,
                        delivered: page.request ? r.delivered : undefined, note: t('admin.resetNote') };

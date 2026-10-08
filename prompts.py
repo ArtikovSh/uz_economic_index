@@ -3,7 +3,7 @@ The Gemini classification prompt + structured-output schema.
 
 This is the single place to tune how posts are labelled. The rules follow the order
 in which the index uses the labels: ad -> digest -> economic -> foreign -> topic ->
-relevance -> sentiment. Every post comes back with its own number ("id"), so a label
+sentiment -> headline. Every post comes back with its own number ("id"), so a label
 can never land on the wrong post. Changing the meaning of any rule here requires
 bumping LLM_LABEL_VERSION (config.py).
 """
@@ -101,11 +101,7 @@ energy_utility; a company's export deal: trade + business. A passing mention is 
 enough; most posts have []. Never repeat "topic" or use "non_economic"; [] when
 economic=false.
 
-STEP 6 — relevance (0.0–1.0)
-How central the economy is to the post: 1.0 = the whole post is an economic story,
-0.5 = the economy is one of several aspects, 0.0 if economic=false.
-
-STEP 7 — sentiment (-1.0 … +1.0)
+STEP 6 — sentiment (-1.0 … +1.0)
 What is the TONE of the post for Uzbekistan's economy, households or businesses: good
 news, bad news, or neither? Only the sign is used (|sentiment| <= 0.15 counts as
 neutral), so get the DIRECTION right. Typical strengths: 0.3 mild, 0.6 clear, 0.9 major.
@@ -186,7 +182,7 @@ EXAMPLES (headline -> labels)
  "Кредит до 300 млн сумов без залога — оформите в приложении банка за 5 минут"
      -> is_ad
 
-STEP 8 — headline (text)
+STEP 7 — headline (text)
 The post's own headline, copied exactly without formatting, when it starts with one (a short
 first line or a bold title). A post without one gets a short headline you write in the post's
 language (at most 90 characters) that states its main fact and adds nothing that is not in
@@ -206,15 +202,14 @@ _ITEM = {
         "is_foreign": {"type": "BOOLEAN"},
         "topic": {"type": "STRING", "enum": CATEGORIES},
         "other_topics": {"type": "ARRAY", "items": {"type": "STRING", "enum": CATEGORIES}},
-        "relevance": {"type": "NUMBER"},
         "sentiment": {"type": "NUMBER"},
         "headline": {"type": "STRING"},
     },
     "required": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic", "other_topics",
-                 "relevance", "sentiment", "headline"],
+                 "sentiment", "headline"],
     # answer in the order of the decision steps above
     "propertyOrdering": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic", "other_topics",
-                         "relevance", "sentiment", "headline"],
+                         "sentiment", "headline"],
 }
 
 # Gemini structured-output schema (OpenAPI subset): object with a "results" array.

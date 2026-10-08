@@ -409,6 +409,17 @@ def extend(q, account_id, term):
     return {"ok": True, "account": row} if row else {"ok": False, "error": "not_found"}
 
 
+def delete_account(q, account_id, admin_tg):
+    """Delete a login for good; an admin cannot delete the login they are signed in with."""
+    acc = q("select id, telegram_id from accounts where id=%s", (account_id,), one=True)
+    if not acc:
+        return {"ok": False, "error": "not_found"}
+    if acc["telegram_id"] is not None and str(acc["telegram_id"]) == str(admin_tg):
+        return {"ok": False, "error": "self"}
+    q("delete from accounts where id=%s", (account_id,))
+    return {"ok": True, "account": acc}
+
+
 def finish_request(q, admin_tg, request_id, status):
     """Close an open request: done (handled, nobody is told) or rejected (the caller tells them)."""
     row = q("""update access_requests set status=%s, handled_at=now(), handled_by=%s

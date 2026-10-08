@@ -51,7 +51,7 @@ OPENAI_API = "https://api.openai.com/v1"
 OPENAI_DEFAULTS = ["gpt-6-luna", "gpt-5-mini"]
 OPENAI_MAX_OUTPUT = 32000          # a cap on reasoning + answer tokens per request
 
-UNLABELLED = {"is_economic": 0, "primary_topic": "non_economic", "topics": "non_economic", "relevance": 0.0,
+UNLABELLED = {"is_economic": 0, "primary_topic": "non_economic", "topics": "non_economic",
               "sentiment": 0.0, "is_ad": 0, "is_digest": 0, "is_foreign": 0}
 
 
@@ -224,7 +224,6 @@ def _to_label(d):
         "primary_topic": topic if econ else "non_economic",
         "topics": ",".join(topics),
         "headline": " ".join(str(d.get("headline") or "").split())[:240] or None,
-        "relevance": _num(d.get("relevance"), 0.0, 1.0) if econ else 0.0,
         "sentiment": _num(d.get("sentiment"), -1.0, 1.0) if econ else 0.0,
         "is_ad": int(bool(d.get("is_ad"))),
         "is_digest": int(bool(d.get("is_digest"))),

@@ -787,7 +787,7 @@ def _password(body):
 ERROR_CODES = {"invalid": 401, "locked": 429, "too_many": 429, "blocked": 403, "expired": 403,
                "other_account": 403, "forbidden": 403, "not_found": 404, "no_request": 404,
                "no_account": 404, "exists": 409, "last_channel": 409, "not_channel": 404,
-               "tg_unavailable": 503, "login_taken": 409}
+               "tg_unavailable": 503, "login_taken": 409, "self": 409}
 
 
 def channel_info(handle):
@@ -833,6 +833,8 @@ def app_action(user, action, body):
             r = {**auth.overview(q), "channels": channels.listing(q)}
         elif action == "channel_add":
             r = channels.add(q, user["id"], body.get("handle"), channel_info)
+        elif action == "channel_delete":
+            r = channels.remove(q, str(body.get("handle") or ""))
         elif action in ("channel_pause", "channel_resume"):
             r = channels.set_active(q, str(body.get("handle") or ""), action == "channel_resume")
         elif action == "check_login":
@@ -851,6 +853,8 @@ def app_action(user, action, body):
                 r["delivered"] = deliver_credentials(req, r["account"], r["password"])
         elif action in ("block", "unblock"):
             r = auth.set_status(q, _int(body.get("id")), "blocked" if action == "block" else "active")
+        elif action == "delete":
+            r = auth.delete_account(q, _int(body.get("id")), user["id"])
         elif action == "extend":
             r = auth.extend(q, _int(body.get("id")), str(body.get("term")))
         elif action in ("reject", "close"):           # close = handled, the requester is not told

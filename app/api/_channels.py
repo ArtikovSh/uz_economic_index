@@ -67,6 +67,17 @@ def add(q, admin_tg, raw, lookup):
     return {"ok": True, "channel": {"handle": handle, "title": info["title"]}}
 
 
+def remove(q, handle):
+    """Remove a channel from the list; posts already collected stay in the archive."""
+    row = q("select active from channels where handle=%s", (handle,), one=True)
+    if not row:
+        return {"ok": False, "error": "not_found"}
+    if row["active"] and not q("select 1 x from channels where active and handle<>%s limit 1", (handle,), one=True):
+        return {"ok": False, "error": "last_channel"}
+    q("delete from channels where handle=%s", (handle,))
+    return {"ok": True}
+
+
 def set_active(q, handle, active):
     if not active:
         n = q("select count(*) n from channels where active and handle<>%s", (handle,), one=True)["n"]

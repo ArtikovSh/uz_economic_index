@@ -18,11 +18,11 @@ import pandas as pd
 from config import MASTER_CSV, MESSAGES_DIR, INDICES_CSV, PENDING_CSV
 
 RAW_COLS = ["channel", "message_id", "date", "views", "forwards", "raw_text", "scraped_at"]
-LABEL_COLS = ["is_economic", "primary_topic", "topics", "headline", "relevance", "sentiment",
+LABEL_COLS = ["is_economic", "primary_topic", "topics", "headline", "sentiment",
               "is_ad", "is_digest", "is_foreign"]
 PENDING_COLS = RAW_COLS + LABEL_COLS + ["label_version", "label_model", "label_error"]
 LEDGER_COLS = ["date_local", "channel", "message_id", "date", "views", "forwards", "scraped_at",
-               "primary_topic", "topics", "headline", "is_economic", "relevance", "sentiment", "is_ad", "ad_marker",
+               "primary_topic", "topics", "headline", "is_economic", "sentiment", "is_ad", "ad_marker",
                "is_digest", "is_foreign", "nonad", "econ", "tone", "label_version", "label_model",
                "raw_text"]
 INDEX_COLS = ["period_type", "period", "start", "end", "days", "days_expected", "posts",

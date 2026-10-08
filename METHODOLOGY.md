@@ -72,7 +72,7 @@ Postlarni bitta model belgilaydi:
 
 Ikkalasi ham bir xil prompt va sxemani oladi. Prompt modelni indeks
 belgilarni ishlatadigan tartibda yuritadi: reklama → dayjest → iqtisodiy → xorijiy →
-mavzu → relevance → sentiment.
+mavzu → sentiment → sarlavha.
 
 | Maydon | Ma'nosi |
 |--------|---------|
@@ -82,7 +82,6 @@ mavzu → relevance → sentiment.
 | `is_foreign` | voqea O'zbekistondan tashqarida va unda O'zbekiston tomoni yo'q |
 | `topic` | 11 kategoriyadan biri yoki `non_economic` (pastda) |
 | `sentiment` | O'zbekiston iqtisodiyoti, aholisi va biznesi uchun yaxshi yoki yomon yangilikmi (−1…+1) |
-| `relevance` | iqtisod postda qanchalik markaziy (indeksda ishlatilmaydi, saqlanadi) |
 
 Indeksdagi iqtisodiy post = reklama emas **va** `economic` **va** dayjest emas **va**
 xorijiy emas.

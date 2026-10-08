@@ -27,7 +27,7 @@ create table if not exists labels (
     message_id     bigint  not null,
     is_economic    boolean default false,
     primary_topic  text    default 'non_economic',
-    relevance      real    default 0,
+    relevance      real    default 0,     -- no longer labelled (v6); kept for older rows
     sentiment      real    default 0,
     is_ad          boolean default false,
     is_digest      boolean default false,

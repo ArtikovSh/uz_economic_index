@@ -99,7 +99,7 @@ def sync_posts(conn, ledger):
     msg = [(_py(r.channel), int(r.message_id), _py(r.date), int(r.views), int(r.forwards),
             _py(r.raw_text)) for r in todo.itertuples()]
     lab = [(_py(r.channel), int(r.message_id), bool(r.is_economic), _py(r.primary_topic),
-            _py(r.relevance), _py(r.sentiment), bool(r.is_ad), bool(r.is_digest),
+            _py(r.sentiment), bool(r.is_ad), bool(r.is_digest),
             bool(r.is_foreign), _py(r.label_version), _topic_list(r), _py(getattr(r, "headline", None)))
            for r in todo.itertuples()]
     with conn.cursor() as cur:
@@ -110,12 +110,12 @@ def sync_posts(conn, ledger):
               date_utc=excluded.date_utc, views=excluded.views,
               forwards=excluded.forwards, raw_text=excluded.raw_text""", msg)
         cur.executemany("""
-            insert into labels (channel, message_id, is_economic, primary_topic, relevance,
+            insert into labels (channel, message_id, is_economic, primary_topic,
                                 sentiment, is_ad, is_digest, is_foreign, label_version, topics, headline)
-            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             on conflict (channel, message_id) do update set
               is_economic=excluded.is_economic, primary_topic=excluded.primary_topic,
-              relevance=excluded.relevance, sentiment=excluded.sentiment,
+              sentiment=excluded.sentiment,
               is_ad=excluded.is_ad, is_digest=excluded.is_digest,
               is_foreign=excluded.is_foreign, label_version=excluded.label_version,
               topics=excluded.topics, headline=excluded.headline""", lab)

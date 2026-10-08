@@ -554,6 +554,27 @@ def test_top_posts_headline_and_short_text():
             '<b>Eksport 9 oyda 18% oshdi</b>\nStatistika') in text
 
 
+def test_admin_deletes_users_and_channels(server, fresh_db):
+    admin = lambda action, body=None, who=OWNER: call(server, U(who), action, body)
+    acc = admin_create(server)
+    assert call(server, U(160), "login", {"login": acc["account"]["login"], "password": acc["password"]})[0] == 200
+    assert admin("delete", {"id": acc["account"]["id"]})[0] == 200
+    assert call(server, U(160))[1]["auth"] == "login"                # the login is gone
+    assert admin("delete", {"id": acc["account"]["id"]})[1]["error"] == "not_found"
+    adm = admin_create(server, role="admin")
+    call(server, U(161), "login", {"login": adm["account"]["login"], "password": adm["password"]})
+    assert admin("delete", {"id": adm["account"]["id"]}, who=161) == (409, {"ok": False, "error": "self"})
+
+    handles = [c["handle"] for c in admin("admin")[1]["channels"]]
+    assert admin("channel_delete", {"handle": "@daryo"})[0] == 200
+    assert "@daryo" not in [c["handle"] for c in admin("admin")[1]["channels"]]
+    for h in handles[:-1]:
+        if h != "@daryo":
+            assert admin("channel_delete", {"handle": h})[0] == 200
+    assert admin("channel_delete", {"handle": handles[-1]})[1]["error"] == "last_channel"
+    assert admin("channel_delete", {"handle": "@nope"})[1]["error"] == "not_found"
+
+
 # --------------------------------------------------------------- channels --
 def test_admin_manages_channels(server, monkeypatch):
     looked_up = []
