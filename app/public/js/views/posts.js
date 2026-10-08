@@ -72,6 +72,7 @@ export function renderPosts(ctx) {
 
   // ------------------------------------------------------------ loading --
   async function load(reset) {
+    if (P.filterTimer) reset = true;                 // pagination during a pending filter must start over
     clearTimeout(P.filterTimer); P.filterTimer = null;
     const my = ++seq;
     if (reset) { P.items = []; P.total = null; }
