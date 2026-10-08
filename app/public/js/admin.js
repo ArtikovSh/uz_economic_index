@@ -30,13 +30,16 @@ export function renderAdmin(root, nav, state, opts = {}) {
   let page = null;                    // {type: 'create' | 'account' | 'creds', ...} over the tabs
   let lastKey = '';                   // the page animates in when it changes, not on every refresh
   let chanInput = '';
+  let changed = false;                // something was saved: the dashboard's data is stale
   // credential form: kept outside the markup so a re-render does not lose what was typed
   let form = null;
   let loginCheck = { value: '', status: '' }, checkSeq = 0, checkTimer = null;
 
   const back = () => {
     haptic();
-    if (page) { page = null; form = null; draw(); window.scrollTo(0, 0); } else nav.go('dashboard');
+    if (page) { page = null; form = null; draw(); window.scrollTo(0, 0); }
+    else if (changed) nav.reload();                    // the dashboard loads the new channels and users
+    else nav.go('dashboard');
   };
   setBack(back);
 
@@ -52,6 +55,7 @@ export function renderAdmin(root, nav, state, opts = {}) {
     let r = null;
     try { r = await api(action, body); } catch (e) { r = null; }
     if (!r || !r.ok) { haptic('error'); toast(errorText(r)); return null; }
+    changed = true;
     return r;
   }
   const account = (id) => ((data && data.accounts) || []).find((a) => String(a.id) === String(id));
