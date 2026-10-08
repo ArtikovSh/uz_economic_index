@@ -26,7 +26,7 @@ export function renderPosts(ctx) {
   }
   const P = ui.posts;
   const desktop = window.matchMedia('(min-width: 1024px)').matches;
-  const pickerState = P.pickerState || (P.pickerState = { query: '', expanded: false });
+  const pickerState = P.pickerState || (P.pickerState = { query: '' });
   const channelName = (id) => (model.channels.find((c) => c.id === id) || { name: id.replace(/^@/, '') }).name;
   // every channel ticked in the desktop panel is the same as no channel filter
   const chosen = P.channels.length === model.channels.length ? [] : P.channels;
@@ -113,7 +113,8 @@ export function renderPosts(ctx) {
     let count = P.total, timer = null, mine = 0;
     // channel picker inside the same sheet: its own selection until "Choose"
     let picking = inline ? draft.channels : null;
-    let query = inline ? pickerState.query : '', expanded = inline && pickerState.expanded;
+    // the panel lists every channel in its own scrolling list; the sheet shows the first ones and "N more"
+    let query = inline ? pickerState.query : '', expanded = inline;
     const counts = channelCounts(model, P.from, P.to);
     const chans = [...model.channels].sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0) || a.name.localeCompare(b.name));
     const chip = (attr, val, label, on) => `<button type="button" data-${attr}="${esc(val)}" aria-pressed="${on}">${esc(label)}</button>`;
@@ -133,7 +134,13 @@ export function renderPosts(ctx) {
         <button class="btn primary" data-apply>${esc(t('ps.show', { n: count == null ? '…' : num(count) }))}</button></div>`}`;
     const pickerHTML = () => {
       // the chosen ones first, then by posts in the period
-      const list = [...chans.filter((c) => picking.includes(c.id)), ...chans.filter((c) => !picking.includes(c.id))];
+      let list = [...chans.filter((c) => picking.includes(c.id)), ...chans.filter((c) => !picking.includes(c.id))];
+      if (inline) {                                 // the panel keeps its order while it is used: a ticked row stays put
+        const period = `${P.from}|${P.to}`;
+        if (pickerState.period !== period) { pickerState.period = period; pickerState.order = list.map((c) => c.id); }
+        const at = new Map(pickerState.order.map((id, i) => [id, i]));
+        list = [...chans].sort((a, b) => (at.has(a.id) ? at.get(a.id) : 1e9) - (at.has(b.id) ? at.get(b.id) : 1e9));
+      }
       return `
       <div class="cp-head">${inline ? '' : `<button type="button" class="icon-btn" data-cp-back aria-label="${esc(t('back'))}">${icon('back', 16, 2)}</button>`}
         <b>${esc(t('ps.channels'))}</b><span class="cnt">${picking.length} / ${model.channels.length}</span></div>
@@ -189,7 +196,10 @@ export function renderPosts(ctx) {
       body.querySelectorAll('[data-tone]').forEach((b) => b.addEventListener('click', change(() => { draft.tone = b.dataset.tone; })));
       body.querySelector('[data-clear]').addEventListener('click', change(() => {
         draft.topics = []; draft.channels = []; draft.tone = 'all';
-        if (inline) { query = ''; expanded = false; pickerState.query = ''; pickerState.expanded = false; }
+        if (inline) {
+          query = ''; pickerState.query = ''; pickerState.period = null;
+          body.querySelector('.cp-list').scrollTop = 0;
+        }
       }));
       body.querySelector('[data-apply]')?.addEventListener('click', () => {
         haptic(); clearTimeout(timer); ++mine; close();
@@ -201,12 +211,13 @@ export function renderPosts(ctx) {
       const fill = (markup) => {
         const focused = document.activeElement;
         const attr = focused && [...focused.attributes].find((a) => a.name.startsWith('data-'));
-        const scroll = inlineBody.scrollTop;
+        const scroll = inlineBody.scrollTop, listScroll = inlineBody.querySelector('.cp-list')?.scrollTop || 0;
         inlineBody.innerHTML = markup;
         mount(inlineBody, null, fill);
         if (attr) [...inlineBody.querySelectorAll(`[${attr.name}]`)]
           .find((b) => b.getAttribute(attr.name) === attr.value)?.focus({ preventScroll: true });
         inlineBody.scrollTop = scroll;
+        inlineBody.querySelector('.cp-list').scrollTop = listScroll;
       };
       fill(html());
     } else ctx.sheet(t('ps.filters'), html(), mount);
@@ -221,7 +232,7 @@ export function renderPosts(ctx) {
         rows.forEach((r, i) => { r.hidden = q ? !r.dataset.q.includes(q) : !expanded && i >= SHOWN; });
         if (more) more.hidden = !!q || expanded;
         if (clearSearch) clearSearch.hidden = !query;
-        if (inline) { pickerState.query = query; pickerState.expanded = expanded; }
+        if (inline) pickerState.query = query;
       };
       search.addEventListener('input', () => { query = search.value; show(); });
       clearSearch?.addEventListener('click', () => { query = ''; search.value = ''; show(); search.focus(); });

@@ -89,6 +89,7 @@ export function renderDashboard(root, nav, state) {
     const focused = oldPanel?.contains(document.activeElement) ? document.activeElement : null;
     const focusAttr = focused && [...focused.attributes].find((a) => a.name.startsWith('data-'));
     const panelScroll = root.querySelector('.filters-panel')?.scrollTop || 0;
+    const listScroll = root.querySelector('.filters-panel .cp-list')?.scrollTop || 0;
     dispose();
     setBack(null);
     if (ui.tab === 'posts' && !ui.posts && model.last) ui.posts = newsState(model, ctx.period().cur);
@@ -105,6 +106,8 @@ export function renderDashboard(root, nav, state) {
         [...panel.querySelectorAll(`[${focusAttr.name}]`)].find((b) => b.getAttribute(focusAttr.name) === focusAttr.value);
       if (focused) (target || panel.querySelector('#cpq'))?.focus({ preventScroll: true });
       panel.scrollTop = panelScroll;
+      const list = panel.querySelector('.cp-list');
+      if (list) list.scrollTop = listScroll;
     }
     root.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => {
       if (b.dataset.nav !== ui.tab) go(b.dataset.nav);
