@@ -217,8 +217,7 @@ def _to_label(d):
     if topic not in CATEGORIES:
         topic = "non_economic"
     econ = bool(d.get("economic")) and topic != "non_economic"
-    others = [t for t in (d.get("other_topics") or []) if t in CATEGORIES and t != "non_economic"]
-    topics = list(dict.fromkeys([topic] + others))[:3] if econ else ["non_economic"]
+    topics = [topic] if econ else ["non_economic"]          # one topic per post (several were tried)
     return {
         "is_economic": int(econ),
         "primary_topic": topic if econ else "non_economic",

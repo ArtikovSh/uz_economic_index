@@ -27,13 +27,16 @@ from config import TONE_THRESHOLD, TZ_OFFSET_HOURS, LLM_LABEL_VERSION
 from store import LEDGER_COLS, INDEX_COLS, post_keys
 
 # The channel's own sponsorship marker: "(реклама)" anywhere, "на правах рекламы",
-# "#реклама", or "Реклама"/"Reklama" as the post's last word (Daryo, Kun.uz style).
+# "#реклама", "#партнерский", an "erid" token, "Реклама. ООО ..." (advertiser named after it),
+# or "Реклама"/"Reklama" as the post's last word (Daryo, Kun.uz style).
 # A bare "реклама" inside a sentence (news about advertising) does not match.
 AD_MARKER_RE = re.compile(
     r"\(\s*(?:реклама|reklama)\s*\)"
-    r"|#\s?(?:реклама|reklama)\b"
-    r"|на\s+правах\s+рекламы|reklama\s+huquqida"
-    r"|(?:^|\s)[*_]*(?:реклама|reklama)[*_]*\s*$",
+    r"|#\s?(?:реклама|reklama|партн[её]рский|hamkorlik)\b"
+    r"|на\s+правах\s+рекламы|reklama\s+huquq(?:ida|i\s+asosida)"
+    r"|\berid\s*[:=]\s*\w+"
+    r"|(?:^|\n)\s*[*_]*(?:реклама|reklama)[*_]*\s*[.:]\s+\S"
+    r"|(?:^|\s)[*_]*(?:реклама|reklama)[*_]*[.!]?\s*$",
     re.IGNORECASE)
 
 PERIOD_TYPES = ["kun", "hafta", "oy", "chorak", "yil"]

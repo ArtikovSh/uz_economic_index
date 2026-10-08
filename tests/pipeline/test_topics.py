@@ -1,4 +1,4 @@
-"""Several topics per post (labels v6): parsing, storage and the topic table of the reports."""
+"""Topics (labels v6): one per post, how a new column is added, the topic table of the reports."""
 import pandas as pd
 
 import store
@@ -6,13 +6,10 @@ from llm_classifier import _to_label
 from report_tables import build_tables
 
 
-def test_label_keeps_the_topic_first_and_at_most_two_more():
-    lab = _to_label({"economic": True, "topic": "prices_inflation",
-                     "other_topics": ["energy_utility", "prices_inflation", "bogus", "non_economic", "fiscal", "trade"]})
-    assert lab["primary_topic"] == "prices_inflation"
-    assert lab["topics"] == "prices_inflation,energy_utility,fiscal"
-    assert _to_label({"economic": False, "topic": "trade", "other_topics": ["business"]})["topics"] == "non_economic"
-    assert _to_label({"economic": True, "topic": "trade"})["topics"] == "trade"        # field missing
+def test_one_topic_per_post():
+    lab = _to_label({"economic": True, "topic": "prices_inflation", "other_topics": ["energy_utility"]})
+    assert lab["primary_topic"] == "prices_inflation" and lab["topics"] == "prices_inflation"
+    assert _to_label({"economic": False, "topic": "trade"})["topics"] == "non_economic"
 
 
 def test_a_new_column_is_added_to_an_existing_table(tmp_path):

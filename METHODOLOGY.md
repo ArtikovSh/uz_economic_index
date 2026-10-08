@@ -94,12 +94,11 @@ Kunlik rasmiy kurs xabari va Markaziy bank ma'lumotiga shunchaki tayangan yangil
 mavzusida qoladi (`currency_fx`, `banking_finance`, ...). Mavzu indeks formulasiga
 kirmaydi; u mavzular kesimi uchun ishlatiladi (`v5` belgilaridan boshlab).
 
-**Bir nechta mavzu (`v6`):** post aniq va jiddiy ravishda bir nechta mavzuga tegishli bo'lsa,
-asosiy mavzudan tashqari yana ikkitagacha mavzu oladi (masalan, aholi uchun elektr tarifi
-oshishi — narx va inflatsiya hamda energetika). Mavzular kesimida post har bir mavzusida
-sanaladi, shuning uchun mavzular bo'yicha xabarlar soni jami iqtisodiy xabarlardan ko'p
-bo'lishi mumkin. Postning ESI'ga hissasi esa mavzulari orasida teng bo'linadi, shuning uchun
-mavzular hissalarining yig'indisi ESI'ga teng bo'lib qoladi.
+**Bitta mavzu (`v6`):** har post bitta mavzu oladi — sarlavha va asosiy fakt qaysi mavzu haqida
+bo'lsa, o'sha. Sarlavhaning o'zi bir nechta mavzuni birlashtirsa, tartib: Markaziy bank qarori →
+narx yoki tarif darajasining o'zgarishi (narx va inflatsiya) → soliq, boj, byudjet → ish haqi,
+pensiya, ish vaqti va bandlik → asosiy fakt sodir bo'lgan soha. Ohang shu mavzu nuqtai nazaridan
+baholanadi: postdagi boshqa choralar ishorani o'zgartirmaydi.
 
 **Ohang:** sentiment > +0.15 bo'lsa ijobiy, < −0.15 bo'lsa salbiy, qolgani neytral.
 

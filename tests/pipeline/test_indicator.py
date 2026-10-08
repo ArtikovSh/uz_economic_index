@@ -45,13 +45,16 @@ def empty_indices():
 @pytest.mark.parametrize("text", [
     "(реклама)", "( Reklama )", "#реклама", "# reklama",
     "на правах рекламы", "reklama huquqida",
-    "Yangilik. Реклама", "Yangilik. **Reklama**",
+    "Yangilik. Реклама", "Yangilik. **Reklama**", "Yangilik. Reklama.",
+    "#партнерский материал", "#hamkorlik", "Reklama huquqi asosida", "Текст\nerid: 2VtzqwXYZ",
+    "Текст\nРеклама. ООО «Ромашка», ИНН 123",
 ])
 def test_has_ad_marker_detects_sponsorship(text):
     assert has_ad_marker(text) is True
 
 
-@pytest.mark.parametrize("text", ["рынок рекламы вырос на 5%", "", None])
+@pytest.mark.parametrize("text", ["рынок рекламы вырос на 5%", "Реклама на билбордах подорожала.",
+                                  "Hamkorlik kengayadi", "", None])
 def test_has_ad_marker_ignores_other_text(text):
     assert has_ad_marker(text) is False
 

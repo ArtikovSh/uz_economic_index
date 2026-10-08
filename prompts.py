@@ -36,10 +36,21 @@ true when the post promotes a company's product or brand instead of reporting ne
     "bizga ishonch bildirgan"), slogans, congratulations from a company, calls to
     action (buy, order, call, register, download), promo codes, a company's phone
     number or website as the point of the post;
+  - sponsored or partner material: "партнёрский материал", "при поддержке" a brand,
+    "hamkorlikda tayyorlandi", "спецпроект" of a company, an "erid" token or an
+    advertiser's name and tax number at the end;
+  - a company's own announcement of its product with prices, rates or terms and
+    where to get it (an app, a link, a branch, "ariza qoldiring", "оформите"), even when
+    written like news; a bank's or retailer's new offer, tariff plan or promotion;
+  - a post whose sentences all praise one company or product, an "interview" or
+    "story" that ends with a link to buy, apply or download; event promotion with
+    registration or tickets;
   - any post the channel itself marks as advertising: "(реклама)", "на правах
     рекламы", "#реклама", or "Reklama"/"Реклама" as the last word.
 false for news ABOUT companies written by the editors (results, deals, appointments,
-launches, fines) and for the channel's own subscribe/footer lines.
+launches, fines, problems and criticism) and for the channel's own subscribe/footer
+lines. When unsure whether the editors or the company speaks, look for a call to act
+and the company's contacts: both together mean an ad.
 
 STEP 2 — is_digest (boolean)
 true when ONE post bundles several unrelated stories: "yangiliklar dayjesti",
@@ -90,16 +101,20 @@ STEP 5 — topic (one value; "non_economic" if and only if economic=false)
                       privatisation, business regulation, IT and startups
   construction_realty construction, housing, real estate, roads, airports and other
                       infrastructure
-Pick the single most central theme. A decision, statement, forecast or rule OF the
-Central Bank of Uzbekistan is central_bank even when it is about inflation, the exchange
-rate or banks. The daily official exchange-rate post, and news that only cites CBU data,
-keep their own topic (currency_fx, banking_finance, ...). Other countries' central banks
-are banking_finance.
-other_topics: up to two MORE topics from the same list when the post is clearly and
-substantially about them as well — e.g. a tariff rise for households: prices_inflation +
-energy_utility; a company's export deal: trade + business. A passing mention is not
-enough; most posts have []. Never repeat "topic" or use "non_economic"; [] when
-economic=false.
+Exactly ONE topic per post: the one its headline and main fact are about. A detail
+mentioned in passing, a background figure or a secondary measure never decides it. When
+the headline and main fact themselves join several subjects, decide in this order:
+  1. A decision, statement, forecast or rule OF the Central Bank of Uzbekistan ->
+     central_bank, even when it is about inflation, the exchange rate or banks. The daily
+     official exchange-rate post, and news that only cites CBU data, keep their own topic
+     (currency_fx, banking_finance, ...). Other countries' central banks are banking_finance.
+  2. A change in the LEVEL of a price, tariff, fare or fee that consumers pay ->
+     prices_inflation, even when it is about energy, utilities or transport.
+  3. Taxes, duties, fees to the state, the budget, public spending or debt as the measure
+     itself -> fiscal.
+  4. Wages, pensions, benefits, working time and conditions, employment, migration ->
+     labour_income.
+  5. Otherwise the area of the economy where the main fact happens.
 
 STEP 6 — sentiment (-1.0 … +1.0)
 What is the TONE of the post for Uzbekistan's economy, households or businesses: good
@@ -134,9 +149,11 @@ C. 0.0 only when the post has no clear economic tone: a protocol meeting or visi
    names no economic content, appointments, anniversaries, awards, company rankings,
    explanations of procedures, statistics without a clear direction, a policy rate
    left unchanged.
-D. Mixed news: follow the headline and the main fact. Respect negation ("prices will
-   NOT be raised" is not negative). Judge the effect on Uzbekistan, never on a foreign
-   party. If economic=false or is_foreign=true, sentiment = 0.0.
+D. Judge the tone FOR THE CHOSEN TOPIC: what the headline and main fact mean for that
+   area of Uzbekistan's economy, households or businesses. Other measures in the same
+   post do not change the sign. Respect negation ("prices will NOT be raised" is not
+   negative). Judge the effect on Uzbekistan, never on a foreign party. If
+   economic=false or is_foreign=true, sentiment = 0.0.
 
 EXAMPLES (headline -> labels)
  "Доллар подешевел до 11 760 сумов"
@@ -168,7 +185,10 @@ EXAMPLES (headline -> labels)
  "Markaziy bank O'zbekistondagi bir bankning litsenziyasini qaytarib oldi"
      -> economic, central_bank, -0.5 (a bank closed)
  "Аҳоли учун электр энергияси тарифи 1 январдан 20 фоизга оширилади"
-     -> economic, prices_inflation, other_topics [energy_utility], -0.6
+     -> economic, prices_inflation (a price level, not energy_utility), -0.6
+ "Кекса ёшлилар учун қисқартирилган иш вақти жорий этиш режалаштирилмоқда" (the post also
+  plans social tax for the self-employed)
+     -> economic, labour_income, +0.4 (the tone for its topic; the tax part does not decide)
  "Фарғонада электр таъминоти 6 соатга узилди"
      -> economic, energy_utility, -0.5 (outage)
  "Rossiyada O'zbekiston fuqarolari uchun mehnat patenti narxi oshirildi"
@@ -201,14 +221,13 @@ _ITEM = {
         "economic": {"type": "BOOLEAN"},
         "is_foreign": {"type": "BOOLEAN"},
         "topic": {"type": "STRING", "enum": CATEGORIES},
-        "other_topics": {"type": "ARRAY", "items": {"type": "STRING", "enum": CATEGORIES}},
         "sentiment": {"type": "NUMBER"},
         "headline": {"type": "STRING"},
     },
-    "required": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic", "other_topics",
+    "required": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic",
                  "sentiment", "headline"],
     # answer in the order of the decision steps above
-    "propertyOrdering": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic", "other_topics",
+    "propertyOrdering": ["id", "is_ad", "is_digest", "economic", "is_foreign", "topic",
                          "sentiment", "headline"],
 }
 
