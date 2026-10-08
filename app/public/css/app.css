@@ -487,8 +487,6 @@ button.user { width: 100%; border: 0; background: transparent; color: inherit; t
   .view-home .cov { grid-template-columns: 1fr; }
   .view-home .cov div { flex-direction: row; align-items: center; gap: 12px; }
   .view-home .cov div + div { border-left: 0; border-top: 1px solid var(--line); }
-  .tl-name { flex-wrap: wrap; }
-  .tl-label { flex-basis: 100%; }
   .ctrow { grid-template-columns: minmax(0, 1fr) minmax(50px, 1fr) auto; }
   .formula { overflow-wrap: anywhere; }
   .plist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }

@@ -28,10 +28,12 @@ export function renderPosts(ctx) {
   const desktop = window.matchMedia('(min-width: 1024px)').matches;
   const pickerState = P.pickerState || (P.pickerState = { query: '', expanded: false });
   const channelName = (id) => (model.channels.find((c) => c.id === id) || { name: id.replace(/^@/, '') }).name;
-  const active = P.topics.length + P.channels.length + (P.tone !== 'all' ? 1 : 0);
+  // every channel ticked in the desktop panel is the same as no channel filter
+  const chosen = P.channels.length === model.channels.length ? [] : P.channels;
+  const active = P.topics.length + chosen.length + (P.tone !== 'all' ? 1 : 0);
   const tags = [
     ...P.topics.map((k) => ['topics', k, topicName(k)]),
-    ...P.channels.map((c) => ['channels', c, channelName(c)]),
+    ...chosen.map((c) => ['channels', c, channelName(c)]),
     ...(P.tone !== 'all' ? [['tone', P.tone, t('ov.' + P.tone)]] : []),
   ];
   const dateLabel = P.mode === 'day' ? dayFull(P.from) : range(P.from, P.to);
@@ -80,7 +82,7 @@ export function renderPosts(ctx) {
     if (reset) ctx.draw(false);
     let r = null;
     try {
-      r = await api('posts', { from: P.from, to: P.to, topics: P.topics, channels: P.channels,
+      r = await api('posts', { from: P.from, to: P.to, topics: P.topics, channels: P.channels.length === model.channels.length ? [] : P.channels,
                                tone: P.tone === 'all' ? null : P.tone, sort: P.sort, offset: reset ? 0 : P.items.length });
     } catch (e) { r = null; }
     if (my !== seq || ui.posts !== P) return;                  // a newer request or another view
