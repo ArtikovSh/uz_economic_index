@@ -462,3 +462,66 @@ button.user { width: 100%; border: 0; background: transparent; color: inherit; t
 .tabbar button { background: none; border: 0; color: var(--muted); font-size: 11px; font-weight: 500; display: flex;
   flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; }
 .tabbar button[aria-current="page"] { color: var(--primary); font-weight: 600; }
+
+/* ---- wide screens ---- */
+@media (min-width: 600px) {
+  html { scrollbar-color: var(--field) var(--bg); scrollbar-width: thin; }
+  * { scrollbar-color: var(--field) var(--bg); scrollbar-width: thin; }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+  .app-shell { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: start; }
+  .app { grid-column: 2; grid-row: 1; width: 100%; min-width: 0; max-width: 880px; padding: 24px 24px 32px; }
+  .app > * { min-width: 0; }
+  .tabbar { position: sticky; top: 0; bottom: auto; grid-column: 1; grid-row: 1; width: 96px;
+    height: 100vh; height: 100dvh; grid-template-columns: 1fr; align-content: start; gap: 8px;
+    border-top: 0; border-right: 1px solid var(--line); padding: 24px 8px; overflow-y: auto; }
+  .tabbar button { min-height: 68px; padding: 12px 2px; border-radius: 12px; justify-content: center; overflow-wrap: anywhere; }
+  .tabbar button[aria-current="page"] { background: var(--primarySoft); }
+  .tabbar button:hover { background: var(--primarySoft); color: var(--primary); }
+  .view-home, .view-topics, .view-method { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start; align-items: start; }
+  .view-home > .hdr, .view-home > .periods, .view-home > .prow, .view-home > .kpis,
+  .view-home > .dynamics-card, .app > .page-hdr, .app > .empty-state { grid-column: 1 / -1; }
+  .card, .kpi, .pcard { box-shadow: none; border-radius: 16px; }
+  .charts { min-width: 0; }
+  .view-home .card-title { flex-wrap: wrap; }
+  .view-home .cov { grid-template-columns: 1fr; }
+  .view-home .cov div { flex-direction: row; align-items: center; gap: 12px; }
+  .view-home .cov div + div { border-left: 0; border-top: 1px solid var(--line); }
+  .tl-name { flex-wrap: wrap; }
+  .tl-label { flex-basis: 100%; }
+  .ctrow { grid-template-columns: minmax(0, 1fr) minmax(50px, 1fr) auto; }
+  .formula { overflow-wrap: anywhere; }
+  .plist { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .plist > .btn, .plist > .empty-state, .plist > .form-error { grid-column: 1 / -1; }
+  .pcard { min-width: 0; }
+  .pfoot { flex-wrap: wrap; gap: 8px; }
+  .pfoot b { overflow-wrap: anywhere; }
+  .sheet-wrap { justify-content: center; align-items: center; padding: 24px; }
+  .sheet-wrap > .backdrop { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .sheet { position: relative; width: 100%; max-width: 480px; max-height: calc(100dvh - 48px);
+    border-radius: 20px; padding: 20px; }
+  .sheet > .grip { display: none; }
+  #root > .screen { max-width: 420px; margin-inline: auto; }
+  #root > .screen.admin { max-width: 720px; }
+}
+
+@media (min-width: 1024px) {
+  .app { max-width: 1280px; padding: 24px 32px 40px; }
+  .view-posts { display: grid; grid-template-columns: minmax(0, 1fr) 320px;
+    align-content: start; align-items: start; gap: 12px 24px; }
+  .view-posts > .page-hdr, .view-posts > .date-btn, .view-posts > .tags, .view-posts > .plist { grid-column: 1; }
+  .view-posts #filters { display: none; }
+  .view-posts .plist { grid-template-columns: minmax(0, 1fr); }
+  .filters-panel { grid-column: 2; grid-row: 1 / span 4; position: sticky; top: 24px;
+    display: flex; flex-direction: column; gap: 16px; max-height: calc(100dvh - 48px); overflow-y: auto;
+    scrollbar-gutter: stable; }
+  .filters-panel .chips button { min-height: 32px; padding: 4px 10px; font-size: 12.5px; }
+  .filters-panel .seg button { padding-inline: 4px; min-width: 0; }
+  .filters-panel .input-wrap { min-width: 0; }
+  .filters-panel .input-wrap input { min-width: 0; padding-right: 36px; }
+  .filters-panel [data-cp-search-clear] { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); }
+  .filters-panel input::-webkit-search-cancel-button { -webkit-appearance: none; }
+  .filters-panel .cp-row { gap: 8px; }
+  .filters-panel .cp-row small { overflow: hidden; text-overflow: ellipsis; }
+  .filters-panel .cp-row:hover { background: var(--surface2); }
+}

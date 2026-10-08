@@ -55,7 +55,9 @@ function readOut(dyn, slots) {
   dyn.addEventListener('pointerdown', (e) => show(e.clientX));
   dyn.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse' || e.buttons || shown >= 0) show(e.clientX); });
   dyn.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') hide(); });
-  hideOutside = (e) => { if (!dyn.contains(e.target)) hide(); };
+  const outside = (e) => { if (!dyn.contains(e.target)) hide(); };
+  hideOutside = outside;
+  return () => { if (hideOutside === outside) hideOutside = null; };
 }
 let hideOutside = null;            // a touch elsewhere closes the read-out of the chart on screen
 document.addEventListener('pointerdown', (e) => { if (hideOutside) hideOutside(e); }, { capture: true });
@@ -73,7 +75,6 @@ export function renderOverview(ctx) {
   const dE = prev ? Math.round((cur.eai - prev.eai) * 10) / 10 : null;
   const dS = prev ? Math.round((cur.esi - prev.esi) * 10) / 10 : null;
   const esiTone = cur.esi >= 5 ? 'pos' : cur.esi <= -5 ? 'neg' : '';
-  const width = Math.min(ctx.root.clientWidth || 360, 560) - 62;     // card's inner width
   const share = (x) => `${(100 * x / (cur.econ || 1)).toFixed(2)}%`;
   const cover = cur.type === 'kun' ? t('ov.channels', { a: cur.ch, b: model.channelsTotal || cur.ch })
     : cur.open ? t('ov.daysOpen', { a: cur.days }) : t('ov.days', { a: cur.days, b: cur.expected });
@@ -108,13 +109,13 @@ export function renderOverview(ctx) {
     </div>
   </section>
 
-  <section class="card" aria-label="${esc(t('ov.dynamics'))}">
+  <section class="card dynamics-card" aria-label="${esc(t('ov.dynamics'))}">
     <div class="card-title"><h2>${esc(t('ov.dynamics'))}</h2><span>${esc(['kun', 'hafta'].includes(cur.type) ? t('ov.lastN.' + cur.type, { n: slots.length }) : t('ov.by.' + cur.type))}</span></div>
     <div class="legend">
       <span><i class="l-line"></i>${esc(t('ov.legEai'))}</span><span><i class="l-pos"></i>${esc(t('ov.legEsi'))}</span>
       ${slots.some((s) => s.empty) ? `<span><i class="l-gap"></i>${esc(t('ov.legGap'))}</span>` : ''}
     </div>
-    <div class="charts">${dynamics(slots, width, { eai: t('ov.chartEai'), esi: t('ov.chartEsi') })}</div>
+    <div class="charts"></div>
   </section>
 
   <section class="card" aria-label="${esc(t('ov.tone'))}">
@@ -151,8 +152,20 @@ export function renderOverview(ctx) {
       el.querySelectorAll('[data-type]').forEach((b) => b.addEventListener('click', () => ctx.setType(b.dataset.type)));
       el.querySelectorAll('[data-key]').forEach((b) => b.addEventListener('click', () => b.dataset.key && ctx.setKey(b.dataset.key)));
       el.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => ctx.go(b.dataset.tab)));
-      const dyn = el.querySelector('.dyn');
-      if (dyn) readOut(dyn, slots);
+      const charts = el.querySelector('.charts');
+      let timer = null, lastWidth = 0, release = null;
+      const redraw = () => {
+        // Preserve the phone chart's existing 4px axis overhang; wide charts fit the card exactly.
+        const width = charts.clientWidth + (window.innerWidth < 600 ? 4 : 0);
+        if (width === lastWidth || !charts.isConnected) return;
+        lastWidth = width;
+        if (release) release();
+        charts.innerHTML = dynamics(slots, width, { eai: t('ov.chartEai'), esi: t('ov.chartEsi') });
+        release = readOut(charts.querySelector('.dyn'), slots);
+      };
+      const observer = new ResizeObserver(() => { clearTimeout(timer); timer = setTimeout(redraw, 150); });
+      redraw(); observer.observe(charts);
+      return () => { clearTimeout(timer); observer.disconnect(); if (release) release(); };
     },
   };
 }

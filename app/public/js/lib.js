@@ -535,12 +535,44 @@ export function openSheet(root, title, html, mount) {
       <div class="sheet-body"></div>
     </div>`;
   const prevBack = backFn;
-  const close = () => { wrap.remove(); setBack(prevBack); };
+  const opener = document.activeElement;
+  let release = () => {};
+  const close = () => { release(); wrap.remove(); setBack(prevBack); };
   const body = wrap.querySelector('.sheet-body');
   const fill = (markup) => { body.innerHTML = markup; if (mount) mount(body, close, fill); };
   wrap.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => { haptic(); close(); }));
   root.appendChild(wrap);
   setBack(close);
   fill(html);
+  // The wide-screen presentation is a keyboard modal; phone sheet behavior stays unchanged.
+  if (window.matchMedia('(min-width: 600px)').matches) {
+    const background = [...root.children].filter((n) => n !== wrap).map((n) => [n, n.inert]);
+    background.forEach(([n]) => { n.inert = true; });
+    const overflow = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    wrap.querySelector('.backdrop').tabIndex = -1;
+    const key = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+      if (e.key !== 'Tab') return;
+      const targets = [...wrap.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')]
+        .filter((n) => !n.disabled && n.tabIndex >= 0 && n.getClientRects().length);
+      const first = targets[0], last = targets[targets.length - 1];
+      if (!wrap.contains(document.activeElement) || (e.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+        e.preventDefault(); (e.shiftKey ? last : first)?.focus();
+      }
+    };
+    const watch = new MutationObserver(() => { if (!wrap.isConnected) release(); });
+    let released = false;
+    release = () => {
+      if (released) return;
+      released = true; watch.disconnect(); document.removeEventListener('keydown', key);
+      background.forEach(([n, inert]) => { n.inert = inert; });
+      document.documentElement.style.overflow = overflow;
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
+    watch.observe(root, { childList: true });
+    document.addEventListener('keydown', key);
+    wrap.querySelector('.head [data-close]').focus({ preventScroll: true });
+  }
   return close;
 }

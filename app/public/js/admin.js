@@ -115,7 +115,7 @@ export function renderAdmin(root, nav, state, opts = {}) {
     const fx = data && key !== lastKey ? ' fade' : '';
     if (data) lastKey = key;
     if (!data) {
-      root.innerHTML = `<main class="screen">${topbar(t('admin.title'))}
+      root.innerHTML = `<main class="screen admin">${topbar(t('admin.title'))}
         ${error ? `<p class="form-error" role="alert">${esc(error)}</p><button class="btn primary" id="reload">${esc(t('retry'))}</button>`
                 : '<div class="boot"><span class="spinner"></span></div>'}</main>`;
       return bind();
@@ -128,7 +128,7 @@ export function renderAdmin(root, nav, state, opts = {}) {
     else if (page && page.type === 'creds') body = `${topbar(page.title)}${credsHTML(page.creds)}
       <button class="btn primary" id="doneBtn" style="margin-top:12px">${esc(t('admin.doneBtn'))}</button>`;
     else body = tabsHTML();
-    root.innerHTML = `<main class="screen${fx}">${body}</main>`;
+    root.innerHTML = `<main class="screen admin${fx}">${body}</main>`;
     bind();
     if (fx) window.scrollTo(0, 0);
   }
