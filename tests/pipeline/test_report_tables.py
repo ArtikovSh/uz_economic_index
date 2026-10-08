@@ -146,7 +146,8 @@ def test_empty_tables_and_inputs_are_unchanged(real_data):
 def test_api_post_parts_identical_for_300_real_posts(real_data):
     # Execute the API's actual pure helpers without importing its DB/bot environment.
     source = (ROOT / "app/api/index.py").read_text(encoding="utf-8")
-    names = {"_MD_LINK", "_URL", "_EMOJI", "_BOILERPLATE", "_clean_lines", "_cut", "post_parts"}
+    names = {"_MD_LINK", "_URL", "_EMOJI", "_BOILERPLATE", "_TAIL", "_TAGS", "_SHARE", "_clean_lines", "_cut",
+             "_same", "post_parts"}
     nodes = [node for node in ast.parse(source).body if
              (isinstance(node, ast.FunctionDef) and node.name in names) or
              (isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in names for t in node.targets))]

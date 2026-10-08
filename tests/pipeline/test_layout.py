@@ -39,3 +39,26 @@ def test_headline_from_the_model():
     assert post_parts(own, 100) == ("Eksport 18% oshdi", "Statistika agentligi ma'lumoti.")       # no headline: first line
     assert _to_label({"economic": True, "topic": "trade", "headline": "  Eksport \n oshdi "})["headline"] == "Eksport oshdi"
     assert _to_label({"economic": True, "topic": "trade"})["headline"] is None
+
+
+def test_hashtags_and_channel_slogans_are_not_text():
+    raw = ("#Диққат #Тарқатинг\n**Бензин нархи 300 сўмга ошди**\nЯнги нархлар эртадан амал қилади.\n\n"
+           "Яқинларга ҳам улашинг!\n\n@QORAXABAR - Телевизорда кўрсатилмайдиган махфий хабарлар канали!")
+    assert post_parts(raw, 200) == ("Бензин нархи 300 сўмга ошди", "Янги нархлар эртадан амал қилади.")
+    oper = "Дизель арзонлади. Батафсил видеода\n\n@OPER_UZ – ОПЕРАТИВ ВА ХАВФЛИ ЯНГИЛИКЛАР КАНАЛИ!"
+    assert post_parts(oper, 200) == ("Дизель арзонлади.", "")
+    shop = ("Нарх ошди\nТафсилоти шу.\nБу видеони аёлларга юбориб қўйинг.\n"
+            "ККатталар канали 👉****@SHOPIRLAR**** га обуна бўлинг, зўрлари бизда**")
+    assert post_parts(shop, 200) == ("Нарх ошди", "Тафсилоти шу.")
+    oblako = ("Курс вырос.\nДанные ЦБ.\n\n**Распространите сообщение**\n\n👉 __Будьте в курсе последних \n"
+              "новостей вместе с __[**__@oblakouz__**](https://t.me/+abc)")
+    assert post_parts(oblako, 200) == ("Курс вырос.", "Данные ЦБ.")
+    # kept: a word cut by a line break, a sentence that only mentions relatives, subscribers' news
+    kept = "Йўл-\nтранспорт ҳодисаси\nҲалок бўлганларнинг яқинларига ёрдам юборилди.\nОбуначиларимиз видеони синаб кўришди."
+    assert post_parts(kept, 300)[1] == ("транспорт ҳодисаси Ҳалок бўлганларнинг яқинларига ёрдам юборилди. "
+                                        "Обуначиларимиз видеони синаб кўришди.")
+    # a stored "#Тезкор" headline is a label: the post's own first line is used instead
+    assert post_parts("#Тезкор\nЧорсуда ёнғин\nМатн.", 100, headline="#Тезкор") == ("Чорсуда ёнғин", "Матн.")
+    assert post_parts("Матн.", 100, headline="#BREAKING | Катта ўзгариш")[0] == "Катта ўзгариш"
+    assert _to_label({"economic": False, "headline": "#Тезкор #Даҳшат | Чорсуда ёнғин"})["headline"] == "Чорсуда ёнғин"
+    assert _to_label({"economic": False, "headline": "#Тезкор"})["headline"] is None

@@ -76,12 +76,13 @@ mavzu → sentiment → sarlavha.
 
 | Maydon | Ma'nosi |
 |--------|---------|
-| `is_ad` | mahsulot yoki brend reklamasi, advertorial ("biz", "мы"), kanal "Reklama" deb belgilagan post |
+| `is_ad` | mahsulot yoki brend reklamasi, advertorial ("biz", "мы"), kanal "Reklama" deb belgilagan post. Reklama emas: kompaniya haqidagi tahririyat yangiligi, loyiha narxi yoki sotuvi tilga olingan oddiy yangilik, kanalning o'z posti yoki obunasini targ'ib qilishi, "yaqinlarga ulashing" degan foydali ma'lumot |
 | `is_digest` | bitta postda bir-biriga bog'liq bo'lmagan bir nechta yangilik |
-| `economic` | postning asosiy mavzusi iqtisodiy (qaysi mamlakat haqida bo'lishidan qat'i nazar) |
+| `economic` | postning asosiy mavzusi iqtisodiy (qaysi mamlakat haqida bo'lishidan qat'i nazar). Iqtisodiy emas: vazirlik va hokimliklarning tuzilmasi, kadrlari va tayinlovlari; O'zbekistonning chet eldagi qurilishi, yordami va diplomatiya; maishiy maslahatlar (sog'liq, avtomobil, qurilish materiallari, uy-ro'zg'or) |
 | `is_foreign` | voqea O'zbekistondan tashqarida va unda O'zbekiston tomoni yo'q |
 | `topic` | 11 kategoriyadan biri yoki `non_economic` (pastda) |
 | `sentiment` | O'zbekiston iqtisodiyoti, aholisi va biznesi uchun yaxshi yoki yomon yangilikmi (−1…+1) |
+| `headline` | postning o'z sarlavhasi; yo'q bo'lsa model yozadi. Heshteg, kanal shiori va yorliq ("#Тезкор", "Диққат") sarlavha emas |
 
 Indeksdagi iqtisodiy post = reklama emas **va** `economic` **va** dayjest emas **va**
 xorijiy emas.

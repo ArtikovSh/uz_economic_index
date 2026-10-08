@@ -222,7 +222,8 @@ def _to_label(d):
         "is_economic": int(econ),
         "primary_topic": topic if econ else "non_economic",
         "topics": ",".join(topics),
-        "headline": " ".join(str(d.get("headline") or "").split())[:240] or None,
+        # a leading "#Тезкор #Диққат" is a label, not part of the headline
+        "headline": re.sub(r"^(?:#\S+[\s|:—–-]*)+", "", " ".join(str(d.get("headline") or "").split()))[:240] or None,
         "sentiment": _num(d.get("sentiment"), -1.0, 1.0) if econ else 0.0,
         "is_ad": int(bool(d.get("is_ad"))),
         "is_digest": int(bool(d.get("is_digest"))),

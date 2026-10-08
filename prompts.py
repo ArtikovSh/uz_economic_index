@@ -48,9 +48,11 @@ true when the post promotes a company's product or brand instead of reporting ne
   - any post the channel itself marks as advertising: "(реклама)", "на правах
     рекламы", "#реклама", or "Reklama"/"Реклама" as the last word.
 false for news ABOUT companies written by the editors (results, deals, appointments,
-launches, fines, problems and criticism) and for the channel's own subscribe/footer
-lines. When unsure whether the editors or the company speaks, look for a call to act
-and the company's contacts: both together mean an ad.
+launches, fines, problems and criticism), for ordinary news that mentions the prices or the
+sale of a project, for a channel promoting its own posts, videos or subscription, for
+useful-information posts that ask readers to share them, and for the channel's own
+subscribe/footer lines. When unsure whether the editors or the company speaks, look for a
+call to act and the company's contacts: both together mean an ad.
 
 STEP 2 — is_digest (boolean)
 true when ONE post bundles several unrelated stories: "yangiliklar dayjesti",
@@ -68,7 +70,9 @@ false when the main subject is anything else: politics, diplomacy without concre
 economic content, war, crime and court cases (including bribery, fraud, embezzlement
 by officials), accidents, weather, health, education, culture, sport, religion,
 human-interest stories — even if the post mentions an amount of money, a price or a
-company in passing.
+company in passing. Also false: the structure, staff, appointments or reshuffles of
+ministries and khokimiyats; buildings, aid or gifts Uzbekistan provides abroad and other
+diplomacy; everyday advice and how-tos (health, cars, building materials, household tips).
 
 STEP 4 — is_foreign (boolean)
 true when the story happens OUTSIDE Uzbekistan and has no direct Uzbek party: no Uzbek
@@ -204,9 +208,11 @@ EXAMPLES (headline -> labels)
 
 STEP 7 — headline (text)
 The post's own headline, copied exactly without formatting, when it starts with one (a short
-first line or a bold title). A post without one gets a short headline you write in the post's
-language (at most 90 characters) that states its main fact and adds nothing that is not in
-the post. Ads and digests get one too.
+first line or a bold title that states what happened). A post without one gets a short
+headline you write in the post's language (at most 90 characters) that states its main fact
+and adds nothing that is not in the post. Hashtags, channel slogans and labels ("#Тезкор",
+"Диққат", "МУҲИМ ЯНГИЛИК", "Ана холос", "Расман") are not headlines: leave them out, and write
+one when nothing else is left. Ads and digests get a headline too.
 
 OUTPUT
 Return ONLY a JSON object {"results": [...]} with exactly one object per post, in the
