@@ -505,7 +505,9 @@ button.user { width: 100%; border: 0; background: transparent; color: inherit; t
 
 @media (min-width: 1024px) {
   .app { max-width: 1280px; padding: 24px 32px 40px; }
-  .view-posts { display: grid; grid-template-columns: minmax(0, 1fr) 320px;
+  /* the panel spans the 4 rows on the left; the last row (the list) takes its extra height, so few posts
+     do not spread the header, date and tags apart */
+  .view-posts { display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: auto auto auto 1fr;
     align-content: start; align-items: start; gap: 12px 24px; }
   .view-posts > .page-hdr, .view-posts > .date-btn, .view-posts > .tags, .view-posts > .plist { grid-column: 1; }
   .view-posts #filters { display: none; }
