@@ -3,9 +3,16 @@ name: eval
 # Manual quality check of the LLM labels: labels the 26 control posts + 174 random
 # real posts with the provider the pipeline uses (OpenAI: at "low" and "medium"
 # reasoning effort) and commits the labels and a report to eval/. No table is touched.
+# With a month (2026-01): a sample of that stored month is labelled again with the current
+# rules and compared with the stored labels (eval/COMPARE_<month>.md), before a costly rerun.
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "Oy (masalan 2026-01): yangi qoidalarni shu oy namunasida eskisi bilan solishtirish. Bo'sh: odatiy baholash"
+        required: false
+        default: ""
 
 permissions:
   contents: write               # commit eval/
@@ -35,6 +42,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
+          EVAL_MONTH: ${{ inputs.month }}
         run: python evaluate.py
 
       - name: Commit the results
