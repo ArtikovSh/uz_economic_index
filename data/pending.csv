@@ -1,1 +1,1 @@
-channel,message_id,date,views,forwards,raw_text,scraped_at,is_economic,primary_topic,relevance,sentiment,is_ad,is_digest,is_foreign,label_version,label_model,label_error
+channel,message_id,date,views,forwards,raw_text,scraped_at,is_economic,primary_topic,topics,headline,sentiment,is_ad,is_digest,is_foreign,label_version,label_model,label_error
