@@ -614,8 +614,8 @@ def _build_stats():
         days, chans, topics = q_many(
             ("""select period d, posts, nonad, econ, pos, neg from indices
                 where period_type='kun' order by period""", None),
-            (f"select {DAY}::text d, channel, count(*) n from posts where {DAY} in {FINAL_DAYS} group by 1, 2",
-             None),
+            (f"""select {DAY}::text d, channel, count(*) n, count(*) filter (where {COUNTED}) e
+                 from posts where {DAY} in {FINAL_DAYS} group by 1, 2""", None),
             # a post counts in each of its topics; its share of ESI (wp, wg) is split between them
             (f"""select {DAY}::text d, t, count(*) n,
                         count(*) filter (where {POS}) p, count(*) filter (where {NEG}) g,
@@ -642,6 +642,8 @@ def _build_stats():
     # every active channel is offered in the filters, also one added after the last final day
     for c in active:
         per_channel.setdefault(c, 0)
+    chan_order = [c for c, _ in sorted(per_channel.items(), key=lambda x: -x[1])]
+    chan_ix = {c: i for i, c in enumerate(chan_order)}
     return {
         # [day, posts, nonad, econ, pos, neg, channels collected]
         "days": [[r["d"], r["posts"], r["nonad"], r["econ"], r["pos"], r["neg"], per_day.get(r["d"], 0)]
@@ -649,8 +651,9 @@ def _build_stats():
         # [index into days, topic, counted posts, positive, negative, ESI share: positive, negative]
         "topics": [[day_ix[r["d"]], r["t"], r["n"], r["p"], r["g"], r["wp"], r["wg"]]
                    for r in topics if r["d"] in day_ix],
-        "channels": [{"id": c, "name": names.get(c, str(c).lstrip("@"))}
-                     for c, _ in sorted(per_channel.items(), key=lambda x: -x[1])],
+        "channels": [{"id": c, "name": names.get(c, str(c).lstrip("@"))} for c in chan_order],
+        # [index into days, index into channels, economic posts] (what the posts list shows)
+        "chan_days": [[day_ix[r["d"]], chan_ix[r["channel"]], r["e"]] for r in chans if r["d"] in day_ix and r["e"]],
         "channels_total": len(recent_channels),
     }
 
@@ -833,6 +836,8 @@ def app_action(user, action, body):
             r = {**auth.overview(q), "channels": channels.listing(q)}
         elif action == "channel_add":
             r = channels.add(q, user["id"], body.get("handle"), channel_info)
+        elif action == "channel_rename":
+            r = channels.rename(q, str(body.get("handle") or ""), body.get("name"))
         elif action == "channel_delete":
             r = channels.remove(q, str(body.get("handle") or ""))
         elif action in ("channel_pause", "channel_resume"):

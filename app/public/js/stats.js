@@ -43,7 +43,18 @@ export function buildModel(stats) {
     days, has: new Set(days.map((x) => x.d)), topics: stats.topics || [],
     first: days.length ? days[0].d : null, last: days.length ? days[days.length - 1].d : null,
     channels: stats.channels || [], channelsTotal: stats.channels_total || 0,
+    chanDays: stats.chan_days || [],
   };
+}
+
+/** Posts of each channel within [from, to]: Map(channel id -> count). */
+export function channelCounts(model, from, to) {
+  const out = new Map(model.channels.map((c) => [c.id, 0]));
+  model.chanDays.forEach(([i, c, n]) => {
+    const d = model.days[i].d;
+    if (d >= from && d <= to) out.set(model.channels[c].id, (out.get(model.channels[c].id) || 0) + n);
+  });
+  return out;
 }
 
 /** Periods of a type that have data, oldest first. */

@@ -212,9 +212,9 @@ export function renderAdmin(root, nav, state, opts = {}) {
       <section class="card users" aria-label="${esc(t('admin.tabChannels'))}">
         ${list.map((c) => `
           <div class="user">
-            <span class="avatar">${esc((c.title || c.handle.slice(1)).charAt(0).toUpperCase())}</span>
+            <span class="avatar">${esc((c.display || c.handle.slice(1)).charAt(0).toUpperCase())}</span>
             <span class="who">
-              <span class="line1"><b>${esc(c.title || c.handle)}</b>
+              <span class="line1"><b>${esc(c.display || c.title || c.handle)}</b>
                 <span class="pill ${c.active ? 'active' : 'expired'}"><span class="dot"></span>${esc(t(c.active ? 'admin.chanActive' : 'admin.chanPaused'))}</span></span>
               <span class="line2 mono">${esc(c.handle)}</span>
               <span class="line2">${esc(t('admin.chanSince', { d: fmtDate(c.changed_at || c.added_at) }))}</span>
@@ -398,7 +398,16 @@ export function renderAdmin(root, nav, state, opts = {}) {
         ${c.active
           ? `<button data-step="pause"><span class="ic">${icon('pause', 18)}</span>${esc(t('admin.pause'))}</button>`
           : `<button data-step="resume"><span class="ic">${icon('play', 18)}</span>${esc(t('admin.resume'))}</button>`}
+        <button data-step="rename"><span class="ic">${icon('edit', 18)}</span>${esc(t('admin.rename'))}</button>
         <button data-step="delete" class="danger"><span class="ic">${icon('trash', 18)}</span>${esc(t('admin.removeChannel'))}</button>
+      </div>`;
+    const renameHTML = () => `
+      <div class="input-wrap"><input id="chanName" maxlength="28" autocomplete="off" value="${esc(c.name || '')}"
+        placeholder="${esc(c.display || c.handle)}"></div>
+      <p class="note">${esc(t('admin.renameNote'))}</p>
+      <div class="pair">
+        <button class="btn secondary" data-step="menu">${esc(t('cancel'))}</button>
+        <button class="btn primary" data-save>${esc(t('admin.save'))}</button>
       </div>`;
     const confirm = (note, label) => `
       <p class="note">${esc(note)}</p>
@@ -419,6 +428,17 @@ export function renderAdmin(root, nav, state, opts = {}) {
         const step = b.dataset.step;
         if (step === 'menu') return fill(menu);
         if (step === 'resume') return run('channel_resume', b);
+        if (step === 'rename') {
+          fill(renameHTML());
+          const save = body.querySelector('[data-save]');
+          save.addEventListener('click', async () => {
+            save.disabled = true;
+            if (await act('channel_rename', { handle: c.handle, name: body.querySelector('#chanName').value })) {
+              close(); setBack(back); toast(t('admin.done')); load();
+            } else save.disabled = false;
+          });
+          return;
+        }
         fill(step === 'pause' ? confirm(t('admin.pauseNote'), t('admin.pause'))
           : confirm(t('admin.removeChannelNote'), t('admin.remove')));
         body.querySelector('[data-ok]').addEventListener('click', (e) =>

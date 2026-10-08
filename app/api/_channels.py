@@ -16,6 +16,7 @@ create table if not exists channels (
     added_by    bigint,
     changed_at  timestamptz
 );
+alter table channels add column if not exists name text;   -- a short name the admin chose
 alter table channels enable row level security;
 """
 # the channels the index started with (config.CHANNELS in the pipeline)
@@ -23,6 +24,25 @@ SEED = [("@gazetauz", "Gazeta.uz"), ("@kunuzofficial", "Kun.uz"), ("@daryo", "Da
         ("@spotuz", "Spot"), ("@uzdaily", "UzDaily")]
 NAMES = dict(SEED)
 _HANDLE = re.compile(r"^@[a-z][a-z0-9_]{3,31}$")
+_EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D\u20E3]")
+# words that only advertise a channel ("official", "breaking news"): the name ends before them
+_NOISE = re.compile(r"\s+(?:rasmiy|расмий|расмий|официальн\w*|official|tezkor|тезкор|новости|"
+                    r"yangilik\w*|янгилик\w*|xabarlar\w*|хабарлар\w*|kanal\w*|канал\w*|channel)\b.*$",
+                    re.IGNORECASE)
+
+
+def short_name(title, handle="", split=True):
+    """A channel's name without slogans: 'QORAXABAR - Tezkor xabarlar | Rasmiy kanal' -> 'Qoraxabar',
+    'Qalampir.uz I расмий канал' -> 'Qalampir.uz', 'Oblakouz – Новости Узбекистана' -> 'Oblakouz'."""
+    name = _EMOJI.sub("", str(title or ""))
+    parts = re.split(r"\s+[|–—\-]\s*|\s*\|\s*|\s+I\s+", name.strip())
+    name = parts[0] if split else " ".join(parts)           # the whole title when the first part repeats
+    name = _NOISE.sub("", " ".join(name.split())).strip(" .,:;-–—|")
+    if len(name) > 4 and name.upper() == name:              # 'DARAKCHI.UZ' -> 'Darakchi.uz'
+        name = name[0] + name[1:].lower()
+    elif name.lower() == name:                               # 'bakiroo' -> 'Bakiroo'
+        name = name[:1].upper() + name[1:]
+    return name[:28] or str(handle).lstrip("@")
 
 
 def ensure(q):
@@ -40,14 +60,39 @@ def normalize(raw):
     return s if _HANDLE.match(s) else None
 
 
+def _names(rows):
+    """handle -> the name shown in the app: the admin's, else the cleaned Telegram title; a cleaned
+    name two channels share ('Daryo' and 'Daryo | Dunyo') keeps more of the later one's title."""
+    out, seen = {}, set()
+    for r in sorted(rows, key=lambda r: (r.get("added_at") is None, r.get("added_at") or 0, r["handle"])):
+        name = r["name"] or short_name(r["title"], r["handle"])
+        if not r["name"] and name.lower() in seen:
+            name = short_name(r["title"], r["handle"], split=False)
+        seen.add(name.lower())
+        out[r["handle"]] = name
+    return out
+
+
 def listing(q):
-    return q("""select handle, title, active, added_at, changed_at from channels
+    rows = q("""select handle, title, name, active, added_at, changed_at from channels
                 order by active desc, added_at, handle""") or []
+    names = _names(rows)
+    for r in rows:
+        r["display"] = names[r["handle"]]
+    return rows
 
 
 def titles(q):
-    rows = q("select handle, title from channels") or []
-    return {**NAMES, **{r["handle"]: r["title"] for r in rows if r["title"]}}
+    """handle -> the name shown in the app (see _names)."""
+    rows = q("select handle, title, name, added_at from channels") or []
+    return {**NAMES, **_names([r for r in rows if r["name"] or r["title"]])}
+
+
+def rename(q, handle, name):
+    """The admin's short name for a channel; an empty one goes back to the cleaned title."""
+    name = " ".join(str(name or "").split())[:28] or None
+    row = q("update channels set name=%s where handle=%s returning handle", (name, handle), one=True)
+    return {"ok": True} if row else {"ok": False, "error": "not_found"}
 
 
 def add(q, admin_tg, raw, lookup):

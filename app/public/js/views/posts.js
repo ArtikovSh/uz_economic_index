@@ -1,12 +1,13 @@
 // News: economic posts of a day or a date range, filtered by topic, tone and channel.
 import { api, errorText, esc, haptic, icon, segHTML, t, tg } from '../lib.js';
 import { dayFull, monthName, num, postTime, range, views, weekdayShort } from '../fmt.js';
-import { addDays, dayCount } from '../stats.js';
+import { addDays, channelCounts, dayCount } from '../stats.js';
 import { topicName } from './overview.js';
 
 const TONES = ['all', 'pos', 'neu', 'neg'];
 const TONE_LOOK = { 1: ['pos', 'trendUp', 'ov.pos'], 0: ['neu', 'minus', 'ov.neu'], '-1': ['neg', 'trendDown', 'ov.neg'] };
 const clamp = (d, model) => (d < model.first ? model.first : d > model.last ? model.last : d);
+const SHOWN = 6;                                   // channels listed before "N more"
 
 /** Fresh news state for a period (optionally one topic): the period's days that have data. */
 export function newsState(model, period, topics = []) {
@@ -102,16 +103,45 @@ export function renderPosts(ctx) {
     const draft = { topics: [...P.topics], channels: [...P.channels], tone: P.tone };
     const keys = topicKeys(model);
     let count = P.total, timer = null, mine = 0;
+    // channel picker inside the same sheet: its own selection until "Choose"
+    let picking = null, query = '', expanded = false;
+    const counts = channelCounts(model, P.from, P.to);
+    const chans = [...model.channels].sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0) || a.name.localeCompare(b.name));
     const chip = (attr, val, label, on) => `<button type="button" data-${attr}="${esc(val)}" aria-pressed="${on}">${esc(label)}</button>`;
-    const html = () => `
+    const picked = () => draft.channels.map(channelName);
+    const filtersHTML = () => `
       <div class="field"><span class="label">${esc(t('ps.topic'))}</span>
         <div class="chips">${keys.map((k) => chip('topic', k, topicName(k), draft.topics.includes(k))).join('')}</div></div>
       <div class="field"><span class="label">${esc(t('ps.tone'))}</span>
         <div class="seg">${segHTML(TONES.map((x) => [x, t(x === 'all' ? 'ps.all' : 'ov.' + x)]), draft.tone, 'tone')}</div></div>
       <div class="field"><span class="label">${esc(t('ps.channel'))}</span>
-        <div class="chips">${model.channels.map((c) => chip('chan', c.id, c.name, draft.channels.includes(c.id))).join('')}</div></div>
+        <button type="button" class="pick-row" data-pick>
+          <span class="t"><b>${esc(draft.channels.length ? t('ps.nChannels', { n: draft.channels.length }) : t('ps.allChannels'))}</b>
+            ${draft.channels.length ? `<small>${esc(picked().join(', '))}</small>` : ''}</span>
+          <span class="cnt">${esc(t('ps.ofN', { n: model.channels.length }))}</span>${icon('chevronRight', 18)}</button></div>
       <div class="two"><button class="btn secondary" data-clear>${esc(t('ps.clear'))}</button>
         <button class="btn primary" data-apply>${esc(t('ps.show', { n: count == null ? '…' : num(count) }))}</button></div>`;
+    const pickerHTML = () => {
+      // the chosen ones first, then by posts in the period
+      const list = [...chans.filter((c) => picking.includes(c.id)), ...chans.filter((c) => !picking.includes(c.id))];
+      return `
+      <div class="cp-head"><button type="button" class="icon-btn" data-cp-back aria-label="${esc(t('back'))}">${icon('back', 16, 2)}</button>
+        <b>${esc(t('ps.channels'))}</b><span class="cnt">${picking.length} / ${model.channels.length}</span></div>
+      <div class="input-wrap">${icon('search', 18)}<input id="cpq" type="search" autocomplete="off" placeholder="${esc(t('ps.searchChannel'))}" value="${esc(query)}"></div>
+      <div class="cp-actions"><span>${esc(t('ps.byPosts'))}</span>
+        <span><button type="button" class="link" data-cp-all>${esc(t('ps.all'))}</button> · <button type="button" class="link" data-cp-none>${esc(t('ps.clear'))}</button></span></div>
+      <div class="cp-list">${list.map((c, i) => `
+        <button type="button" class="cp-row" data-cp="${esc(c.id)}" aria-pressed="${picking.includes(c.id)}"
+                data-q="${esc((c.name + ' ' + c.id).toLowerCase())}" ${!expanded && i >= SHOWN ? 'hidden' : ''}>
+          <span class="avatar">${esc(c.name.charAt(0).toUpperCase())}</span>
+          <span class="nm"><b>${esc(c.name)}</b><small>${esc(c.id)}</small></span>
+          <span class="n">${esc(num(counts.get(c.id) || 0))}</span><span class="ck">${icon('check', 14, 2.6)}</span>
+        </button>`).join('')}</div>
+      ${!expanded && list.length > SHOWN ? `<button type="button" class="link cp-more" data-cp-more>${esc(t('ps.moreChannels', { n: list.length - SHOWN }))}</button>` : ''}
+      <div class="two"><button class="btn secondary" data-cp-back>${esc(t('cancel'))}</button>
+        <button class="btn primary" data-cp-ok>${esc(t('ps.choose', { n: picking.length }))}</button></div>`;
+    };
+    const html = () => (picking ? pickerHTML() : filtersHTML());
     const flip = (arr, v) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
     let refill = null;
     const recount = () => {
@@ -128,9 +158,12 @@ export function renderPosts(ctx) {
     };
     ctx.sheet(t('ps.filters'), html(), (body, close, fill) => {
       refill = () => fill(html());
+      if (picking) return bindPicker(body);
       const change = (fn) => () => { haptic(); fn(); count = null; refill(); recount(); };
+      body.querySelector('[data-pick]').addEventListener('click', () => {
+        haptic(); picking = [...draft.channels]; query = ''; expanded = false; refill();
+      });
       body.querySelectorAll('[data-topic]').forEach((b) => b.addEventListener('click', change(() => { draft.topics = flip(draft.topics, b.dataset.topic); })));
-      body.querySelectorAll('[data-chan]').forEach((b) => b.addEventListener('click', change(() => { draft.channels = flip(draft.channels, b.dataset.chan); })));
       body.querySelectorAll('[data-tone]').forEach((b) => b.addEventListener('click', change(() => { draft.tone = b.dataset.tone; })));
       body.querySelector('[data-clear]').addEventListener('click', change(() => { draft.topics = []; draft.channels = []; draft.tone = 'all'; }));
       body.querySelector('[data-apply]').addEventListener('click', () => {
@@ -139,6 +172,36 @@ export function renderPosts(ctx) {
         load(true);
       });
     });
+
+    function bindPicker(body) {
+      const rows = [...body.querySelectorAll('[data-cp]')];
+      const search = body.querySelector('#cpq');
+      const more = body.querySelector('[data-cp-more]');
+      const show = () => {                          // filter in place: re-rendering would drop the keyboard
+        const q = query.trim().toLowerCase();
+        rows.forEach((r, i) => { r.hidden = q ? !r.dataset.q.includes(q) : !expanded && i >= SHOWN; });
+        if (more) more.hidden = !!q || expanded;
+      };
+      search.addEventListener('input', () => { query = search.value; show(); });
+      if (more) more.addEventListener('click', () => { haptic(); expanded = true; show(); });
+      rows.forEach((r) => r.addEventListener('click', () => {
+        haptic();
+        picking = flip(picking, r.dataset.cp);
+        r.setAttribute('aria-pressed', String(picking.includes(r.dataset.cp)));
+        body.querySelector('.cp-head .cnt').textContent = `${picking.length} / ${model.channels.length}`;
+        body.querySelector('[data-cp-ok]').textContent = t('ps.choose', { n: picking.length });
+      }));
+      const all = (ids) => () => { haptic(); picking = ids; refill(); };
+      body.querySelector('[data-cp-all]').addEventListener('click', all(model.channels.map((c) => c.id)));
+      body.querySelector('[data-cp-none]').addEventListener('click', all([]));
+      body.querySelectorAll('[data-cp-back]').forEach((b) => b.addEventListener('click', () => { haptic(); picking = null; refill(); }));
+      body.querySelector('[data-cp-ok]').addEventListener('click', () => {
+        haptic();
+        // every channel chosen is the same as no channel filter
+        draft.channels = picking.length === model.channels.length ? [] : picking;
+        picking = null; count = null; refill(); recount();
+      });
+    }
   }
 
   function openDate() {

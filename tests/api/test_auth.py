@@ -295,6 +295,8 @@ def test_dashboard_stats_and_posts(server):
         assert sorted(stats["topics"]) == [[0, "business", 1, 1, 0, 0.5, 0.0], [0, "fiscal", 1, 0, 1, 0.0, 1.0],
                                            [0, "trade", 2, 1, 0, 0.5, 0.0]]       # shares still add up
         assert stats["channels_total"] == 2
+        ix = {c["id"]: i for i, c in enumerate(stats["channels"])}
+        assert sorted(stats["chan_days"]) == sorted([[0, ix["@daryo"], 2], [0, ix["@kunuzofficial"], 1]])   # economic posts
         assert [c["id"] for c in stats["channels"]][:2] == ["@daryo", "@kunuzofficial"]
         assert "@spotuz" in [c["id"] for c in stats["channels"]]      # active, no final posts yet
 
@@ -573,6 +575,26 @@ def test_admin_deletes_users_and_channels(server, fresh_db):
             assert admin("channel_delete", {"handle": h})[0] == 200
     assert admin("channel_delete", {"handle": handles[-1]})[1]["error"] == "last_channel"
     assert admin("channel_delete", {"handle": "@nope"})[1]["error"] == "not_found"
+
+
+def test_channel_names_are_short_and_can_be_renamed(server, monkeypatch):
+    import _channels
+    assert _channels.short_name("QORAXABAR - Tezkor xabarlar | Rasmiy kanal") == "Qoraxabar"
+    assert _channels.short_name("Qalampir.uz I расмий канал") == "Qalampir.uz"
+    assert _channels.short_name("Shopirlar 🚗| Tezkor xabarlar") == "Shopirlar"
+    assert _channels.short_name("Uzbekistanofficial Rasmiy Tezkor Xabarlar va Yangiliklar") == "Uzbekistanofficial"
+    assert _channels.short_name("bakiroo") == "Bakiroo" and _channels.short_name("", "@x_y") == "x_y"
+    monkeypatch.setattr(index, "channel_info", lambda h: {"ok": True, "title": "OPER UZ | Расмий канал"})
+    admin = lambda action, body=None: call(server, U(OWNER), action, body)
+    assert admin("channel_add", {"handle": "@oper_uz"})[0] == 200
+    shown = {c["handle"]: c["display"] for c in admin("admin")[1]["channels"]}
+    assert shown["@oper_uz"] == "Oper uz"
+    assert admin("channel_rename", {"handle": "@oper_uz", "name": "  Oper.uz "})[0] == 200
+    assert {c["handle"]: c["display"] for c in admin("admin")[1]["channels"]}["@oper_uz"] == "Oper.uz"
+    assert _channels.titles(index.q)["@oper_uz"] == "Oper.uz"                     # the bot and the Mini App use it
+    assert admin("channel_rename", {"handle": "@oper_uz", "name": ""})[0] == 200        # back to the cleaned title
+    assert {c["handle"]: c["display"] for c in admin("admin")[1]["channels"]}["@oper_uz"] == "Oper uz"
+    assert admin("channel_rename", {"handle": "@nope", "name": "X"})[1]["error"] == "not_found"
 
 
 # --------------------------------------------------------------- channels --

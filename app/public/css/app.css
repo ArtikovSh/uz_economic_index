@@ -407,6 +407,32 @@ button.user { width: 100%; border: 0; background: transparent; color: inherit; t
 .pviews { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
 .psrc { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-weight: 600; text-decoration: none; }
 
+/* channel filter: one row in the filters, a searchable list inside the same sheet */
+.pick-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 10px 10px 12px; border: 1px solid var(--field);
+  border-radius: 12px; background: var(--surface); color: var(--ink); text-align: left; }
+.pick-row .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pick-row b { font-size: 14px; font-weight: 600; }
+.pick-row small { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-row svg { flex: none; color: var(--muted); }
+.cnt { flex: none; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--primarySoft);
+  color: var(--primary); font-variant-numeric: tabular-nums; }
+.cp-head { display: flex; align-items: center; gap: 10px; }
+.cp-head b { flex: 1; font-size: 15px; font-weight: 600; }
+.cp-actions { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); }
+.cp-actions .link { font-size: 12.5px; }
+.cp-list { display: flex; flex-direction: column; margin-top: -6px; }
+.cp-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto 20px; gap: 10px; align-items: center; padding: 8px 0;
+  border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; }
+.cp-row .avatar { width: 32px; height: 32px; font-size: 12px; }
+.cp-row .nm { min-width: 0; display: flex; flex-direction: column; }
+.cp-row b { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-row small { font-size: 11.5px; color: var(--muted); }
+.cp-row .n { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cp-row .ck { width: 20px; height: 20px; border-radius: 6px; border: 1.5px solid var(--field); display: flex; align-items: center;
+  justify-content: center; color: transparent; }
+.cp-row[aria-pressed="true"] .ck { background: var(--btn); border-color: var(--btn); color: #FFFFFF; }
+.cp-more { align-self: center; font-size: 13px; }
+
 /* sheets content: filters, calendar, method */
 .sheet-body { display: flex; flex-direction: column; gap: 16px; }
 .menu .check { margin-left: auto; color: var(--primary); display: flex; }
