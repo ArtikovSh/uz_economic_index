@@ -10,7 +10,7 @@ bumping LLM_LABEL_VERSION (config.py).
 
 CATEGORIES = [
     "prices_inflation", "currency_fx", "fiscal", "trade", "macro", "central_bank",
-    "banking_finance", "labour_income", "energy_utility", "business",
+    "banking_finance", "labour_income", "energy_utility", "business", "transport",
     "construction_realty", "non_economic",
 ]
 
@@ -98,9 +98,9 @@ STEP 5 — topic (one value; "non_economic" if and only if economic=false)
   currency_fx         the som exchange rate, the FX market, currency rules
   fiscal              budget, taxes, customs duties and payments, fees, fines, subsidies,
                       public spending, public debt
-  trade               exports, imports, trade agreements, market access, transit and
-                      logistics corridors, tourism flows; prices of gold and copper (the
-                      main exports), including the gold-bar price in som
+  trade               exports, imports, trade agreements, market access, tourism flows;
+                      prices of gold and copper (the main exports), including the gold-bar
+                      price in som
   macro               GDP, output of industry, agriculture or services, total investment,
                       reserves, remittances, balance of payments, official forecasts
   central_bank        the Central Bank of Uzbekistan (CBU, ЦБ, Markaziy bank) as the actor:
@@ -115,8 +115,14 @@ STEP 5 — topic (one value; "non_economic" if and only if economic=false)
                       outages; energy projects (a PRICE change is prices_inflation)
   business            companies, entrepreneurship, industrial projects and zones,
                       privatisation, business regulation, IT and startups
-  construction_realty construction, housing, real estate, roads, airports and other
-                      infrastructure
+  transport           passenger and freight transport: trains and railways, flights and
+                      airlines, buses, metro, taxis and city transport; new routes and
+                      timetables, carriers, new trains, buses and aircraft for them (a
+                      factory that makes vehicles is business), airports and stations,
+                      passenger and freight volumes, transit and logistics corridors;
+                      building or expanding railways, metro lines, airports and stations
+  construction_realty construction, housing, real estate, roads, bridges and other
+                      infrastructure (railways, metro, airports and stations are transport)
 Exactly ONE topic per post: the one its headline and main fact are about. A detail
 mentioned in passing, a background figure or a secondary measure never decides it. When
 the headline and main fact themselves join several subjects, decide in this order:
@@ -204,6 +210,10 @@ EXAMPLES (headline -> labels)
      -> economic=false (staff of a state body), non_economic, 0.0
  "Туман сабаб Тошкент аэропорти рейсларни қабул қилишни вақтинча чеклади"
      -> economic=false (travel disruption by weather), non_economic, 0.0
+ "Тошкент – Хива йўналишида «Жалолиддин Мангуберди» тезюрар поезди қатнови 3 майдан бошланади"
+     -> economic, transport, +0.5 (a new service launched)
+ "Afrosiyob poyezdlari chiptalari narxi 1-fevraldan 15 foizga oshiriladi"
+     -> economic, prices_inflation (a fare level, not transport), -0.6
  "Олтин нархи биринчи марта 1 грамм учун 2 млн сўмдан ошди"
      -> economic, trade, +0.4 (gold: the main export)
  "Иностранные IT-компании заплатили в 2025 году на 50% больше налогов"

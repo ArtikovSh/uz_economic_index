@@ -170,7 +170,7 @@ const D = {
     topics: {
       prices_inflation: 'Narx va inflatsiya', currency_fx: 'Valyuta kursi', fiscal: 'Byudjet va soliq', trade: 'Tashqi savdo',
       macro: 'Makroiqtisodiyot', central_bank: 'Markaziy bank', banking_finance: 'Bank va moliya',
-      labour_income: 'Mehnat va daromad', energy_utility: 'Energetika', business: 'Biznes', construction_realty: 'Qurilish',
+      labour_income: 'Mehnat va daromad', energy_utility: 'Energetika', business: 'Biznes', transport: 'Transport', construction_realty: 'Qurilish',
     },
     langTitle: 'Til',
   },
@@ -286,7 +286,7 @@ const D = {
     topics: {
       prices_inflation: 'Цены и инфляция', currency_fx: 'Валютный курс', fiscal: 'Бюджет и налоги', trade: 'Внешняя торговля',
       macro: 'Макроэкономика', central_bank: 'Центральный банк', banking_finance: 'Банки и финансы',
-      labour_income: 'Труд и доходы', energy_utility: 'Энергетика', business: 'Бизнес', construction_realty: 'Строительство',
+      labour_income: 'Труд и доходы', energy_utility: 'Энергетика', business: 'Бизнес', transport: 'Транспорт', construction_realty: 'Строительство',
     },
     langTitle: 'Язык',
   },
@@ -402,7 +402,7 @@ const D = {
     topics: {
       prices_inflation: 'Prices & inflation', currency_fx: 'Exchange rate', fiscal: 'Budget & taxes', trade: 'Foreign trade',
       macro: 'Macroeconomy', central_bank: 'Central bank', banking_finance: 'Banking & finance',
-      labour_income: 'Labour & income', energy_utility: 'Energy', business: 'Business', construction_realty: 'Construction',
+      labour_income: 'Labour & income', energy_utility: 'Energy', business: 'Business', transport: 'Transport', construction_realty: 'Construction',
     },
     langTitle: 'Language',
   },

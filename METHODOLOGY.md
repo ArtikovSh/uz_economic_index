@@ -60,7 +60,9 @@ soni bo'yicha hisoblanadi, kunlik qiymatlarning o'rtachasi emas.
 
 ## 3. Tasniflash — OpenAI yoki Gemini (`llm_classifier.py`, `prompts.py`)
 
-Har bir post bir marta belgilanadi (belgi versiyasi `v8`: ob-havo sabab transport
+Har bir post bir marta belgilanadi (belgi versiyasi `v9`: yangi "transport" mavzusi —
+poyezd, avia, avtobus, metro, yo'nalishlar, aeroport va vokzallar, yuk tashish va tranzit;
+`v8`: ob-havo sabab transport
 o'zgarishlari, mudofaa va davlat organlari kadrlari iqtisodiy emas, kompaniya va davlat
 korxonalari rahbariyatiga tayinlov iqtisodiy; oltin va mis narxi eksport sifatida; soliq
 tushumining o'sishi soliq oshishi emas; salomatlik va uy-ro'zg'or mahsulotlari reklama;
@@ -95,7 +97,8 @@ xorijiy emas.
 
 **Mavzular:** narx va inflatsiya, valyuta kursi, byudjet va soliq, tashqi savdo,
 makroiqtisodiyot, **Markaziy bank**, bank va moliya, mehnat va daromad, energetika,
-biznes, qurilish. O'zbekiston Markaziy bankining qarori, bayonoti, prognozi yoki
+biznes, transport (`v9` dan), qurilish. Temir yo'l, metro, aeroport va vokzal qurilishi ham
+transport; uy-joy, ko'chmas mulk, yo'l va ko'priklar — qurilish. O'zbekiston Markaziy bankining qarori, bayonoti, prognozi yoki
 qoidasi haqidagi post — inflyatsiya, kurs yoki banklar haqida bo'lsa ham — `central_bank`.
 Kunlik rasmiy kurs xabari va Markaziy bank ma'lumotiga shunchaki tayangan yangilik o'z
 mavzusida qoladi (`currency_fx`, `banking_finance`, ...). Mavzu indeks formulasiga

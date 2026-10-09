@@ -11,7 +11,7 @@ TOPICS = {
     "fiscal": "Byudjet va soliq", "trade": "Tashqi savdo", "macro": "Makroiqtisodiyot",
     "central_bank": "Markaziy bank", "banking_finance": "Bank va moliya",
     "labour_income": "Mehnat va daromad", "energy_utility": "Energetika",
-    "business": "Biznes", "construction_realty": "Qurilish", "non_economic": "Iqtisodiy emas",
+    "business": "Biznes", "transport": "Transport", "construction_realty": "Qurilish", "non_economic": "Iqtisodiy emas",
 }
 COUNTS = ["Jami xabarlar", "Reklama emas", "Iqtisodiy", "Ijobiy", "Neytral", "Salbiy"]
 DAILY_COLUMNS = ["Sana", "Hafta kuni", *COUNTS, "EAI, %", "ESI", "Kanallar", "Izoh"]

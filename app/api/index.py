@@ -55,7 +55,8 @@ TOPICS = {
     "prices_inflation": "Narx/inflatsiya", "currency_fx": "Valyuta/kurs",
     "fiscal": "Byudjet/soliq", "trade": "Tashqi savdo", "macro": "Makro",
     "central_bank": "Markaziy bank", "banking_finance": "Bank/moliya", "labour_income": "Mehnat/daromad",
-    "energy_utility": "Energetika", "business": "Biznes", "construction_realty": "Qurilish",
+    "energy_utility": "Energetika", "business": "Biznes", "transport": "Transport",
+    "construction_realty": "Qurilish",
 }
 COUNTED = "is_economic and not is_ad and not is_foreign and not is_digest"
 # Tashkent calendar day of a post, whatever the session time zone is
