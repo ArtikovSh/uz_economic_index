@@ -244,11 +244,13 @@ def app_kb(text, screen="", em=None, glyph="dashboard"):
 
 
 def main_kb(lang, em):
+    # Telegram makes a row of two buttons as wide as twice its longest label: paired buttons
+    # carry short labels so they never stick out of the message above them
     tr = lambda k: bot.tr(lang, k)
-    rows = [[bot.button(tr("today"), em, "esi", callback_data="nav:today"),
-             bot.button(tr("week"), em, "week", callback_data="nav:week")],
+    rows = [[bot.button(tr("today_s"), em, "esi", callback_data="nav:today"),
+             bot.button(tr("week_s"), em, "week", callback_data="nav:week")],
             [bot.button(tr("topics"), em, "topics", callback_data="nav:topics"),
-             bot.button(tr("top"), em, "news", callback_data="nav:top")]]
+             bot.button(tr("top_s"), em, "news", callback_data="nav:top")]]
     if WEBAPP_URL:
         rows.append([bot.button(tr("app"), em, "dashboard", "primary", web_app={"url": app_url()})])
     return {"inline_keyboard": rows}
@@ -262,7 +264,7 @@ def summary_kb(data, lang, em):
         rows.append([bot.button(tr("open_app"), em, "dashboard", "primary", web_app={"url": app_url()})])
     ref = f"{data['kind']}:{data['start']}"
     rows.append([bot.button(tr("topics"), em, "topics", callback_data=f"nav:topics:{ref}"),
-                 bot.button(tr("top"), em, "news", callback_data=f"nav:top:{ref}")])
+                 bot.button(tr("top_s"), em, "news", callback_data=f"nav:top:{ref}")])
     other = ("week", "week", "nav:week") if data["kind"] == "kun" else ("today", "esi", "nav:today")
     rows.append([bot.button(tr(other[0]), em, other[1], callback_data=other[2])])
     return {"inline_keyboard": rows}
@@ -270,8 +272,8 @@ def summary_kb(data, lang, em):
 
 def lang_kb(src):
     """Language choice; src says where it was opened: w = welcome, m = /me, p = /lang."""
-    return {"inline_keyboard": [[{"text": bot.LANG_NAMES[c], "callback_data": f"lang:{c}:{src}"}
-                                 for c in bot.LANGS]]}
+    return {"inline_keyboard": [[{"text": bot.LANG_NAMES[c], "callback_data": f"lang:{c}:{src}"}]
+                                for c in bot.LANGS]}         # one a row: three in a row outgrow /lang
 
 
 def me_kb(lang, em, digest, owner):
@@ -412,8 +414,8 @@ def notify_new_request(req):
     lang, em = bot.lang_of(q, {"id": int(ADMIN_ID)}), emoji()
     name = escape(req["full_name"]) + (f" · {escape(req['organization'])}" if req.get("organization") else "")
     who_ = f"@{escape(req['tg_username'])}" if req.get("tg_username") else escape(req.get("tg_name") or "")
-    text = (f"{bot.ic(em, 'user')}<b>{escape(bot.tr(lang, 'new_request'))}</b>\n{name}\n"
-            f"{who_} · {escape(bot.tr(lang, 'reasons').get(req['reason'], ''))}")
+    text = (f"{bot.ic(em, 'user')}<b>{escape(bot.tr(lang, 'new_request'))}</b>\n{name} · "
+            f"{who_} · {escape(bot.tr(lang, 'reasons').get(req['reason'], ''))}")   # one line: wide as the button
     if req.get("message"):
         text += f"\n\n{escape(req['message'])}"
     send(int(ADMIN_ID), text, reply_markup=app_kb(bot.tr(lang, "requests_btn"), "requests", em, "user"))
@@ -437,7 +439,7 @@ def welcome_after_login(user):
         return
     bot.remember(q, user["id"])
     lang, em = bot.lang_of(q, user), emoji()
-    kb = {"inline_keyboard": [[bot.button(bot.tr(lang, "today"), em, "esi", callback_data="nav:today")]
+    kb = {"inline_keyboard": [[bot.button(bot.tr(lang, "today_s"), em, "esi", callback_data="nav:today")]
                               + ([bot.button(bot.tr(lang, "app"), em, "dashboard", "primary",
                                              web_app={"url": app_url()})] if WEBAPP_URL else [])]}
     send(user["id"], bot.activated_text(acc, lang, em), reply_markup=kb)

@@ -339,7 +339,7 @@ def test_bot_first_visit_language_and_gate(fresh_db, monkeypatch):
     index.handle_update(upd(501, "/start", lang="ru"))
     chat, text, kw = fresh_db[-1]                                   # first visit: about + language choice
     assert chat == 501 and "Индекс экономических новостей" in text and "Choose a language" in text
-    assert [b["callback_data"] for b in kw["reply_markup"]["inline_keyboard"][0]] == ["lang:uz:w", "lang:ru:w", "lang:en:w"]
+    assert [row[0]["callback_data"] for row in kw["reply_markup"]["inline_keyboard"]] == ["lang:uz:w", "lang:ru:w", "lang:en:w"]
     index.handle_update(press(501, "lang:en:w"))
     assert "Uzbekistan economic news index" in edits[-1][1] and "Choose" not in edits[-1][1]
     chat, text, kw = fresh_db[-1]                                   # then how to sign in, in English

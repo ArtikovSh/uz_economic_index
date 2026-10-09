@@ -61,6 +61,7 @@ T = {
         "morning": "Kunlik xulosa har kuni ertalab shu yerga keladi.",
         "login_role": "Login: {login} · Rol: {role}",
         "today": "Kunlik xulosa", "week": "Haftalik xulosa", "topics": "Mavzular", "top": "Asosiy xabarlar",
+        "today_s": "Kunlik", "week_s": "Haftalik", "top_s": "Xabarlar",
         "app": "Dashboard", "open_app": "Dashboardni ochish", "admin_btn": "Admin paneli",
         "requests_btn": "Murojaatlarni ochish",
         "daily_title": "Kunlik xulosa · {d}", "weekly_title": "Haftalik xulosa · {d}",
@@ -127,6 +128,7 @@ T = {
         "morning": "Итоги дня будут приходить сюда каждое утро.",
         "login_role": "Логин: {login} · Роль: {role}",
         "today": "Итоги дня", "week": "Итоги недели", "topics": "Темы", "top": "Главные новости",
+        "today_s": "За день", "week_s": "За неделю", "top_s": "Новости",
         "app": "Дашборд", "open_app": "Открыть дашборд", "admin_btn": "Админ-панель",
         "requests_btn": "Открыть обращения",
         "daily_title": "Итоги дня · {d}", "weekly_title": "Итоги недели · {d}",
@@ -193,6 +195,7 @@ T = {
         "morning": "The daily summary will arrive here every morning.",
         "login_role": "Login: {login} · Role: {role}",
         "today": "Daily summary", "week": "Weekly summary", "topics": "Topics", "top": "Top posts",
+        "today_s": "Daily", "week_s": "Weekly", "top_s": "Top posts",
         "app": "Dashboard", "open_app": "Open dashboard", "admin_btn": "Admin panel",
         "requests_btn": "Open requests",
         "daily_title": "Daily summary · {d}", "weekly_title": "Weekly summary · {d}",
@@ -552,14 +555,16 @@ def home_text(lang, em=None):
 
 
 def me_text(acc, digest, lang, em=None):
+    # short facts share a line: Telegram sizes the message by its longest line, and a narrow
+    # message leaves the buttons under it wider than the message
     lines = [f"{ic(em, 'user')}<b>{escape(tr(lang, 'me_title'))}</b>"]
     if acc.get("owner"):
         lines.append(escape(tr(lang, "me_owner")))
     else:
-        lines.append(tr(lang, "me_login", x=f"<code>{escape(acc['login'])}</code>"))
-        lines.append(escape(tr(lang, "me_role", x=tr(lang, "roles").get(acc["role"], acc["role"]))))
+        lines.append(tr(lang, "me_login", x=f"<code>{escape(acc['login'])}</code>") + " · "
+                     + escape(tr(lang, "me_role", x=tr(lang, "roles").get(acc["role"], acc["role"]))))
         until = acc.get("expires_at")
         lines.append(escape(tr(lang, "me_until", x=until.strftime("%d.%m.%Y")) if until else tr(lang, "me_forever")))
-    lines.append(escape(tr(lang, "lang_title")) + ": " + LANG_NAMES[lang])
-    lines.append(ic(em, "bell") + escape(tr(lang, "digest_on" if digest else "digest_off")))
+    lines.append(escape(tr(lang, "lang_title")) + ": " + LANG_NAMES[lang] + " · "
+                 + ic(em, "bell") + escape(tr(lang, "digest_on" if digest else "digest_off")))
     return "\n".join(lines)
