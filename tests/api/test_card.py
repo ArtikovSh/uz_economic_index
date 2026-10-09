@@ -55,7 +55,7 @@ def assert_card_png(payload):
     with Image.open(BytesIO(payload)) as image:
         image.load()
         assert image.format == "PNG"
-        assert image.size[0] == 1000 and 900 <= image.size[1] <= 1200   # a long title adds a line
+        assert image.size[0] == 1600 and 650 <= image.size[1] <= 900   # a long title adds a line
         assert image.mode == "RGB"
 
 
