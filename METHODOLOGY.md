@@ -60,9 +60,12 @@ soni bo'yicha hisoblanadi, kunlik qiymatlarning o'rtachasi emas.
 
 ## 3. Tasniflash — OpenAI yoki Gemini (`llm_classifier.py`, `prompts.py`)
 
-Har bir post bir marta belgilanadi (belgi versiyasi `v7`: reklama va iqtisodiy filtr
-aniqlashtirildi, heshteg va yorliq sarlavha bo'lmaydi; `v6`: reja va kelishuvlar ohangi
-hisoblanadi). Qoida o'zgarganda tarix bitta versiyaga keltiriladi (`rebuild.py`, workflow'da
+Har bir post bir marta belgilanadi (belgi versiyasi `v8`: ob-havo sabab transport
+o'zgarishlari, mudofaa va davlat organlari kadrlari iqtisodiy emas, kompaniya va davlat
+korxonalari rahbariyatiga tayinlov iqtisodiy; oltin va mis narxi eksport sifatida; soliq
+tushumining o'sishi soliq oshishi emas; salomatlik va uy-ro'zg'or mahsulotlari reklama;
+`v7`: reklama va iqtisodiy filtr aniqlashtirildi, heshteg va yorliq sarlavha bo'lmaydi;
+`v6`: reja va kelishuvlar ohangi hisoblanadi). Qoida o'zgarganda tarix bitta versiyaga keltiriladi (`rebuild.py`, workflow'da
 `rebuild`): eski versiyadagi postlar qayta belgilanadi (joriy versiyadagilariga tegilmaydi,
 ular uchun qayta pul to'lanmaydi), Xabarlar va Indekslar jadvallari, baza va Sheets qaytadan
 yoziladi. Run to'xtab qolsa, olingan belgilar `data/relabel.csv` da qoladi va keyingi run
@@ -79,9 +82,9 @@ mavzu → sentiment → sarlavha.
 
 | Maydon | Ma'nosi |
 |--------|---------|
-| `is_ad` | mahsulot yoki brend reklamasi, advertorial ("biz", "мы"), kanal "Reklama" deb belgilagan post. Reklama emas: kompaniya haqidagi tahririyat yangiligi, loyiha narxi yoki sotuvi tilga olingan oddiy yangilik, kanalning o'z posti yoki obunasini targ'ib qilishi, "yaqinlarga ulashing" degan foydali ma'lumot |
+| `is_ad` | mahsulot yoki brend reklamasi, advertorial ("biz", "мы"), kanal "Reklama" deb belgilagan post. Salomatlik, kuch-quvvat, vazn, og'riq, go'zallik vositalari va uy yoki avtomobil uchun tovarlar narx, buyurtma, havola yoki telefon bilan taklif qilinsa — qanday yozilganidan qat'i nazar reklama. Reklama emas: kompaniya haqidagi tahririyat yangiligi, loyiha narxi yoki sotuvi tilga olingan oddiy yangilik, kanalning o'z posti yoki obunasini targ'ib qilishi, hech narsa sotmaydigan "yaqinlarga ulashing" degan foydali ma'lumot |
 | `is_digest` | bitta postda bir-biriga bog'liq bo'lmagan bir nechta yangilik |
-| `economic` | postning asosiy mavzusi iqtisodiy (qaysi mamlakat haqida bo'lishidan qat'i nazar). Iqtisodiy emas: vazirlik va hokimliklarning tuzilmasi, kadrlari va tayinlovlari; O'zbekistonning chet eldagi qurilishi, yordami va diplomatiya; maishiy maslahatlar (sog'liq, avtomobil, qurilish materiallari, uy-ro'zg'or) |
+| `economic` | postning asosiy mavzusi iqtisodiy (qaysi mamlakat haqida bo'lishidan qat'i nazar). Iqtisodiy emas: vazirlik, hokimlik, soliq va bojxona organlari va boshqa davlat organlarining tuzilmasi, kadrlari va tayinlovlari; O'zbekistonning chet eldagi qurilishi, yordami va diplomatiya; mudofaa va armiya; maishiy maslahatlar (sog'liq, avtomobil, qurilish materiallari, uy-ro'zg'or); ob-havo, avariya yoki ta'mirlash sabab yo'l, dovon, aeroport yopilishi, reyslar kechikishi yoki burilishi, tirbandlik, yo'l qoidalari va jarimalari (gaz, elektr, suv ta'minoti uzilishi iqtisodiy bo'lib qoladi). Kompaniya, bank va davlat korxonalari rahbariyatiga tayinlov — iqtisodiy (business), ohangi 0 |
 | `is_foreign` | voqea O'zbekistondan tashqarida va unda O'zbekiston tomoni yo'q |
 | `topic` | 11 kategoriyadan biri yoki `non_economic` (pastda) |
 | `sentiment` | O'zbekiston iqtisodiyoti, aholisi va biznesi uchun yaxshi yoki yomon yangilikmi (−1…+1) |
@@ -120,6 +123,12 @@ Sentiment qoidalari (indeksda faqat yo'nalish ishlatiladi; `v6` dan boshlab):
   oshsa — ijobiy, kamaysa — salbiy.
 - So'm mustahkamlansa (dollar kursi tushsa) — ijobiy, zaiflashsa — salbiy. Bu qoida
   Markaziy bankning kunlik kurs postlariga ham tegishli.
+- Oltin va mis — O'zbekistonning asosiy eksporti, iste'mol tovari emas: narxi oshsa —
+  ijobiy, tushsa — salbiy (jahon narxi ham, so'mdagi oltin quyma narxi ham; mavzusi
+  "tashqi savdo"). O'zbekiston tilga olinmagan jahon narxi posti — xorijiy.
+- Soliq oshishi — stavka oshishi yoki yangi soliq, boj, yig'im. Soliq yoki bojxona
+  tushumining o'sishi (kompaniyalar ko'proq to'lagani, byudjet daromadi rejadan oshgani)
+  soliq oshishi emas — ijobiy.
 - Asosiy stavka pasaysa — ijobiy, oshsa — salbiy, o'zgarmasa — 0.
 - Imtiyoz, subsidiya yoki soddalashtirish — ijobiy. Tanqislik, elektr o'chishi, taqiq,
   ishdan bo'shatish yoki bankrotlik — salbiy.

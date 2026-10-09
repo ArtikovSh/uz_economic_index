@@ -45,14 +45,18 @@ true when the post promotes a company's product or brand instead of reporting ne
   - a post whose sentences all praise one company or product, an "interview" or
     "story" that ends with a link to buy, apply or download; event promotion with
     registration or tickets;
+  - remedies, medicines, supplements and devices for health, potency, weight, pain or
+    beauty, and goods for the home or the car, offered to readers with their benefits,
+    a price, "buyurtma"/"заказать", a link or a phone number — however the post is
+    written: as a story, a testimonial, a tip or "useful information";
   - any post the channel itself marks as advertising: "(реклама)", "на правах
     рекламы", "#реклама", or "Reklama"/"Реклама" as the last word.
 false for news ABOUT companies written by the editors (results, deals, appointments,
 launches, fines, problems and criticism), for ordinary news that mentions the prices or the
 sale of a project, for a channel promoting its own posts, videos or subscription, for
-useful-information posts that ask readers to share them, and for the channel's own
-subscribe/footer lines. When unsure whether the editors or the company speaks, look for a
-call to act and the company's contacts: both together mean an ad.
+useful-information posts that sell nothing and ask readers to share them, and for the
+channel's own subscribe/footer lines. When unsure whether the editors or the company
+speaks, look for a call to act and the company's contacts: both together mean an ad.
 
 STEP 2 — is_digest (boolean)
 true when ONE post bundles several unrelated stories: "yangiliklar dayjesti",
@@ -71,8 +75,15 @@ economic content, war, crime and court cases (including bribery, fraud, embezzle
 by officials), accidents, weather, health, education, culture, sport, religion,
 human-interest stories — even if the post mentions an amount of money, a price or a
 company in passing. Also false: the structure, staff, appointments or reshuffles of
-ministries and khokimiyats; buildings, aid or gifts Uzbekistan provides abroad and other
-diplomacy; everyday advice and how-tos (health, cars, building materials, household tips).
+ministries, khokimiyats, the tax and customs services and other state bodies; buildings,
+aid or gifts Uzbekistan provides abroad and other diplomacy; defence and the army;
+everyday advice and how-tos (health, cars, building materials, household tips); traffic
+and travel disruptions — roads, mountain passes or airports closed or restricted, flights
+delayed or diverted, traffic jams — because of weather, accidents or works, and road rules
+and traffic fines (cuts in gas, electricity or water SUPPLY stay economic).
+Appointments and dismissals of the heads and deputies of companies, banks and state-owned
+enterprises (Uzbekneftegaz, Uzavtosanoat, a bank, an airport) ARE economic: business, or
+banking_finance for a bank.
 
 STEP 4 — is_foreign (boolean)
 true when the story happens OUTSIDE Uzbekistan and has no direct Uzbek party: no Uzbek
@@ -88,7 +99,8 @@ STEP 5 — topic (one value; "non_economic" if and only if economic=false)
   fiscal              budget, taxes, customs duties and payments, fees, fines, subsidies,
                       public spending, public debt
   trade               exports, imports, trade agreements, market access, transit and
-                      logistics corridors, tourism flows
+                      logistics corridors, tourism flows; prices of gold and copper (the
+                      main exports), including the gold-bar price in som
   macro               GDP, output of industry, agriculture or services, total investment,
                       reserves, remittances, balance of payments, official forecasts
   central_bank        the Central Bank of Uzbekistan (CBU, ЦБ, Markaziy bank) as the actor:
@@ -113,7 +125,8 @@ the headline and main fact themselves join several subjects, decide in this orde
      official exchange-rate post, and news that only cites CBU data, keep their own topic
      (currency_fx, banking_finance, ...). Other countries' central banks are banking_finance.
   2. A change in the LEVEL of a price, tariff, fare or fee that consumers pay ->
-     prices_inflation, even when it is about energy, utilities or transport.
+     prices_inflation, even when it is about energy, utilities or transport (gold and
+     copper prices are trade).
   3. Taxes, duties, fees to the state, the budget, public spending or debt as the measure
      itself -> fiscal.
   4. Wages, pensions, benefits, working time and conditions, employment, migration ->
@@ -138,6 +151,12 @@ B. The direction rules (the same for facts and for expectations):
      DOWN -> positive.
    - GDP, output, exports, investment inflows, tourist arrivals, jobs, wages, pensions,
      benefits, reserves, sales, profits UP -> positive; DOWN -> negative.
+   - GOLD and COPPER are Uzbekistan's main exports, not consumer goods: their price UP
+     -> positive, DOWN -> negative, both the world price and the gold-bar price in som. A
+     world-price post that does not mention Uzbekistan is foreign.
+   - Taxes UP means a higher rate or a new tax, duty or fee. MORE tax or customs REVENUE
+     collected (more paid by companies, budget revenue above plan) is not a tax rise ->
+     positive.
    - EXCHANGE RATE: the som is what matters, and it moves OPPOSITE to the dollar/euro
      rate. Dollar/euro rate DOWN ("kurs tushdi/pasaydi", "доллар подешевел", "курс
      снизился", a new low of the dollar) = som STRONGER -> positive. Dollar/euro rate
@@ -150,7 +169,8 @@ B. The direction rules (the same for facts and for expectations):
    - A plant, road, airport, warehouse or service opened, launched or to be built;
      financing approved, disbursed or promised -> positive.
 C. 0.0 only when the post has no clear economic tone: a protocol meeting or visit that
-   names no economic content, appointments, anniversaries, awards, company rankings,
+   names no economic content, appointments (unless the post gives economic results or
+   reasons), anniversaries, awards, company rankings,
    explanations of procedures, statistics without a clear direction, a policy rate
    left unchanged.
 D. Judge the tone FOR THE CHOSEN TOPIC: what the headline and main fact mean for that
@@ -178,6 +198,16 @@ EXAMPLES (headline -> labels)
      -> economic, energy_utility, -0.5 (planned tariff rise)
  "«Корзинка» назначила нового генерального директора"
      -> economic, business, 0.0 (appointment)
+ "«Ўзбекнефтгаз» бошқаруви раисига янги ўринбосар тайинланди"
+     -> economic, business, 0.0 (a state-owned company's management)
+ "Самарқанд вилояти ҳокимининг янги ўринбосари тайинланди"
+     -> economic=false (staff of a state body), non_economic, 0.0
+ "Туман сабаб Тошкент аэропорти рейсларни қабул қилишни вақтинча чеклади"
+     -> economic=false (travel disruption by weather), non_economic, 0.0
+ "Олтин нархи биринчи марта 1 грамм учун 2 млн сўмдан ошди"
+     -> economic, trade, +0.4 (gold: the main export)
+ "Иностранные IT-компании заплатили в 2025 году на 50% больше налогов"
+     -> economic, fiscal, +0.4 (more revenue, not a tax rise)
  "В Навоийской области запустили завод медного проката, создано 800 рабочих мест"
      -> economic, business, +0.6 (launched, jobs created)
  "ЦБ сохранил основную ставку на уровне 14%"
@@ -205,6 +235,8 @@ EXAMPLES (headline -> labels)
      -> is_digest
  "Кредит до 300 млн сумов без залога — оформите в приложении банка за 5 минут"
      -> is_ad
+ "Бўғим оғриғидан 3 кунда халос қилувчи малҳам! Нархи 199 минг. Буюртма учун: ..."
+     -> is_ad (a remedy sold to readers)
 
 STEP 7 — headline (text)
 The post's own headline, copied exactly without formatting, when it starts with one (a short

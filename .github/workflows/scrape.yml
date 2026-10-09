@@ -38,7 +38,7 @@ jobs:
   build-index:
     if: github.event_name != 'schedule' || vars.DAILY_COLLECTION == 'on'
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ inputs.rebuild && 150 || 45 }}
+    timeout-minutes: ${{ inputs.rebuild && 300 || 45 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -78,8 +78,8 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
-          LLM_MAX_REQUESTS: '2000'          # the whole history in one run
-          LLM_TIME_BUDGET_MIN: '120'
+          LLM_MAX_REQUESTS: '3000'          # several months in one run (~600 requests a month)
+          LLM_TIME_BUDGET_MIN: '240'
         run: python rebuild.py
 
       - name: Run pipeline

@@ -87,8 +87,10 @@ LLM_WORKERS = int(os.getenv("LLM_WORKERS") or (4 if LLM_PROVIDER == "openai" els
 LLM_MAX_REQUESTS = int(os.getenv("LLM_MAX_REQUESTS") or (240 if LLM_PROVIDER == "openai" else 60))  # per run
 LLM_TIME_BUDGET_MIN = float(os.getenv("LLM_TIME_BUDGET_MIN", "30"))  # stop labelling after this
 # bump when the rules change: posts with an older label are labelled again by rebuild.py
-# (v6: tone of plans and agreements counts; v7: stricter ad and economic filters, no labels as headlines)
-LLM_LABEL_VERSION = "v7"
+# (v6: tone of plans and agreements counts; v7: stricter ad and economic filters, no labels as headlines;
+#  v8: travel disruptions, defence and state staff not economic, company appointments are; gold and
+#  copper prices are exports; tax revenue is not a tax rise; health and home products are ads)
+LLM_LABEL_VERSION = "v8"
 
 # =============================================================================
 # Index parameters (see METHODOLOGY.md)
