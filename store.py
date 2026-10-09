@@ -89,6 +89,9 @@ def write_ledger(df):
     Months no longer present are removed, and so is the older single file."""
     os.makedirs(MESSAGES_DIR, exist_ok=True)
     df = df[LEDGER_COLS].sort_values(["date", "channel", "message_id"], kind="stable")
+    # tone is empty for posts outside the index; kept whole ("1", not "1.0") so a rewrite
+    # of an unchanged month leaves its file unchanged
+    df = df.assign(tone=pd.to_numeric(df["tone"], errors="coerce").astype("Int64"))
     months = df["date_local"].astype(str).str[:7]
     for month, part in df.groupby(months, sort=True):
         write_csv(part, _month_path(month))
