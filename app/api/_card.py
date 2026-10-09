@@ -1,24 +1,24 @@
-"""Render the bot's daily and weekly summary cards without external I/O."""
+"""Render the bot's daily and weekly summary cards without external I/O, in the Central Bank's
+publication style: white background, the base colours, Arimo (Arial's metrics) 12 for the title and
+8 inside the chart, no gridlines, a grey frame and zero line, the legend and the source below.
+1000 px stand for 8.3 cm (a "double" chart), so the type reads on a phone as it does on paper."""
 from datetime import date
 from functools import lru_cache
 from io import BytesIO
-from math import ceil, floor
+from math import ceil, floor, log10
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
 __all__ = ["render"]
 
-_SCALE = 2
+_SIZE = 1000
+_PT = _SIZE / 235.3                  # pixels per typographic point at 8.3 cm
+_SCALE = 2                           # drawn twice as large, then reduced: smooth edges
+_MARGIN = 26
 _FONT_DIR = Path(__file__).resolve().parent / "_fonts"
-_BACKGROUND = "#0F1B2D"
-_PANEL = "#142338"
-_WHITE = "#FFFFFF"
-_MUTED = "#9FB0C6"
-_AXIS = "#8EA0B8"
-_BLUE = "#7AA2FF"
-_POSITIVE = "#45C7D3"
-_NEGATIVE = "#FF9A62"
+_BLUE, _RED = (47, 73, 111), (190, 52, 85)          # the guide's base colours 1 and 2
+_GREY, _BLACK, _WHITE = (191, 191, 191), (0, 0, 0), (255, 255, 255)
 _MONTHS = {
     "uz": "yanvar fevral mart aprel may iyun iyul avgust sentabr oktabr noyabr dekabr".split(),
     "ru": "января февраля марта апреля мая июня июля августа сентября октября ноября декабря".split(),
@@ -29,24 +29,29 @@ _SHORT_MONTHS = {
     "ru": "янв фев мар апр мая июн июл авг сен окт ноя дек".split(),
     "en": "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(),
 }
+_GROUP_MONTHS = {                    # under the days of a month on the axis
+    "uz": _MONTHS["uz"],
+    "ru": "январь февраль март апрель май июнь июль август сентябрь октябрь ноябрь декабрь".split(),
+    "en": _MONTHS["en"],
+}
 _TEXT = {
     "uz": {
-        "tagline": "iqtisodiy yangiliklar indeksi",
-        "kun": "Kunlik xulosa", "hafta": "Haftalik xulosa",
-        "eai": "E’TIBOR · EAI", "esi": "KAYFIYAT · ESI", "unit": "f.b.",
-        "days": "So‘nggi {n} kun", "weeks": "So‘nggi {n} hafta", "gap": "ma’lumot yo‘q",
+        "kun": "Kunlik xulosa: kayfiyat va e’tibor indekslari",
+        "hafta": "Haftalik xulosa: kayfiyat va e’tibor indekslari",
+        "esi": "kayfiyat (ESI)", "eai": "e’tibor (EAI), foizda (o‘ng shkala)",
+        "source": "Manba: Telegram kanallaridagi xabarlar asosida hisob-kitoblar.",
     },
     "ru": {
-        "tagline": "индекс экономических новостей",
-        "kun": "Итоги дня", "hafta": "Итоги недели",
-        "eai": "ВНИМАНИЕ · EAI", "esi": "НАСТРОЕНИЕ · ESI", "unit": "п.п.",
-        "days": "Последние {n} дн.", "weeks": "Последние {n} нед.", "gap": "нет данных",
+        "kun": "Итоги дня: индексы настроения и внимания",
+        "hafta": "Итоги недели: индексы настроения и внимания",
+        "esi": "настроение (ESI)", "eai": "внимание (EAI), в процентах (правая шкала)",
+        "source": "Источник: расчёты на основе сообщений Telegram-каналов.",
     },
     "en": {
-        "tagline": "economic news index",
-        "kun": "Daily summary", "hafta": "Weekly summary",
-        "eai": "ATTENTION · EAI", "esi": "SENTIMENT · ESI", "unit": "pp",
-        "days": "Last {n} days", "weeks": "Last {n} weeks", "gap": "no data",
+        "kun": "Daily summary: sentiment and attention indices",
+        "hafta": "Weekly summary: sentiment and attention indices",
+        "esi": "sentiment (ESI)", "eai": "attention (EAI), per cent (right scale)",
+        "source": "Source: calculations based on posts in Telegram channels.",
     },
 }
 
@@ -57,6 +62,11 @@ def _number(value, lang, signed=False):
     sign = "−" if value < 0 else "+" if signed and value > 0 else ""
     digits = f"{abs(value):.1f}"
     return sign + (digits if lang == "en" else digits.replace(".", ","))
+
+
+def _tick(value, lang, decimals):
+    digits = f"{abs(value):.{decimals}f}"
+    return ("−" if value < 0 else "") + (digits if lang == "en" else digits.replace(".", ","))
 
 
 def _day_month(value, lang, short=False):
@@ -76,211 +86,208 @@ def _period_date(start, end, lang):
     return f"{first} – {_day_month(end, lang)} {end[:4]}"
 
 
-@lru_cache(maxsize=128)
-def _font(size, weight="Regular"):
-    return ImageFont.truetype(str(_FONT_DIR / f"IBMPlexSans-{weight}.ttf"), round(size * _SCALE))
+@lru_cache(maxsize=64)
+def _font(points, bold=False, italic=False):
+    style = {(0, 0): "Regular", (1, 0): "Bold", (0, 1): "Italic", (1, 1): "BoldItalic"}[(bold, italic)]
+    return ImageFont.truetype(str(_FONT_DIR / f"Arimo-{style}.ttf"), round(points * _PT * _SCALE))
 
 
-@lru_cache(maxsize=2048)
-def _width(text, size, weight="Regular", spacing=0):
-    return _font(size, weight).getlength(text) / _SCALE + max(0, len(text) - 1) * spacing
+def _scale(lo, hi, steps=4):
+    """Round axis limits and the values between them (at most one decimal)."""
+    if hi - lo < 1e-9:
+        hi = lo + 1
+    raw = (hi - lo) / steps
+    magnitude = 10 ** floor(log10(raw))
+    step = next(m * magnitude for m in (1, 2, 2.5, 5, 10) if m * magnitude >= raw - 1e-9)
+    step = max(step, 0.1)
+    first, last = floor(lo / step + 1e-9) * step, ceil(hi / step - 1e-9) * step
+    ticks = [round(first + i * step, 1) for i in range(round((last - first) / step) + 1)]
+    return ticks, (0 if all(t == int(t) for t in ticks) else 1)
 
 
-def _baseline(y, size, weight, line_height=None):
-    ascent, descent = _font(size, weight).getmetrics()
-    return y + ((line_height or size * 1.3) - (ascent + descent) / _SCALE) / 2 + ascent / _SCALE
-
-
-def _fit(text, size, width, weight="Regular", spacing=0):
-    while size > 10 and _width(text, size, weight, spacing) > width:
-        size -= 1
-    return size
+def _smooth(points, steps=12):
+    """Catmull-Rom curve through the points: a smoothed line, as the guide asks."""
+    if len(points) < 3:
+        return points
+    p = [points[0], *points, points[-1]]
+    out = []
+    for i in range(1, len(p) - 2):
+        p0, p1, p2, p3 = p[i - 1], p[i], p[i + 1], p[i + 2]
+        for k in range(steps):
+            t = k / steps
+            out.append(tuple(0.5 * (2 * p1[j] + (p2[j] - p0[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t * t
+                                    + (3 * p1[j] - p0[j] - 3 * p2[j] + p3[j]) * t ** 3) for j in (0, 1)))
+    return out + [points[-1]]
 
 
 class _Canvas:
-    def __init__(self):
-        self.image = Image.new("RGB", (1200 * _SCALE, 675 * _SCALE), _BACKGROUND)
-        self.draw = ImageDraw.Draw(self.image, "RGBA")
+    def __init__(self, height):
+        self.height = height
+        self.image = Image.new("RGB", (_SIZE * _SCALE, height * _SCALE), _WHITE)
+        self.draw = ImageDraw.Draw(self.image)
 
-    def rect(self, box, color, radius=0, outline=None, width=1):
-        self.draw.rounded_rectangle(tuple(v * _SCALE for v in box), radius=radius * _SCALE,
-                                    fill=color, outline=outline, width=round(width * _SCALE))
-
-    def circle(self, x, y, radius, color):
-        self.draw.ellipse(tuple(v * _SCALE for v in (x - radius, y - radius, x + radius, y + radius)), fill=color)
-
-    def line(self, points, color, width=1, rounded=False):
+    def line(self, points, color, points_wide):
         self.draw.line([(x * _SCALE, y * _SCALE) for x, y in points], fill=color,
-                       width=round(width * _SCALE), joint="curve")
-        if rounded:
-            for x, y in points:
-                self.circle(x, y, width / 2, color)
+                       width=max(1, round(points_wide * _PT * _SCALE)), joint="curve")
 
-    def text(self, x, y, text, size, color=_WHITE, weight="Regular", spacing=0,
-             align="left", line_height=None, baseline=False):
-        width = _width(text, size, weight, spacing)
-        x -= width / 2 if align == "center" else width if align == "right" else 0
-        y = y if baseline else _baseline(y, size, weight, line_height)
-        font = _font(size, weight)
-        if spacing:
-            for i, char in enumerate(text):
-                offset = _width(text[:i], size, weight) + i * spacing
-                self.draw.text(((x + offset) * _SCALE, y * _SCALE), char, font=font, fill=color, anchor="ls")
+    def rect(self, box, color):
+        x0, y0, x1, y1 = box
+        self.draw.rectangle((x0 * _SCALE, min(y0, y1) * _SCALE, x1 * _SCALE, max(y0, y1) * _SCALE), fill=color)
+
+    def text(self, x, y, text, points, bold=False, italic=False, color=_BLACK, anchor="la"):
+        self.draw.text((x * _SCALE, y * _SCALE), text, font=_font(points, bold, italic), fill=color, anchor=anchor)
+
+    def width(self, text, points, bold=False, italic=False):
+        return _font(points, bold, italic).getlength(text) / _SCALE
+
+    def place(self, text, x, y, anchor, box):
+        """A bold 8 pt data label moved, if needed, to stay inside the plot frame."""
+        x0, y0, x1, y1 = (v / _SCALE for v in self.draw.textbbox((x * _SCALE, y * _SCALE), text,
+                                                                     font=_font(8, True), anchor=anchor))
+        left, top, right, bottom = box
+        dx = (left + 4 - x0) if x0 < left + 4 else (right - 4 - x1) if x1 > right - 4 else 0
+        dy = (top + 4 - y0) if y0 < top + 4 else (bottom - 4 - y1) if y1 > bottom - 4 else 0
+        self.text(x + dx, y + dy, text, 8, bold=True, anchor=anchor)
+
+    def png(self, height):
+        output = BytesIO()
+        self.image.crop((0, 0, _SIZE * _SCALE, height * _SCALE)).resize(
+            (_SIZE, height), Image.Resampling.LANCZOS).save(output, format="PNG")
+        return output.getvalue()
+
+
+def _title(canvas, y, bold, italic):
+    """3 pt rule above; 'Bold title, italic part' in 12 pt, wrapped at the margins."""
+    canvas.line([(_MARGIN, y), (_SIZE - _MARGIN, y)], _BLUE, 3)
+    y += 26
+    x = _MARGIN
+    words = [(w, True) for w in (bold + ",").split()] + [(w, False) for w in italic.split()]
+    for word, is_bold in words:
+        width = canvas.width(word, 12, bold=is_bold, italic=not is_bold)
+        if x > _MARGIN and x + width > _SIZE - _MARGIN:
+            x, y = _MARGIN, y + 60
+        canvas.text(x, y, word, 12, bold=is_bold, italic=not is_bold)
+        x += width + canvas.width(" ", 12)
+    return y + 76
+
+
+def _legend(canvas, y, items):
+    """Bottom legend, centred; a second row when one is too wide."""
+    rows, row = [], []
+    for item in items:
+        trial = row + [item]
+        if row and sum(36 + 10 + canvas.width(i[0], 8) for i in trial) + 40 * (len(trial) - 1) > _SIZE - 2 * _MARGIN:
+            rows.append(row)
+            row = [item]
         else:
-            self.draw.text((x * _SCALE, y * _SCALE), text, font=font, fill=color, anchor="ls")
-        return width
-
-
-def _logo(canvas):
-    x, y, scale = 56, 52, 46 / 36
-    canvas.rect((x, y, x + 46, y + 46), "#1D2E4A", radius=10 * scale)
-    canvas.line([(x + a * scale, y + b * scale) for a, b in [(8, 23), (14, 17), (19, 21), (28, 11)]],
-                _WHITE, 2.6 * scale, rounded=True)
-    canvas.circle(x + 28 * scale, y + 11 * scale, 2.6 * scale, _BLUE)
-
-
-def _chip(canvas, x, y, value, lang, metric):
-    if value is None:
-        return
-    background, color = (255, 255, 255, 26), _WHITE
-    if metric == "esi" and value:
-        background = (60, 196, 209, 41) if value > 0 else (255, 138, 76, 41)
-        color = _POSITIVE if value > 0 else _NEGATIVE
-    label = _number(abs(value), lang) + (f" {_TEXT[lang]['unit']}" if metric == "eai" else "")
-    width = 24 + 16 + 6 + _width(label, 17, "SemiBold")
-    canvas.rect((x, y, x + width, y + 32), background, radius=16)
-    # These vertices are PATHS.up, PATHS.down and PATHS.minus on the 24px grid.
-    paths = [[(7, 17), (17, 7)], [(9, 7), (17, 7), (17, 15)]] if value > 0 else (
-        [[(7, 7), (17, 17)], [(17, 9), (17, 17), (9, 17)]] if value < 0 else [[(5, 12), (19, 12)]])
-    for points in paths:
-        canvas.line([(x + 12 + a * 16 / 24, y + 8 + b * 16 / 24) for a, b in points],
-                    color, 2.4 * 16 / 24, rounded=True)
-    canvas.text(x + 34, y + 5, label, 17, color, "SemiBold", line_height=22)
-
-
-def _metric(canvas, x, metric, value, delta, lang):
-    canvas.text(x, 261, _TEXT[lang][metric], 14, _MUTED, "SemiBold", spacing=1.2)
-    label = _number(value, lang, signed=metric == "esi")
-    color = _WHITE
-    if metric == "esi" and value is not None:
-        color = _POSITIVE if value > 0 else _NEGATIVE if value < 0 else _WHITE
-    size = 66
-    suffix = metric == "eai" and value is not None
-    while size > 10 and (_width(label, size, "SemiBold", -1.5)
-                         + (_width("%", round(size * 34 / 66), "SemiBold") if suffix else 0)) > 178:
-        size -= 1
-    baseline = _baseline(285, size, "SemiBold", 69.3)
-    width = canvas.text(x, baseline, label, size, color, "SemiBold", spacing=-1.5, baseline=True)
-    if suffix:
-        canvas.text(x + width, baseline, "%", round(size * 34 / 66), _MUTED, "SemiBold", baseline=True)
-    _chip(canvas, x, 365, delta, lang, metric)
-
-
-def _gaps(canvas, values, x, y, height, lang, label=False):
-    step = 560 / len(values)
-    start = None
-    for i, value in enumerate([*values, 0]):
-        if value is None and start is None:
-            start = i
-        elif value is not None and start is not None:
-            left, width = x + step * start, step * (i - start)
-            canvas.rect((left, y, left + width, y + height), (255, 255, 255, 13), radius=8)
-            if label and width >= 90:
-                canvas.text(left + width / 2, y + 120, _TEXT[lang]["gap"], 13, _AXIS,
-                            align="center", baseline=True)
-            start = None
-
-
-def _grid(canvas, x, y, solid=False, alpha=26):
-    color = (255, 255, 255, alpha)
-    if solid:
-        canvas.line([(x, y), (x + 560, y)], color)
-    else:
-        for offset in range(0, 560, 9):
-            canvas.line([(x + offset, y), (x + min(offset + 3, 560), y)], color)
-
-
-def _eai_chart(canvas, values, lang):
-    x, y = 517, 121
-    present = [value for value in values if value is not None]
-    lo = floor((min(present) - 2) / 5) * 5 if present else 0
-    hi = max(lo + 10, ceil((max(present) + 2) / 5) * 5) if present else 10
-    step = 560 / len(values)
-    _gaps(canvas, values, x, y, 236, lang, label=True)
-    for offset, value in [(14, hi), (114, (hi + lo) / 2), (214, lo)]:
-        _grid(canvas, x, y + offset, solid=offset == 214, alpha=41 if offset == 214 else 26)
-        label = str(int(value)) if value == int(value) else _number(value, lang)
-        canvas.text(x + 620, y + offset + 5, label.replace("-", "−") + "%", 14, _AXIS,
-                    align="right", baseline=True)
-    segment, last = [], None
-    for i, value in enumerate([*values, None]):
-        if value is None:
-            if len(segment) == 1:
-                canvas.circle(*segment[0], 5, _BLUE)
-            elif segment:
-                canvas.line(segment, _BLUE, 3.5, rounded=True)
-            segment = []
-        else:
-            last = (x + step * (i + 0.5), y + 14 + (hi - value) / (hi - lo) * 200)
-            segment.append(last)
-    if last is not None:
-        # SVG strokes are centered on the marker's radius.
-        canvas.circle(*last, 8.5, _PANEL)
-        canvas.circle(*last, 5.5, _BLUE)
-
-
-def _esi_chart(canvas, series, lang):
-    x, y = 517, 367
-    values = [row["esi"] for row in series]
-    largest = max((abs(value) for value in values if value is not None), default=0)
-    limit = next((value for value in [10, 20, 30, 50, 75, 100] if value >= largest), 100)
-    step = 560 / len(values)
-    _gaps(canvas, values, x, y, 150, lang)
-    for offset, label in [(23, f"+{limit}"), (75, "0"), (127, f"−{limit}")]:
-        _grid(canvas, x, y + offset, solid=offset == 75, alpha=71 if offset == 75 else 26)
-        canvas.text(x + 620, y + offset + 5, label, 14, _AXIS, align="right", baseline=True)
-    width = min(10, step * 0.55)
-    for i, value in enumerate(values):
-        if value is None or value == 0:
-            continue
-        height = max(2, abs(value) * 52 / limit)
-        left = x + step * (i + 0.5) - width / 2
-        top = y + 75 - height if value > 0 else y + 75
-        canvas.rect((left, top, left + width, top + height), "#3CC4D1" if value > 0 else "#FF8A4C")
-    indices = sorted({floor(k * (len(series) - 1) / 4 + 0.5) for k in range(5)})
-    for i in indices:
-        label = _day_month(series[i]["start"], lang, short=True)
-        width = _width(label, 14)
-        left = x if i == 0 else x + step * (i + 0.5) - width / 2
-        left = max(x, min(left, x + 620 - width))
-        canvas.text(left, y + 176, label, 14, _AXIS, baseline=True)
+            row = trial
+    rows.append(row)
+    for row in rows:
+        total = sum(36 + 10 + canvas.width(i[0], 8) for i in row) + 40 * (len(row) - 1)
+        x = (_SIZE - total) / 2
+        for label, color, kind in row:
+            middle = y + 17
+            if kind == "bar":
+                canvas.rect((x + 10, middle - 9, x + 28, middle + 9), color)
+            else:
+                canvas.line([(x, middle), (x + 36, middle)], color, 1.75)
+            canvas.text(x + 46, middle, label, 8, anchor="lm")
+            x += 36 + 10 + canvas.width(label, 8) + 40
+        y += 44
+    return y
 
 
 def render(card: dict) -> bytes:
-    """Return a 1200x675 RGB PNG; card and its series are never modified."""
+    """Return an RGB PNG 1000 px wide (about as tall; a long title adds a line); card and its
+    series are never modified."""
     lang, kind, series = card["lang"], card["kind"], card["series"]
     text = _TEXT[lang]
-    canvas = _Canvas()
-    canvas.rect((488, 52, 1144, 623), _PANEL, radius=24, outline=(255, 255, 255, 20))
-    _logo(canvas)
-    canvas.text(116, 54, "UZ Economic Index", 19, weight="SemiBold", spacing=0.2)
-    canvas.text(116, 79, text["tagline"], 14, _MUTED)
-    title_size = _fit(text[kind], 40, 380, "SemiBold", -0.6)
-    canvas.text(56, 142, text[kind], title_size, weight="SemiBold", spacing=-0.6, line_height=44)
-    period = _period_date(card["start"], card["end"], lang)
-    canvas.text(56, 192, period, _fit(period, 22, 380), _MUTED)
-    _metric(canvas, 56, "eai", card["eai"], card["d_eai"], lang)
-    _metric(canvas, 258, "esi", card["esi"], card["d_esi"], lang)
-    heading = text["days" if kind == "kun" else "weeks"].format(n=len(series))
-    canvas.text(517, 79, heading, 20, weight="SemiBold")
-    legend_esi = 1115 - _width("ESI", 14)
-    legend_eai = legend_esi - 18 - 20 - _width("EAI, %", 14)
-    canvas.rect((legend_eai - 26, 91, legend_eai - 8, 94), _BLUE, radius=1.5)
-    canvas.text(legend_eai, 83, "EAI, %", 14, _MUTED)
-    canvas.rect((legend_esi - 18, 87.5, legend_esi - 8, 97.5), "#3CC4D1", radius=3)
-    canvas.text(legend_esi, 83, "ESI", 14, _MUTED)
-    _eai_chart(canvas, [row["eai"] for row in series], lang)
-    _esi_chart(canvas, series, lang)
-    output = BytesIO()
-    canvas.image.resize((1200, 675), Image.Resampling.LANCZOS).save(output, format="PNG")
-    return output.getvalue()
+    canvas = _Canvas(1400)
+    y = _title(canvas, 18, text[kind], _period_date(card["start"], card["end"], lang))
+    left, right, top, bottom = _MARGIN + 66, _SIZE - _MARGIN - 66, y + 10, y + 570
+
+    esi = [row["esi"] for row in series]
+    eai = [row["eai"] for row in series]
+    have_esi = [v for v in esi if v is not None]
+    have_eai = [v for v in eai if v is not None]
+    left_ticks, left_dec = _scale(min([0, *have_esi]), max([0, *have_esi]) if have_esi else 50)
+    right_ticks, right_dec = _scale(0, max(have_eai) * 1.05 if have_eai else 40)
+    ly = lambda v: bottom - (v - left_ticks[0]) / (left_ticks[-1] - left_ticks[0]) * (bottom - top)
+    ry = lambda v: bottom - (v - right_ticks[0]) / (right_ticks[-1] - right_ticks[0]) * (bottom - top)
+
+    # plot-area frame and the zero line: grey, 0.75 pt; no gridlines, no tick marks
+    canvas.line([(left, top), (right, top), (right, bottom), (left, bottom), (left, top)], _GREY, 0.75)
+    canvas.line([(left, ly(0)), (right, ly(0))], _GREY, 0.75)
+    for v in left_ticks:
+        canvas.text(left - 12, ly(v), _tick(v, lang, left_dec), 8, anchor="rm")
+    for v in right_ticks:
+        canvas.text(right + 12, ry(v), _tick(v, lang, right_dec), 8, anchor="lm")
+
+    slot = (right - left) / max(1, len(series))
+    bar = slot / 2.5                                       # gap width 150%
+    centre = lambda i: left + slot * (i + 0.5)
+    for i, v in enumerate(esi):
+        if v:
+            canvas.rect((centre(i) - bar / 2, ly(v), centre(i) + bar / 2, ly(0)), _BLUE)
+    segment = []
+    for i, v in enumerate([*eai, None]):
+        if v is None:
+            if len(segment) > 1:
+                canvas.line(_smooth(segment), _RED, 1.75)
+            elif segment:
+                x0, y0 = segment[0]
+                canvas.line([(x0 - 6, y0), (x0 + 6, y0)], _RED, 1.75)
+            segment = []
+        else:
+            segment.append((centre(i), ry(v)))
+
+    # data labels: the latest values, bold, clear of each other
+    last_eai = next((i for i in range(len(eai) - 1, -1, -1) if eai[i] is not None), None)
+    last_esi = next((i for i in range(len(esi) - 1, -1, -1) if esi[i] is not None), None)
+    frame = (left, top, right, bottom)
+    point = (centre(last_eai), ry(eai[last_eai])) if last_eai is not None else None
+    above = True
+    if point:
+        bar_top = ly(max(esi[last_eai] or 0, 0))
+        above = point[1] < bar_top
+        canvas.place(_number(eai[last_eai], lang), point[0] - 16, point[1] + (-14 if above else 14),
+                     "rb" if above else "rt", frame)
+    if last_esi is not None:
+        v = esi[last_esi]
+        if v >= 0:
+            x, y, anchor = centre(last_esi), ly(v) - 8, "mb"
+            if point and not above and abs(y - point[1]) < 44:
+                y = point[1] - 22
+        elif ly(v) + 46 < bottom:
+            x, y, anchor = centre(last_esi), ly(v) + 8, "mt"
+        else:                                              # a deep bar: the label goes beside its end
+            x, y, anchor = centre(last_esi) - bar / 2 - 8, ly(v) - 4, "rm"
+        canvas.place(_number(v, lang), x, y, anchor, frame)
+
+    # category axis: day numbers (or week starts) below the frame, each month named once
+    days = [date.fromisoformat(row["start"]) for row in series]
+    for i, day in enumerate(days):
+        shown = (day.day == 1 or day.day % 5 == 0) if kind == "kun" else (len(days) - 1 - i) % 2 == 0
+        if shown or len(days) == 1:
+            canvas.text(centre(i), bottom + 12, str(day.day), 8, anchor="mt")
+    groups = []
+    for i, day in enumerate(days):
+        if not groups or groups[-1][0] != (day.year, day.month):
+            groups.append([(day.year, day.month), i, i])
+        groups[-1][2] = i
+    for (_, month), first, last in groups:
+        if last - first >= 2 or len(groups) == 1:
+            canvas.text(left + slot * (first + last + 1) / 2, bottom + 58, _GROUP_MONTHS[lang][month - 1], 8, anchor="mt")
+    for _, first, _ in groups[1:]:
+        canvas.line([(left + slot * first, bottom), (left + slot * first, bottom + 96)], _GREY, 0.75)
+
+    y = _legend(canvas, bottom + 112, [(text["esi"], _BLUE, "bar"), (text["eai"], _RED, "line")])
+    canvas.line([(_MARGIN, y + 20), (_SIZE - _MARGIN, y + 20)], _BLUE, 0.5)
+    x, y = _MARGIN, y + 34                                 # the source, 8 pt italic, wrapped
+    for word in text["source"].split():
+        width = canvas.width(word, 8, italic=True)
+        if x > _MARGIN and x + width > _SIZE - _MARGIN:
+            x, y = _MARGIN, y + 42
+        canvas.text(x, y, word, 8, italic=True)
+        x += width + canvas.width(" ", 8, italic=True)
+    return canvas.png(round(y + 40 + 26))
