@@ -290,25 +290,36 @@ CARD_VERSION = 3                       # bump when the card design changes: cach
 CARD_KEYS = ("kind", "start", "end", "eai", "esi", "d_eai", "d_esi", "nonad", "econ", "channels", "series")
 
 
-def render_card(data, lang):
-    """The summary card as PNG bytes, or None (no renderer or it failed): the text goes alone."""
+def topics_card(data, lang):
+    """The topics card's input: each topic's posts by tone and its share of ESI (the shares add up to ESI)."""
+    econ = data["econ"] or 0
+    rows = [{"name": bot.topic_name(lang, x["t"]), "pos": x["p"], "neu": x["n"] - x["p"] - x["g"], "neg": x["g"],
+             "share": 100 * (x["wp"] - x["wg"]) / econ if econ else 0.0} for x in data["topics"]]
+    return {"lang": lang, "kind": data["kind"], "start": data["start"], "end": data["end"],
+            "esi": data["esi"], "rows": rows}
+
+
+def render_card(data, lang, topics=False):
+    """The summary or topics card as PNG bytes, or None (no renderer or it failed): the text goes alone."""
     try:
         import _card
+        if topics:
+            return _card.render_topics(topics_card(data, lang))
         return _card.render({**{k: data[k] for k in CARD_KEYS}, "lang": lang})
     except Exception as e:
         print("card error:", repr(e))
         return None
 
 
-def send_card(chat_id, data, lang, caption, kb):
-    """The card with its caption; each (period, language) card is uploaded once, then reused."""
-    key = (data["kind"], f"{data['period']}#v{CARD_VERSION}", lang)
+def send_card(chat_id, data, lang, caption, kb, topics=False):
+    """The card with its caption; each (card, period, language) is uploaded once, then reused."""
+    key = (("topics-" if topics else "") + data["kind"], f"{data['period']}#v{CARD_VERSION}", lang)
     row = q("select file_id from bot_cards where kind=%s and period=%s and lang=%s", key, one=True)
-    payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML", "reply_markup": kb}
+    payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML", **({"reply_markup": kb} if kb else {})}
     try:
         if row:
             return bool(tg("sendPhoto", {**payload, "photo": row["file_id"]}))
-        png = render_card(data, lang)
+        png = render_card(data, lang, topics)
         if png is None:
             return send(chat_id, caption, reply_markup=kb)
         msg = tg("sendPhoto", payload, files={"photo": ("card.png", png, "image/png")})
@@ -343,7 +354,9 @@ def send_details(chat_id, what, ref, lang, em):
     if not data:
         return send(chat_id, bot.tr(lang, "no_data"))
     if what == "topics":
-        return send(chat_id, bot.topics_text(data, lang, em))
+        if not data["topics"]:
+            return send(chat_id, bot.tr(lang, "no_data"))
+        return send_card(chat_id, data, lang, bot.topics_text(data, lang, em), None, topics=True)
     try:
         names = channels.titles(q)
     except psycopg.errors.UndefinedTable:

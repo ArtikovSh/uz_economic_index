@@ -1,8 +1,9 @@
-"""Render the bot's daily and weekly summary cards without external I/O, laid out like the
+"""Render the bot's summary and topics cards without external I/O, laid out like the
 double-chart page of the Central Bank's publication guide: a section heading, a 3 pt rule, two
-figures side by side (EAI line | ESI bars) with their own titles, the latest values in bold, a
-0.5 pt rule and the source. Arimo (Arial's metrics), 8 pt inside the charts, 12 pt titles;
-1600 px stand for 17 cm, two 8.3 cm figures and the gap between them."""
+figures side by side with their own titles, the values in bold, a 0.5 pt rule and the source.
+Summary: EAI line | ESI bars. Topics: posts by topic and tone | each topic's share of ESI.
+Arimo (Arial's metrics), 8 pt inside the charts, 12 pt titles; 1600 px stand for 17 cm, two
+8.3 cm figures and the gap between them."""
 from datetime import date
 from functools import lru_cache
 from io import BytesIO
@@ -11,15 +12,17 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-__all__ = ["render"]
+__all__ = ["render", "render_topics"]
 
 _WIDTH = 1600
 _PT = _WIDTH / 482                   # pixels per typographic point at 17 cm
 _SCALE = 2                           # drawn twice as large, then reduced: smooth edges
 _MARGIN, _GAP = 34, 60
 _FONT_DIR = Path(__file__).resolve().parent / "_fonts"
-_BLUE = (47, 73, 111)                # the guide's base colour 1
+_BLUE = (47, 73, 111)                # the guide's base colours 1, 2 and 3
+_RED, _BEIGE = (190, 52, 85), (213, 195, 170)
 _GREY, _BLACK, _WHITE = (191, 191, 191), (0, 0, 0), (255, 255, 255)
+_ROW = 470 / 11                      # height of one topic row: eleven topics fill a 470 px plot
 _MONTHS = {
     "uz": "yanvar fevral mart aprel may iyun iyul avgust sentabr oktabr noyabr dekabr".split(),
     "ru": "января февраля марта апреля мая июня июля августа сентября октября ноября декабря".split(),
@@ -38,12 +41,18 @@ _GROUP_MONTHS = {                    # under the days of a month on the axis
 _TEXT = {
     "uz": {"kun": "Kunlik xulosa", "hafta": "Haftalik xulosa",
            "eai": ("E’tibor indeksi (EAI)", "foizda"), "esi": ("Kayfiyat indeksi (ESI)", "balans"),
+           "topics": "Mavzular", "posts": ("Mavzular bo‘yicha xabarlar", "soni"),
+           "shares": ("ESI qanday shakllandi", "jami"), "tones": ("ijobiy", "neytral", "salbiy"),
            "source": "Manba: Telegram kanallaridagi xabarlar asosida hisob-kitoblar."},
     "ru": {"kun": "Итоги дня", "hafta": "Итоги недели",
            "eai": ("Индекс внимания (EAI)", "в процентах"), "esi": ("Индекс настроения (ESI)", "баланс"),
+           "topics": "Темы", "posts": ("Новости по темам", "количество"),
+           "shares": ("Как сложился ESI", "итого"), "tones": ("позитивные", "нейтральные", "негативные"),
            "source": "Источник: расчёты на основе сообщений Telegram-каналов."},
     "en": {"kun": "Daily summary", "hafta": "Weekly summary",
            "eai": ("Attention index (EAI)", "per cent"), "esi": ("Sentiment index (ESI)", "balance"),
+           "topics": "Topics", "posts": ("Posts by topic", "number"),
+           "shares": ("How ESI was formed", "total"), "tones": ("positive", "neutral", "negative"),
            "source": "Source: calculations based on posts in Telegram channels."},
 }
 
@@ -84,13 +93,14 @@ def _font(points, bold=False, italic=False):
     return ImageFont.truetype(str(_FONT_DIR / f"Arimo-{style}.ttf"), round(points * _PT * _SCALE))
 
 
-def _scale(lo, hi, steps=4):
-    """Round axis limits and the values between them (at most one decimal)."""
+def _scale(lo, hi, steps=4, least=0.1):
+    """Round axis limits and the values between them (at most one decimal; whole steps for
+    counts with least=1)."""
     if hi - lo < 1e-9:
         hi = lo + 1
     raw = (hi - lo) / steps
     magnitude = 10 ** floor(log10(raw))
-    step = max(0.1, next(m * magnitude for m in (1, 2, 2.5, 5, 10) if m * magnitude >= raw - 1e-9))
+    step = max(least, next(m * magnitude for m in (1, 2, 2.5, 5, 10) if m * magnitude >= raw - 1e-9))
     first, last = floor(lo / step + 1e-9) * step, ceil(hi / step - 1e-9) * step
     ticks = [round(first + i * step, 1) for i in range(round((last - first) / step) + 1)]
     return ticks, (0 if all(t == int(t) for t in ticks) else 1)
@@ -122,10 +132,11 @@ class _Canvas:
 
     def rect(self, box, color):
         x0, y0, x1, y1 = box
-        self.draw.rectangle((x0 * _SCALE, min(y0, y1) * _SCALE, x1 * _SCALE, max(y0, y1) * _SCALE), fill=color)
+        self.draw.rectangle((min(x0, x1) * _SCALE, min(y0, y1) * _SCALE, max(x0, x1) * _SCALE, max(y0, y1) * _SCALE),
+                            fill=color)
 
-    def text(self, x, y, text, points, bold=False, italic=False, anchor="la"):
-        self.draw.text((x * _SCALE, y * _SCALE), text, font=_font(points, bold, italic), fill=_BLACK, anchor=anchor)
+    def text(self, x, y, text, points, bold=False, italic=False, anchor="la", fill=_BLACK):
+        self.draw.text((x * _SCALE, y * _SCALE), text, font=_font(points, bold, italic), fill=fill, anchor=anchor)
 
     def width(self, text, points, bold=False, italic=False):
         return _font(points, bold, italic).getlength(text) / _SCALE
@@ -157,11 +168,15 @@ class _Canvas:
         return output.getvalue()
 
 
+def _title(canvas, x0, x1, top, name, unit):
+    """A figure title, '**Name,** *unit*', wrapped; returns the y where its plot starts."""
+    words = [(w, True, False) for w in (name + ",").split()] + [(w, False, True) for w in unit.split()]
+    return canvas.wrapped(x0, x1, top, words, 12, 46) + 64
+
+
 def _figure(canvas, x0, x1, top, title, values, days, kind, lang, bars):
     """One figure: its title, the framed plot, the axes and the latest values; returns its bottom."""
-    name, unit = title
-    words = [(w, True, False) for w in (name + ",").split()] + [(w, False, True) for w in unit.split()]
-    top = canvas.wrapped(x0, x1, top, words, 12, 46) + 64
+    top = _title(canvas, x0, x1, top, *title)
     have = [v for v in values if v is not None]
     if bars:
         ticks, decimals = _scale(min([0, *have]), max([0, *have]) * 1.1 if have else 50)
@@ -229,21 +244,97 @@ def _figure(canvas, x0, x1, top, title, values, days, kind, lang, bars):
     return bottom + 80
 
 
+def _page(card, name):
+    """A canvas with the section heading ('Name, period') and its 3 pt rule."""
+    canvas = _Canvas(1300)
+    heading = f"{name}, {_period_date(card['start'], card['end'], card['lang'])}"
+    canvas.text(_MARGIN, 22, heading, 14, bold=True, italic=True)
+    canvas.line([(_MARGIN, 88), (_WIDTH - _MARGIN, 88)], _BLUE, 3)
+    return canvas
+
+
+def _finish(canvas, bottom, lang):
+    """The 0.5 pt rule and the source under the figures; the PNG cut to its height."""
+    y = bottom + 14
+    canvas.line([(_MARGIN, y), (_WIDTH - _MARGIN, y)], _BLUE, 0.5)
+    y = canvas.wrapped(_MARGIN, _WIDTH - _MARGIN, y + 12, [(w, False, True) for w in _TEXT[lang]["source"].split()], 8, 32)
+    return canvas.png(round(y + 30 + 24))
+
+
 def render(card: dict) -> bytes:
     """Return an RGB PNG 1600 px wide (about 760 px tall); card and its series are never modified."""
     lang, kind, series = card["lang"], card["kind"], card["series"]
     text = _TEXT[lang]
-    canvas = _Canvas(1100)
-    heading = f"{text[kind]}, {_period_date(card['start'], card['end'], lang)}"
-    canvas.text(_MARGIN, 22, heading, 14, bold=True, italic=True)
-    canvas.line([(_MARGIN, 88), (_WIDTH - _MARGIN, 88)], _BLUE, 3)
+    canvas = _page(card, text[kind])
     half = (_WIDTH - 2 * _MARGIN - _GAP) / 2
     days = [date.fromisoformat(row["start"]) for row in series]
     left = _figure(canvas, _MARGIN, _MARGIN + half, 112, text["eai"], [row["eai"] for row in series],
                    days, kind, lang, bars=False)
     right = _figure(canvas, _MARGIN + half + _GAP, _WIDTH - _MARGIN, 112, text["esi"], [row["esi"] for row in series],
                     days, kind, lang, bars=True)
-    y = max(left, right) + 14
-    canvas.line([(_MARGIN, y), (_WIDTH - _MARGIN, y)], _BLUE, 0.5)
-    y = canvas.wrapped(_MARGIN, _WIDTH - _MARGIN, y + 12, [(w, False, True) for w in text["source"].split()], 8, 32)
-    return canvas.png(round(y + 30 + 24))
+    return _finish(canvas, max(left, right), lang)
+
+
+def _rows(canvas, x0, x1, top, names):
+    """Topic names left of a framed plot, one row each; returns the frame, row centres and bar height."""
+    left = x0 + max(canvas.width(name, 8) for name in names) + 14
+    bottom = top + _ROW * len(names)
+    canvas.line([(left, top), (x1, top), (x1, bottom), (left, bottom), (left, top)], _GREY, 0.75)
+    centres = [top + _ROW * (i + 0.5) for i in range(len(names))]
+    for name, y in zip(names, centres):
+        canvas.text(left - 14, y, name, 8, anchor="rm")
+    return (left, top, x1, bottom), centres, _ROW * 0.6           # gap width 150%
+
+
+def render_topics(card: dict) -> bytes:
+    """The topics card: posts of each topic by tone (stacked bars) | each topic's share of ESI
+    (dark blue up, crimson down), rows in the same order. card = {lang, kind, start, end, esi,
+    rows: [{name, pos, neu, neg, share}]}, at least one row; returns an RGB PNG 1600 px wide."""
+    lang, rows = card["lang"], card["rows"]
+    text = _TEXT[lang]
+    canvas = _page(card, text["topics"])
+    half = (_WIDTH - 2 * _MARGIN - _GAP) / 2
+    x0, x1 = _MARGIN, _MARGIN + half
+    x2, x3 = _MARGIN + half + _GAP, _WIDTH - _MARGIN
+    unit = f"{text['shares'][1]} {_number(card.get('esi'), lang, signed=True)}"
+    top = max(_title(canvas, x0, x1, 112, *text["posts"]), _title(canvas, x2, x3, 112, text["shares"][0], unit))
+    names = [row["name"] for row in rows]
+
+    # left: the posts of each topic, positive | neutral | negative
+    (left, _, right, bottom), centres, bar = _rows(canvas, x0, x1, top, names)
+    ticks, _ = _scale(0, max(row["pos"] + row["neu"] + row["neg"] for row in rows) * 1.05, least=1)
+    x = lambda v: left + v / ticks[-1] * (right - left)
+    colours = ((_BLUE, _WHITE), (_BEIGE, _BLACK), (_RED, _WHITE))
+    for row, y in zip(rows, centres):
+        done = 0
+        for value, (fill, ink) in zip((row["pos"], row["neu"], row["neg"]), colours):
+            if value:
+                canvas.rect((x(done), y - bar / 2, x(done + value), y + bar / 2), fill)
+                if x(done + value) - x(done) > canvas.width(str(value), 8, True) + 10:
+                    canvas.text((x(done) + x(done + value)) / 2, y, str(value), 8, bold=True, anchor="mm", fill=ink)
+            done += value
+    for v in ticks:
+        canvas.text(x(v), bottom + 10, _tick(v, lang, 0), 8, anchor="mt")
+    keys = [(name, fill) for name, (fill, _) in zip(text["tones"], colours)]
+    width = sum(28 + canvas.width(name, 8) for name, _ in keys) + 36 * (len(keys) - 1)
+    lx = (left + right - width) / 2
+    for name, fill in keys:                                       # the legend, under the axis
+        canvas.rect((lx, bottom + 64, lx + 18, bottom + 82), fill)
+        canvas.text(lx + 28, bottom + 73, name, 8, anchor="lm")
+        lx += 28 + canvas.width(name, 8) + 36
+
+    # right: each topic's share of ESI; the shares add up to ESI
+    (left, _, right, _), centres, bar = _rows(canvas, x2, x3, top, names)
+    shares = [round(row["share"], 1) + 0.0 for row in rows]          # + 0.0: no "−0,0"
+    ticks, decimals = _scale(min(0, *shares), max(0, *shares))
+    label = lambda v: _number(v, lang, signed=True)
+    pad = max(canvas.width(label(v), 8, True) for v in shares) + 16   # room for the labels at the bar ends
+    x = lambda v: left + pad + (v - ticks[0]) / (ticks[-1] - ticks[0]) * (right - left - 2 * pad)
+    canvas.line([(x(0), top), (x(0), bottom)], _GREY, 0.75)
+    for v, y in zip(shares, centres):
+        if v:
+            canvas.rect((x(0), y - bar / 2, x(v), y + bar / 2), _BLUE if v > 0 else _RED)
+        canvas.text(x(v) + (-8 if v < 0 else 8), y, label(v), 8, bold=True, anchor="rm" if v < 0 else "lm")
+    for v in ticks:
+        canvas.text(x(v), bottom + 10, _tick(v, lang, decimals), 8, anchor="mt")
+    return _finish(canvas, bottom + 96, lang)

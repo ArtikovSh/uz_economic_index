@@ -114,6 +114,58 @@ def test_render_edge_cases(case):
     assert card == original
 
 
+def topics_data(kind="kun", lang="uz", rows=11):
+    names = ["Biznes", "Bank va moliya", "Tashqi savdo", "Byudjet va soliq", "Qurilish", "Energetika",
+             "Mehnat va daromad", "Narx va inflatsiya", "Valyuta kursi", "Makroiqtisodiyot", "Markaziy bank"]
+    counts = [(143, 35, 50), (70, 13, 13), (80, 4, 10), (48, 20, 25), (49, 22, 12), (31, 2, 23),
+              (39, 9, 6), (8, 3, 38), (28, 3, 6), (18, 6, 1), (3, 3, 0)]
+    econ = sum(sum(c) for c in counts[:rows])
+    out = [{"name": n, "pos": p, "neu": u, "neg": g, "share": 100 * (p - g) / econ}
+           for n, (p, u, g) in zip(names[:rows], counts[:rows])]
+    start = "2026-04-30" if kind == "kun" else "2026-04-20"
+    end = "2026-04-30" if kind == "kun" else "2026-04-26"
+    return {"lang": lang, "kind": kind, "start": start, "end": end,
+            "esi": round(sum(r["share"] for r in out), 1), "rows": out}
+
+
+def assert_topics_png(payload, rows=11):
+    with Image.open(BytesIO(payload)) as image:
+        image.load()
+        assert image.format == "PNG" and image.mode == "RGB"
+        assert image.size[0] == 1600
+        assert 300 + 40 * rows <= image.size[1] <= 420 + 44 * rows       # the height follows the rows
+
+
+@pytest.mark.parametrize("lang", ["uz", "ru", "en"])
+@pytest.mark.parametrize("kind", ["kun", "hafta"])
+def test_render_topics_languages_and_periods(lang, kind):
+    card = topics_data(kind, lang)
+    original = copy.deepcopy(card)
+    assert_topics_png(_card.render_topics(card))
+    assert card == original
+
+
+@pytest.mark.parametrize("case", ["one_row", "zeros", "esi_none", "all_negative", "tiny_negative", "one_post"])
+def test_render_topics_edge_cases(case):
+    card = topics_data(rows=1 if case in ("one_row", "one_post") else 11)
+    rows = card["rows"]
+    if case == "zeros":                                   # every topic balanced: no bars on the right
+        for r in rows:
+            r.update(pos=r["neg"], share=0.0)
+        card["esi"] = 0.0
+    elif case == "esi_none":
+        card["esi"] = None
+    elif case == "all_negative":
+        for r in rows:
+            r.update(pos=0, share=-abs(r["share"]) - 1)
+    elif case == "tiny_negative":                         # rounds to zero: "0,0", never "−0,0"
+        rows[0]["share"] = -0.04
+    elif case == "one_post":
+        rows[0].update(pos=1, neu=0, neg=0, share=100.0)
+        card["esi"] = 100.0
+    assert_topics_png(_card.render_topics(card), len(rows))
+
+
 @pytest.mark.parametrize("lang, decimal, negative, positive, zero", [
     ("uz", "44,6", "−1,6", "+17,3", "0,0"),
     ("ru", "44,6", "−1,6", "+17,3", "0,0"),

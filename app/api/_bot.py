@@ -454,10 +454,11 @@ def contributions(topics, econ):
 
 
 def top_posts(q, lo, hi, n=5):
+    """The most viewed economic posts of the period."""
     return q(f"""select channel, message_id, views, primary_topic, raw_text, headline,
                         case when {POS} then 'pos' when {NEG} then 'neg' else 'neu' end tone
                  from posts where {DAY} between %s and %s and {COUNTED}
-                 order by views + 2 * forwards desc, views desc limit %s""", (lo, hi, n)) or []
+                 order by views desc nulls last, date_utc desc limit %s""", (lo, hi, n)) or []
 
 
 # ----------------------------------------------------------- messages -------

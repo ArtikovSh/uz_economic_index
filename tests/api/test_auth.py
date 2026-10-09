@@ -480,6 +480,26 @@ def test_summaries_and_morning_digest(server, fresh_db, monkeypatch):
         assert "ESI ni ko‘targan: Tashqi savdo" in text and "ESI ni tushirgan: Narx va inflatsiya" in text
         assert "Итоги недели · 28 сентября – 4 октября 2026" in index.bot.caption(index.bot.summary(index.q, "hafta"), "ru")
 
+        with psycopg.connect(DB, autocommit=True) as c:             # top posts: the most viewed, shares aside
+            for mid, views, forwards in ((1, 50, 900), (2, 300, 0), (3, 200, 5)):
+                c.execute("update messages set views=%s, forwards=%s where message_id=%s", (views, forwards, mid))
+        assert [r["message_id"] for r in index.bot.top_posts(index.q, "2026-10-04", "2026-10-04")] == [2, 3, 1]
+        card = index.topics_card(day, "ru")
+        assert [(r["name"], r["pos"], r["neu"], r["neg"]) for r in card["rows"]] == [
+            ("Внешняя торговля", 2, 0, 0), ("Цены и инфляция", 0, 0, 1)]
+        assert round(sum(r["share"] for r in card["rows"]), 1) == day["esi"]      # the shares add up to ESI
+        index.ensure_schema()
+        photos = []
+
+        def fake_tg(method, params=None, files=None, timeout=30):
+            photos.append((method, params.get("photo"), bool(files), "reply_markup" in params, params["caption"]))
+            return {"photo": [{"file_id": "small"}, {"file_id": "big"}]}
+        monkeypatch.setattr(index, "tg", fake_tg)
+        index.send_details(OWNER, "topics", "kun:2026-10-04", "uz", {})
+        index.send_details(OWNER, "topics", "kun:2026-10-04", "uz", {})          # uploaded once, then reused
+        assert [p[:4] for p in photos] == [("sendPhoto", None, True, False), ("sendPhoto", "big", False, False)]
+        assert photos[0][4].startswith("<b>Mavzular · 4-oktabr 2026</b>\n3 ta iqtisodiy xabar")
+
         cards = []
         monkeypatch.setattr(index, "send_card", lambda chat, data, lang, caption, kb: cards.append((chat, data["kind"], lang)) or True)
         acc = admin_create(server)
