@@ -820,7 +820,7 @@ def _password(body):
 ERROR_CODES = {"invalid": 401, "locked": 429, "too_many": 429, "blocked": 403, "expired": 403,
                "other_account": 403, "forbidden": 403, "not_found": 404, "no_request": 404,
                "no_account": 404, "exists": 409, "last_channel": 409, "not_channel": 404,
-               "tg_unavailable": 503, "login_taken": 409, "self": 409}
+               "tg_unavailable": 503, "login_taken": 409, "self": 409, "self_role": 409}
 
 
 def channel_info(handle):
@@ -892,6 +892,8 @@ def app_action(user, action, body):
             r = auth.delete_account(q, _int(body.get("id")), user["id"])
         elif action == "extend":
             r = auth.extend(q, _int(body.get("id")), str(body.get("term")))
+        elif action == "role":
+            r = auth.set_role(q, _int(body.get("id")), str(body.get("role") or ""), user["id"])
         elif action in ("reject", "close"):           # close = handled, the requester is not told
             r = auth.finish_request(q, user["id"], _int(body.get("request_id")),
                                     "rejected" if action == "reject" else "done")

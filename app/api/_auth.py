@@ -397,6 +397,20 @@ def set_status(q, account_id, status):
     return {"ok": bool(row), "account": row} if row else {"ok": False, "error": "not_found"}
 
 
+def set_role(q, account_id, role, admin_tg):
+    """A new role for an account; its login and password stay. An admin cannot change the role
+    of the login they are signed in with (they could lock themselves out of the admin panel)."""
+    if role not in ROLES:
+        return {"ok": False, "error": "bad_input"}
+    acc = q("select id, telegram_id from accounts where id=%s", (account_id,), one=True) if account_id else None
+    if not acc:
+        return {"ok": False, "error": "not_found"}
+    if acc["telegram_id"] is not None and str(acc["telegram_id"]) == str(admin_tg):
+        return {"ok": False, "error": "self_role"}
+    row = q("update accounts set role=%s where id=%s returning id, login, role", (role, account_id), one=True)
+    return {"ok": True, "account": row}
+
+
 def extend(q, account_id, term):
     """Extend from the current end date if it is still ahead, else from today; "0" = no expiry."""
     if term not in TERMS:

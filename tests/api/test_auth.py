@@ -597,6 +597,22 @@ def test_admin_deletes_users_and_channels(server, fresh_db):
     assert admin("channel_delete", {"handle": "@nope"})[1]["error"] == "not_found"
 
 
+def test_admin_changes_roles(server):
+    admin = lambda action, body=None, who=OWNER: call(server, U(who), action, body)
+    acc = admin_create(server)                                         # an analyst
+    aid, login = acc["account"]["id"], acc["account"]["login"]
+    assert call(server, U(170), "login", {"login": login, "password": acc["password"]})[0] == 200
+    assert call(server, U(170), "admin")[0] == 403                    # no admin panel for an analyst
+    code, r = admin("role", {"id": aid, "role": "admin"})
+    assert code == 200 and r["account"] == {"id": aid, "login": login, "role": "admin"}
+    assert call(server, U(170), "admin")[0] == 200                    # the same login, now an admin
+    assert call(server, U(170), "role", {"id": aid, "role": "analyst"}) == (409, {"ok": False, "error": "self_role"})
+    assert admin("role", {"id": aid, "role": "boss"})[0] == 400
+    assert admin("role", {"id": 999999, "role": "analyst"})[1]["error"] == "not_found"
+    assert admin("role", {"id": aid, "role": "economist"})[0] == 200
+    assert call(server, U(170))[1]["me"]["role"] == "economist" and call(server, U(170), "admin")[0] == 403
+
+
 def test_channel_names_are_short_and_can_be_renamed(server, monkeypatch):
     import _channels
     assert _channels.short_name("QORAXABAR - Tezkor xabarlar | Rasmiy kanal") == "Qoraxabar"

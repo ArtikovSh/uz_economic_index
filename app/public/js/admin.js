@@ -240,6 +240,7 @@ export function renderAdmin(root, nav, state, opts = {}) {
 
   function accountHTML() {
     const a = account(page.id);
+    const own = a.login === ((state.data && state.data.me) || {}).login;   // the server refuses it too
     const rows = [
       [t('admin.f.name'), a.full_name], [t('admin.f.org'), a.organization],
       ['Telegram', a.tg_username ? '@' + a.tg_username : a.tg_name],
@@ -256,6 +257,7 @@ export function renderAdmin(root, nav, state, opts = {}) {
       <section class="card menu-card"><div class="menu">
         <button data-do="password"><span class="ic">${icon('key', 18)}</span>${esc(t('admin.changePw'))}</button>
         <button data-do="extend"><span class="ic">${icon('calendar', 18)}</span>${esc(t('admin.extend'))}</button>
+        ${own ? '' : `<button data-do="role"><span class="ic">${icon('user', 18)}</span>${esc(t('admin.changeRole'))}</button>`}
         ${a.status === 'blocked'
           ? `<button data-do="unblock"><span class="ic">${icon('unlock', 18)}</span>${esc(t('admin.unblock'))}</button>`
           : `<button data-do="block" class="danger"><span class="ic">${icon('ban', 18)}</span>${esc(t('admin.block'))}</button>`}
@@ -287,6 +289,13 @@ export function renderAdmin(root, nav, state, opts = {}) {
         <h2>${esc(t('admin.extend'))}</h2>
         <div class="seg" role="group">${segHTML(TERMS.map((x) => [x, t('admin.terms.' + x)]), form.term, 'term')}</div>
         <p class="note">${esc(a.expires_at ? t('admin.nowUntil', { d: fmtDate(a.expires_at) }) : t('admin.nowForever'))}<br><b>${esc(result)}</b></p>
+        ${buttons(t('admin.confirm'))}</section>`;
+    }
+    if (page.action === 'role') {
+      return `<section class="card stack">
+        <h2>${esc(t('admin.changeRole'))}</h2>
+        <div class="seg" role="group">${segHTML(ROLES.map((r) => [r, t('roles.' + r)]), form.role, 'role')}</div>
+        <p class="note">${esc(t('admin.roleNote'))}</p>
         ${buttons(t('admin.confirm'))}</section>`;
     }
     if (page.action === 'delete') {
@@ -363,6 +372,7 @@ export function renderAdmin(root, nav, state, opts = {}) {
     }
     const conf = root.querySelector('#confirm');
     if (conf && page && page.action === 'password') conf.disabled = busy || (form.pwMode === 'manual' && !checkPassword());
+    if (conf && page && page.action === 'role') conf.disabled = busy || form.role === account(page.id).role;
   }
 
   // -------------------------------------------------------------- open ----
@@ -534,7 +544,10 @@ export function renderAdmin(root, nav, state, opts = {}) {
     });
 
     // account page
-    on('[data-do]', (el) => { haptic(); page.action = el.dataset.do; form = { term: '30', pwMode: 'auto', pw: '', showPw: false }; draw(); });
+    on('[data-do]', (el) => {
+      haptic(); page.action = el.dataset.do;
+      form = { term: '30', role: account(page.id).role, pwMode: 'auto', pw: '', showPw: false }; draw();
+    });
     on('[data-cancel]', () => {
       haptic();
       if (page.request) { page = null; view = 'requests'; } else page.action = null;
@@ -552,6 +565,7 @@ export function renderAdmin(root, nav, state, opts = {}) {
         body = page.request ? { request_id: page.request.id } : { id: a.id };
         if (form.pwMode === 'manual') body.password = $('#pw').value;
       } else if (what === 'extend') body.term = form.term;
+      else if (what === 'role') body.role = form.role;
       busy = true; draw();
       const r = await act(what === 'password' ? 'reset' : what, body);
       busy = false;
