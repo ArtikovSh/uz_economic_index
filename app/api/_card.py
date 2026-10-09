@@ -35,21 +35,18 @@ _TEXT = {
         "kun": "Kunlik xulosa", "hafta": "Haftalik xulosa",
         "eai": "E’TIBOR · EAI", "esi": "KAYFIYAT · ESI", "unit": "f.b.",
         "days": "So‘nggi {n} kun", "weeks": "So‘nggi {n} hafta", "gap": "ma’lumot yo‘q",
-        "source": "Manba: {c} ta Telegram kanali · {n} xabar, ulardan {e} tasi iqtisodiy",
     },
     "ru": {
         "tagline": "индекс экономических новостей",
         "kun": "Итоги дня", "hafta": "Итоги недели",
         "eai": "ВНИМАНИЕ · EAI", "esi": "НАСТРОЕНИЕ · ESI", "unit": "п.п.",
         "days": "Последние {n} дн.", "weeks": "Последние {n} нед.", "gap": "нет данных",
-        "source": "Источник: Telegram-каналов: {c} · сообщений: {n}, из них экономических: {e}",
     },
     "en": {
         "tagline": "economic news index",
         "kun": "Daily summary", "hafta": "Weekly summary",
         "eai": "ATTENTION · EAI", "esi": "SENTIMENT · ESI", "unit": "pp",
         "days": "Last {n} days", "weeks": "Last {n} weeks", "gap": "no data",
-        "source": "Source: {c} Telegram channels · {n} posts, {e} of them economic",
     },
 }
 
@@ -60,11 +57,6 @@ def _number(value, lang, signed=False):
     sign = "−" if value < 0 else "+" if signed and value > 0 else ""
     digits = f"{abs(value):.1f}"
     return sign + (digits if lang == "en" else digits.replace(".", ","))
-
-
-def _integer(value, lang):
-    digits = f"{abs(value):,}"
-    return ("−" if value < 0 else "") + (digits if lang == "en" else digits.replace(",", " "))
 
 
 def _day_month(value, lang, short=False):
@@ -103,16 +95,6 @@ def _fit(text, size, width, weight="Regular", spacing=0):
     while size > 10 and _width(text, size, weight, spacing) > width:
         size -= 1
     return size
-
-
-def _wrap(text, width, size):
-    lines = []
-    for word in text.split():
-        if lines and _width(f"{lines[-1]} {word}", size) <= width:
-            lines[-1] += f" {word}"
-        else:
-            lines.append(word)
-    return lines
 
 
 class _Canvas:
@@ -289,11 +271,6 @@ def render(card: dict) -> bytes:
     canvas.text(56, 192, period, _fit(period, 22, 380), _MUTED)
     _metric(canvas, 56, "eai", card["eai"], card["d_eai"], lang)
     _metric(canvas, 258, "esi", card["esi"], card["d_esi"], lang)
-    source = text["source"].format(c=_integer(card["channels"], lang),
-                                 n=_integer(card["nonad"], lang), e=_integer(card["econ"], lang))
-    lines = _wrap(source, 380, 15)
-    for i, line in enumerate(lines):
-        canvas.text(56, 623 - (len(lines) - i) * 22.5, line, 15, _MUTED, line_height=22.5)
     heading = text["days" if kind == "kun" else "weeks"].format(n=len(series))
     canvas.text(517, 79, heading, 20, weight="SemiBold")
     legend_esi = 1115 - _width("ESI", 14)

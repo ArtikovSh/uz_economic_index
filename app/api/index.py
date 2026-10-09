@@ -286,7 +286,7 @@ def me_kb(lang, em, digest, owner):
 
 
 # ------------------------------------------------------------- summaries -----
-CARD_VERSION = 1                       # bump when the card design changes: cached uploads are per version
+CARD_VERSION = 2                       # bump when the card design changes: cached uploads are per version
 CARD_KEYS = ("kind", "start", "end", "eai", "esi", "d_eai", "d_esi", "nonad", "econ", "channels", "series")
 
 

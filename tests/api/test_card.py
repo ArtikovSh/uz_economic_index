@@ -114,12 +114,12 @@ def test_render_edge_cases(case):
     assert card == original
 
 
-@pytest.mark.parametrize("lang, decimal, negative, positive, zero, thousands", [
-    ("uz", "44,6", "−1,6", "+17,3", "0,0", "1 234 567"),
-    ("ru", "44,6", "−1,6", "+17,3", "0,0", "1 234 567"),
-    ("en", "44.6", "−1.6", "+17.3", "0.0", "1,234,567"),
+@pytest.mark.parametrize("lang, decimal, negative, positive, zero", [
+    ("uz", "44,6", "−1,6", "+17,3", "0,0"),
+    ("ru", "44,6", "−1,6", "+17,3", "0,0"),
+    ("en", "44.6", "−1.6", "+17.3", "0.0"),
 ])
-def test_number_formats(lang, decimal, negative, positive, zero, thousands):
+def test_number_formats(lang, decimal, negative, positive, zero):
     assert _card._number(44.6, lang) == decimal
     assert _card._number(-1.6, lang) == negative
     assert _card._number(17.3, lang, signed=True) == positive
@@ -127,8 +127,6 @@ def test_number_formats(lang, decimal, negative, positive, zero, thousands):
     assert _card._number(-0.0, lang, signed=True) == zero
     assert _card._number(None, lang) == "—"
     assert _card._number(None, lang, signed=True) == "—"
-    assert _card._integer(1234567, lang) == thousands
-    assert _card._integer(0, lang) == "0"
 
 
 @pytest.mark.parametrize("lang, day, same_month, week, new_year, tick", [
