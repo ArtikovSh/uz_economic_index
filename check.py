@@ -3,7 +3,7 @@ Pre-flight check of every external dependency, without collecting any posts.
 
   * Telegram: the session is authorized and every channel handle resolves
   * LLM:      the provider the pipeline uses (OpenAI or Gemini) works, and its model
-              labels the control set in gold_set.py (26 real posts with known answers)
+              labels the control set in gold_set.py (real posts with known answers)
               well enough. Bounded to a few minutes. (eval.yml labels a larger sample.)
   * Sheets:   runs the real sync (fills the sheet), if its secrets are set
   * Alerts:   sends this summary through the bot, if its secrets are set
@@ -19,7 +19,7 @@ import time
 import requests
 
 from channel_list import active_channels
-from config import GEMINI_API_KEY, OPENAI_API_KEY, LLM_PROVIDER, is_openai_key
+from config import GEMINI_API_KEY, OPENAI_API_KEY, LLM_BATCH_SIZE, LLM_PROVIDER, is_openai_key
 
 GOLD_PASS = 0.85        # share of the control set the model must get right
 LLM_CHECK_SECONDS = 240  # the LLM check gives up after this
@@ -59,15 +59,25 @@ def say(line):
     print(line, flush=True)                 # progress shows in the log even if a step hangs
 
 
+def label_gold(model, gold, deadline):
+    """The control set's labels, in order, asked in batches of the pipeline's size."""
+    from llm_classifier import classify_batch
+    labels = []
+    for i in range(0, len(gold), LLM_BATCH_SIZE):
+        part = gold[i:i + LLM_BATCH_SIZE]
+        labels += classify_batch(model, [g[3] for g in part], [g[0] for g in part], deadline)
+    return labels
+
+
 def check_llm(provider):
-    """One request: label the control set with the model the pipeline would use.
+    """Label the control set with the model the pipeline would use, in its batch size.
     Bounded to LLM_CHECK_SECONDS, so a slow API cannot hang the whole check."""
     configured = is_openai_key(OPENAI_API_KEY) if provider == "openai" else bool(GEMINI_API_KEY)
     if not configured:
         key = "OPENAI_API_KEY" if provider == "openai" else "GEMINI_API_KEY"
         return False, f"sozlanmagan ({key} yo'q yoki noto'g'ri)"
     from gold_set import GOLD, outcome
-    from llm_classifier import candidate_models, classify_batch
+    from llm_classifier import candidate_models
     from store import load_ledger, load_pending
     used = (load_pending()["label_model"].dropna().tolist()
             or load_ledger()["label_model"].dropna().tolist())
@@ -81,7 +91,7 @@ def check_llm(provider):
         t0 = time.time()
         say(f"  {model}: {len(GOLD)} ta nazorat posti yuborildi...")
         try:
-            labels = classify_batch(model, [g[3] for g in GOLD], [g[0] for g in GOLD], deadline)
+            labels = label_gold(model, GOLD, deadline)
         except Exception as e:
             say(f"  {model}: {type(e).__name__} ({time.time() - t0:.0f} s)")
             errors.append(f"{model}: {type(e).__name__}: {e}")
