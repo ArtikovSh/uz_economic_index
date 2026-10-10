@@ -7,8 +7,9 @@ Icons: after /setup has created the bot's custom emoji sets (_botsetup.py) and c
 bot may use them (its owner has Telegram Premium), `em` maps icon names to custom emoji ids.
 Without them messages carry no icons at all, never plain emoji.
 """
+import re
 from datetime import date, timedelta
-from html import escape
+from html import escape, unescape
 
 LANGS = ("uz", "ru", "en")
 LANG_NAMES = {"uz": "O‘zbekcha", "ru": "Русский", "en": "English"}
@@ -453,7 +454,7 @@ def contributions(topics, econ):
     return up, down
 
 
-def top_posts(q, lo, hi, n=5):
+def top_posts(q, lo, hi, n=10):
     """The most viewed economic posts of the period."""
     return q(f"""select channel, message_id, views, primary_topic, raw_text, headline,
                         case when {POS} then 'pos' when {NEG} then 'neg' else 'neu' end tone
@@ -511,12 +512,22 @@ def period_label(data, lang):
     return range_label(data["start"], data["end"], lang)
 
 
+TG_TEXT_LIMIT = 4096                   # characters in one message, counted after the HTML is parsed
+
+
+def visible_len(html_text):
+    """A message's length as Telegram counts it: the text without tags, in UTF-16 units."""
+    return len(unescape(re.sub(r"<[^>]+>", "", html_text)).encode("utf-16-le")) // 2
+
+
 def top_text(rows, data, lang, titles, parts, em=None):
     """Each post: the channel (a link to the post), topic and tone first, then the headline in
-    bold and up to 100 characters of the text. `parts(raw)` splits a post into (headline, text)."""
+    bold and up to 100 characters of the text. `parts(raw)` splits a post into (headline, text).
+    Should the message outgrow Telegram's limit, the last posts lose their text first."""
     if not rows:
         return tr(lang, "no_posts")
-    out = [ic(em, "news") + "<b>" + escape(tr(lang, "top_title", d=period_label(data, lang))) + "</b>"]
+    title = ic(em, "news") + "<b>" + escape(tr(lang, "top_title", d=period_label(data, lang))) + "</b>"
+    items = []
     for i, r in enumerate(rows, 1):
         ch = str(r["channel"])
         link = f"https://t.me/{ch.lstrip('@')}/{r['message_id']}"
@@ -525,8 +536,13 @@ def top_text(rows, data, lang, titles, parts, em=None):
         mark = ic(em, {"pos": "rise", "neg": "fall"}.get(r["tone"], ""))
         meta = (f'<a href="{escape(link)}">{name}</a> · {escape(topic_name(lang, r["primary_topic"]))} · '
                 f'{mark}{escape(tr(lang, "tone")[r["tone"]])}')
-        out.append(f"\n{i}. <i>{meta}</i>\n<b>{escape(head)}</b>" + (f"\n{escape(body)}" if body else ""))
-    return "\n".join(out)
+        items.append([f"\n{i}. <i>{meta}</i>\n<b>{escape(head)}</b>", f"\n{escape(body)}" if body else ""])
+    text = lambda: "\n".join([title] + [head + body for head, body in items])
+    for item in reversed(items):
+        if visible_len(text()) <= TG_TEXT_LIMIT:
+            break
+        item[1] = ""
+    return text()
 
 
 def welcome_text(lang, em=None, with_pick=True):

@@ -576,6 +576,20 @@ def test_top_posts_headline_and_short_text():
             '<b>Eksport 9 oyda 18% oshdi</b>\nStatistika') in text
 
 
+def test_ten_top_posts_fit_one_message():
+    rows = [{"channel": "@kunuzofficial", "message_id": i, "primary_topic": "labour_income", "tone": "pos",
+             "raw_text": "x", "headline": "h"} for i in range(10)]
+    longest = lambda raw, headline=None: ("С" * 300, "Т" * 99 + "…")            # longer than post_parts gives
+    data = {"kind": "kun", "start": "2026-10-05", "end": "2026-10-05"}
+    text = index.bot.top_text(rows, data, "ru", {"@kunuzofficial": "Kun.uz"}, longest)
+    assert index.bot.visible_len(text) <= index.bot.TG_TEXT_LIMIT
+    posts = text.split("\n\n")[1:]
+    assert len(posts) == 10 and all("С" * 300 in p for p in posts)              # every headline stays
+    kept = [("Т" * 99) in p for p in posts]
+    assert kept == sorted(kept, reverse=True) and 0 < kept.count(False) < 10     # the last posts lose their text
+    assert index.bot.visible_len("<b>a&amp;b</b> 📈") == 6                         # tags out, '&' one, emoji two
+
+
 def test_admin_deletes_users_and_channels(server, fresh_db):
     admin = lambda action, body=None, who=OWNER: call(server, U(who), action, body)
     acc = admin_create(server)
