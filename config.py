@@ -90,8 +90,9 @@ LLM_TIME_BUDGET_MIN = float(os.getenv("LLM_TIME_BUDGET_MIN", "30"))  # stop labe
 # (v6: tone of plans and agreements counts; v7: stricter ad and economic filters, no labels as headlines;
 #  v8: travel disruptions, defence and state staff not economic, company appointments are; gold and
 #  copper prices are exports; tax revenue is not a tax rise; health and home products are ads;
-#  v9: a transport topic: trains, flights, buses, metro, routes, airports, freight and transit)
-LLM_LABEL_VERSION = "v9"
+#  v9: a transport topic: trains, flights, buses, metro, routes, airports, freight and transit;
+#  v10: the daily running, safety and comfort of transport is not economic)
+LLM_LABEL_VERSION = "v10"
 
 # =============================================================================
 # Index parameters (see METHODOLOGY.md)

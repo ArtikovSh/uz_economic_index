@@ -78,7 +78,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER }}
-          LLM_MAX_REQUESTS: '3000'          # several months in one run (~600 requests a month)
+          LLM_MAX_REQUESTS: '3500'          # several months in one run (~600 requests a month)
           LLM_TIME_BUDGET_MIN: '240'
         run: python rebuild.py
 

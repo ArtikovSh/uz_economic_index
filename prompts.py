@@ -80,7 +80,16 @@ aid or gifts Uzbekistan provides abroad and other diplomacy; defence and the arm
 everyday advice and how-tos (health, cars, building materials, household tips); traffic
 and travel disruptions — roads, mountain passes or airports closed or restricted, flights
 delayed or diverted, traffic jams — because of weather, accidents or works, and road rules
-and traffic fines (cuts in gas, electricity or water SUPPLY stay economic).
+and traffic fines (cuts in gas, electricity or water SUPPLY stay economic); the daily
+running, safety and comfort of transport — working hours and holiday timetables of the
+metro, buses or trains, extra trips for holidays, new or changed bus routes inside a city,
+technical inspections, safety barriers and other safety measures, air-conditioning, fare
+dodgers and ticket checks, aircraft liveries, pedestrian zones, pilgrimage trips, travel
+reports and tips. Transport IS economic when the post is about investment in or building
+of railways, metro lines, airports and stations, trains, buses or aircraft bought, new or
+closed intercity and international routes and flights, carriers' business, its rules and
+complaints against carriers, fares and fees, freight, transit and passenger volumes, or
+the opening hours and regime of border crossings (trade).
 Appointments and dismissals of the heads and deputies of companies, banks and state-owned
 enterprises (Uzbekneftegaz, Uzavtosanoat, a bank, an airport) ARE economic: business, or
 banking_finance for a bank.
@@ -98,9 +107,9 @@ STEP 5 — topic (one value; "non_economic" if and only if economic=false)
   currency_fx         the som exchange rate, the FX market, currency rules
   fiscal              budget, taxes, customs duties and payments, fees, fines, subsidies,
                       public spending, public debt
-  trade               exports, imports, trade agreements, market access, tourism flows;
-                      prices of gold and copper (the main exports), including the gold-bar
-                      price in som
+  trade               exports, imports, trade agreements, market access, tourism flows,
+                      border crossing points; prices of gold and copper (the main exports),
+                      including the gold-bar price in som
   macro               GDP, output of industry, agriculture or services, total investment,
                       reserves, remittances, balance of payments, official forecasts
   central_bank        the Central Bank of Uzbekistan (CBU, ЦБ, Markaziy bank) as the actor:
@@ -116,9 +125,10 @@ STEP 5 — topic (one value; "non_economic" if and only if economic=false)
   business            companies, entrepreneurship, industrial projects and zones,
                       privatisation, business regulation, IT and startups
   transport           passenger and freight transport: trains and railways, flights and
-                      airlines, buses, metro, taxis and city transport; new routes and
-                      timetables, carriers, new trains, buses and aircraft for them (a
-                      factory that makes vehicles is business), airports and stations,
+                      airlines, buses, metro, taxis and city transport; new or closed
+                      intercity and international routes and flights, carriers, new trains,
+                      buses and aircraft for them (a factory that makes vehicles is
+                      business), transport reforms and fare systems, airports and stations,
                       passenger and freight volumes, transit and logistics corridors;
                       building or expanding railways, metro lines, airports and stations
   construction_realty construction, housing, real estate, roads, bridges and other
@@ -214,6 +224,12 @@ EXAMPLES (headline -> labels)
      -> economic, transport, +0.5 (a new service launched)
  "Afrosiyob poyezdlari chiptalari narxi 1-fevraldan 15 foizga oshiriladi"
      -> economic, prices_inflation (a fare level, not transport), -0.6
+ "O'zbekistonda bolalarni oromgohlarga olib boradigan 1 ming 100 dan ortiq avtobus texnik ko'rikdan o'tkazildi"
+     -> economic=false (safety of transport), non_economic, 0.0
+ "Қурбон ҳайити куни Тошкентда автобус ва метро соат 04:00 дан ишлай бошлайди"
+     -> economic=false (working hours of public transport), non_economic, 0.0
+ "Метрода йўл ҳақи 2027 йилдан босиб ўтилган масофага қараб тўланади"
+     -> economic, transport (a new fare system, not a fare level), 0.0
  "Олтин нархи биринчи марта 1 грамм учун 2 млн сўмдан ошди"
      -> economic, trade, +0.4 (gold: the main export)
  "Иностранные IT-компании заплатили в 2025 году на 50% больше налогов"

@@ -60,7 +60,10 @@ soni bo'yicha hisoblanadi, kunlik qiymatlarning o'rtachasi emas.
 
 ## 3. Tasniflash — OpenAI yoki Gemini (`llm_classifier.py`, `prompts.py`)
 
-Har bir post bir marta belgilanadi (belgi versiyasi `v9`: yangi "transport" mavzusi —
+Har bir post bir marta belgilanadi (belgi versiyasi `v10`: transportning kundalik ishi,
+xavfsizligi va qulayligi — ish vaqti va bayram jadvallari, bayram uchun qo'shimcha reyslar,
+shahar ichidagi avtobus yo'nalishlari, texnik ko'rik, to'siqlar, konditsioner, chiptasiz
+yo'lovchilar — iqtisodiy emas; chegara postlari ish tartibi tashqi savdo; `v9`: yangi "transport" mavzusi —
 poyezd, avia, avtobus, metro, yo'nalishlar, aeroport va vokzallar, yuk tashish va tranzit;
 `v8`: ob-havo sabab transport
 o'zgarishlari, mudofaa va davlat organlari kadrlari iqtisodiy emas, kompaniya va davlat
