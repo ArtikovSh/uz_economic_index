@@ -7,12 +7,12 @@ Arimo (Arial's metrics), 8 pt inside the charts, 12 pt titles; 1600 px stand for
 from datetime import date
 from functools import lru_cache
 from io import BytesIO
-from math import ceil, floor, log10
+from math import ceil, floor, log10, cos, sin, radians
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-__all__ = ["render", "render_topics"]
+__all__ = ["render", "render_topics", "render_leader"]
 
 _WIDTH = 1600
 _PT = _WIDTH / 482                   # pixels per typographic point at 17 cm
@@ -253,12 +253,93 @@ def _page(card, name):
     return canvas
 
 
-def _finish(canvas, bottom, lang):
+def _finish(canvas, bottom, lang, source=None):
     """The 0.5 pt rule and the source under the figures; the PNG cut to its height."""
     y = bottom + 14
     canvas.line([(_MARGIN, y), (_WIDTH - _MARGIN, y)], _BLUE, 0.5)
-    y = canvas.wrapped(_MARGIN, _WIDTH - _MARGIN, y + 12, [(w, False, True) for w in _TEXT[lang]["source"].split()], 8, 32)
+    y = canvas.wrapped(_MARGIN, _WIDTH - _MARGIN, y + 12,
+                       [(w, False, True) for w in (source or _TEXT[lang]["source"]).split()], 8, 32)
     return canvas.png(round(y + 30 + 24))
+
+
+def render_leader(card: dict) -> bytes:
+    """Personal daily digest: a tone doughnut and up to five stacked topic bars."""
+    import _bot as bot
+
+    lang = card["lang"]
+    canvas = _page(card, bot.tr(lang, "leader_card_daily"))
+    colors = (_BLUE, _BEIGE, _RED)
+    canvas.text(34, 115, bot.tr(lang, "leader_card_tones"), 11, bold=True)
+    canvas.text(835, 115, bot.tr(lang, "leader_card_topics"), 11, bold=True)
+    cx, cy, radius = 390, 413, 225
+    total = sum(card["tones"])
+    angle = -90
+    for count, color, share in zip(card["tones"], colors, card["shares"]):
+        if not count:
+            continue
+        sweep = 360 * count / total
+        box = tuple(round(v * _SCALE) for v in (cx-radius, cy-radius, cx+radius, cy+radius))
+        canvas.draw.pieslice(box, angle, angle+sweep, fill=color, outline=_WHITE,
+                             width=max(1, round(1.5 * _PT * _SCALE)))
+        mid = radians(angle + sweep / 2)
+        # the title gives the unit, so no "%": two digits fit the 56 px ring at any angle
+        label_radius = 197 if sweep >= 20 else 252
+        lx, ly = cx + label_radius * cos(mid), cy + label_radius * sin(mid)
+        canvas.text(lx, ly, str(share), 9, bold=True, anchor="mm",
+                    fill=_BLACK if color == _BEIGE or sweep < 20 else _WHITE)
+        angle += sweep
+    hole = radius * .75
+    canvas.draw.ellipse(tuple(round(v * _SCALE) for v in (cx-hole, cy-hole, cx+hole, cy+hole)), fill=_WHITE)
+    canvas.text(cx, cy-48, bot.num(card["econ"], lang), 29, bold=True, anchor="mm", fill=_BLUE)
+    centre_label = bot.tr(lang, "leader_card_econ")
+    if canvas.width(centre_label, 10) > hole * 2 - 24:
+        words = centre_label.split()
+        split = max(range(1, len(words)), key=lambda n: min(n, len(words)-n))
+        canvas.text(cx, cy+6, " ".join(words[:split]), 9, anchor="mm")
+        canvas.text(cx, cy+38, " ".join(words[split:]), 9, anchor="mm")
+        total_y = cy+73
+    else:
+        canvas.text(cx, cy+11, centre_label, 10, anchor="mm")
+        total_y = cy+53
+    canvas.text(cx, total_y, bot.tr(lang, "leader_card_total", n=bot.num(card["posts"], lang)), 9, anchor="mm")
+
+    names = [bot.topic_name(lang, row[0]) for row in card["topics"][:5]]
+    rows = card["topics"][:5]
+    ticks, decimals = _scale(0, max((sum(row[1:]) for row in rows), default=1) * 1.05, least=1)
+    maximum = ticks[-1]
+    bar_left, bar_right = 835, 1515
+    bar_width = bar_right - bar_left
+    shift = (5 - len(rows)) * 111 / 2           # fewer topics: the group centred beside the ring
+    for i, (row, name) in enumerate(zip(rows, names)):
+        y = 186 + shift + i * 111
+        canvas.text(bar_left, y, name, 9, bold=True)
+        x = bar_left
+        for count, color in zip(row[1:], colors):
+            width = bar_width * count / maximum
+            if width:
+                canvas.rect((x, y+43, x+width, y+74), color)
+                if width >= canvas.width(str(count), 9, True) + 14:
+                    canvas.text(x + width/2, y+58, str(count), 9, bold=True, anchor="mm",
+                                fill=_BLACK if color == _BEIGE else _WHITE)
+            x += width
+        canvas.text(min(x + 8, 1545), y+58, bot.num(sum(row[1:]), lang), 8, bold=True, anchor="lm")
+    axis_y = 745 - shift
+    for tick in ticks:
+        x = bar_left + bar_width * tick / maximum
+        canvas.line([(x, axis_y-9), (x, axis_y)], _GREY, .5)
+        canvas.text(x, axis_y+8, _tick(tick, lang, decimals), 8, anchor="mt")
+    canvas.line([(bar_left, axis_y-9), (bar_right, axis_y-9)], _GREY, .5)
+    tones = bot.tr(lang, "tone")
+    legend = [(colors[i], tones[key]) for i, key in enumerate(("pos", "neu", "neg"))]
+    legend_width = sum(24 + canvas.width(name, 8) for _, name in legend) + 24 * 2
+    for centre in (390, 1175):
+        x = centre - legend_width / 2
+        for color, name in legend:
+            canvas.rect((x, 807, x+18, 825), color)
+            canvas.text(x+24, 815, name, 8, anchor="lm")
+            x += 24 + canvas.width(name, 8) + 24
+    source = bot.tr(lang, "leader_card_source", n=len(card["channels"]))
+    return _finish(canvas, 855, lang, source)
 
 
 def render(card: dict) -> bytes:

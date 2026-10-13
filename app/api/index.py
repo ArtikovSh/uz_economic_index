@@ -338,6 +338,48 @@ def send_card(chat_id, data, lang, caption, kb, topics=False):
         return False
 
 
+def leader_kb(lang):
+    return app_kb(bot.tr(lang, "leader_more"))
+
+
+def set_chat_menu(chat_id, lang=None):
+    """Per-chat Web App menu for leaders, or Telegram's default for other roles."""
+    try:
+        params = {"chat_id": chat_id}
+        if lang and WEBAPP_URL:
+            params["menu_button"] = {"type": "web_app", "text": bot.tr(lang, "leader_menu"),
+                                     "web_app": {"url": app_url()}}
+        tg("setChatMenuButton", params, timeout=3)
+    except botsetup.TgError:
+        pass
+
+
+def send_leader_card(chat_id, data, lang, caption):
+    """A personal daily card; the fingerprint prevents cache reuse across different preferences."""
+    chosen = json.dumps([data["channels"], data["selected_topics"]], separators=(",", ":"), ensure_ascii=False)
+    fingerprint = hashlib.sha256(chosen.encode()).hexdigest()[:16]
+    key = ("leader", f"{data['kind']}:{data['start']}#v{CARD_VERSION}:{fingerprint}", lang)
+    row = q("select file_id from bot_cards where kind=%s and period=%s and lang=%s", key, one=True)
+    payload = {"chat_id": chat_id, "caption": caption, "parse_mode": "HTML", "reply_markup": leader_kb(lang)}
+    try:
+        if row:
+            return bool(tg("sendPhoto", {**payload, "photo": row["file_id"]}))
+        import _card
+        try:
+            png = _card.render_leader({**data, "lang": lang})
+        except Exception as e:
+            print("leader card error:", repr(e))
+            return send(chat_id, caption, reply_markup=leader_kb(lang))
+        msg = tg("sendPhoto", payload, files={"photo": ("leader.png", png, "image/png")})
+        q("""insert into bot_cards (kind, period, lang, file_id) values (%s,%s,%s,%s)
+             on conflict (kind, period, lang) do nothing""", (*key, msg["photo"][-1]["file_id"]))
+        return True
+    except botsetup.TgError as e:
+        if "blocked" in str(e) or "deactivated" in str(e):
+            q("update bot_users set blocked_bot=true where telegram_id=%s", (chat_id,))
+        return False
+
+
 def summary(kind, start=None):
     try:
         return bot.summary(q, kind, start)
@@ -386,7 +428,9 @@ def run_digest():
                         where telegram_id is not null and status='active' and (expires_at is null or expires_at > now())
                         union select %s::bigint) t
                   left join bot_users b on b.telegram_id = t.tg
-                  where t.tg is not null and coalesce(b.digest, true) and not coalesce(b.blocked_bot, false)""",
+                  where t.tg is not null and coalesce(b.digest, true) and not coalesce(b.blocked_bot, false)
+                    and not exists (select 1 from accounts a where a.telegram_id=t.tg and a.status='active'
+                                    and a.role='leader' and (a.expires_at is null or a.expires_at > now()))""",
                (int(ADMIN_ID) if ADMIN_ID else None,)) or []
     em, sent = emoji(), 0
     for p in people:
@@ -399,6 +443,39 @@ def run_digest():
                 sent += 1
                 q(f"""insert into bot_users (telegram_id, {col}) values (%s, %s)
                       on conflict (telegram_id) do update set {col} = excluded.{col}""", (p["tg"], start))
+    leaders = q("""select a.id, a.telegram_id tg, b.lang, b.digest_day, b.digest_week,
+                          p.channels, p.topics
+                   from accounts a join bot_users b on b.telegram_id=a.telegram_id
+                   left join leader_prefs p on p.account_id=a.id
+                   where a.role='leader' and a.status='active' and a.telegram_id is not null
+                     and (a.expires_at is null or a.expires_at > now())
+                     and b.digest and not b.blocked_bot""") or []
+    for p in leaders:
+        use_week = bool(week and (not p["digest_week"] or p["digest_week"] < _date(week["start"])))
+        data = week if use_week else day
+        if not data:
+            continue
+        start = _date(data["start"])
+        if not use_week and p["digest_day"] and p["digest_day"] >= start:
+            continue
+        lang = p["lang"] or "uz"
+        try:                                             # one leader's failure must not stop the rest
+            result = leader.leader_summary(q, {"channels": p["channels"] or [],
+                                               "topics": p["topics"] if p["topics"] is not None else ["central_bank"]},
+                                           data["kind"], data["start"], LEADER_SQL)
+            caption = bot.leader_caption(result, lang)
+        except Exception as e:
+            print("leader digest error:", p["tg"], repr(e))
+            continue
+        success = (send(p["tg"], caption, reply_markup=leader_kb(lang))
+                   if use_week or not result["econ"] else send_leader_card(p["tg"], result, lang, caption))
+        if success:
+            sent += 1
+            if use_week:
+                q("""update bot_users set digest_week=%s, digest_day=%s where telegram_id=%s""",
+                  (start, _date(day["start"]) if day else start, p["tg"]))
+            else:
+                q("update bot_users set digest_day=%s where telegram_id=%s", (start, p["tg"]))
     return {"ok": True, "sent": sent, "day": day and day["start"], "week": week and week["start"]}
 
 
@@ -417,6 +494,9 @@ def gate(chat_id, state, lang, em=None):
 def home(chat_id, state, acc, lang, em):
     if state != "ok":
         return gate(chat_id, state, lang, em)
+    if acc["role"] == "leader":
+        return send(chat_id, bot.leader_home_text(lang, digest_on(chat_id)),
+                    reply_markup=app_kb(bot.tr(lang, "leader_open")))
     return send(chat_id, bot.home_text(lang, em), reply_markup=main_kb(lang, em))
 
 
@@ -457,6 +537,9 @@ def welcome_after_login(user):
         return
     bot.remember(q, user["id"])
     lang, em = bot.lang_of(q, user), emoji()
+    if acc["role"] == "leader":
+        set_chat_menu(user["id"], lang)
+        return home(user["id"], state, acc, lang, em)
     kb = {"inline_keyboard": [[bot.button(bot.tr(lang, "today_s"), em, "esi", callback_data="nav:today")]
                               + ([bot.button(bot.tr(lang, "app"), em, "dashboard", "primary",
                                              web_app={"url": app_url()})] if WEBAPP_URL else [])]}
@@ -478,6 +561,8 @@ def handle_callback(cq):
         if not bot.set_lang(q, frm["id"], code):
             return
         state, acc = who(frm)
+        if state == "ok" and acc["role"] == "leader":    # the menu button follows the language
+            set_chat_menu(chat_id, code)
         if src == "w":                                   # the welcome, now in that language; then next step
             edit(chat_id, mid, bot.welcome_text(code, em, with_pick=False))
             return home(chat_id, state, acc, code, em)
@@ -490,6 +575,9 @@ def handle_callback(cq):
     if state != "ok":
         answer_cb(cq["id"])
         return gate(chat_id, state, lang, em)
+    if acc["role"] == "leader":
+        answer_cb(cq["id"])
+        return home(chat_id, state, acc, lang, em)
     if data == "me:digest":
         on = bot.toggle_digest(q, frm["id"])
         answer_cb(cq["id"], bot.tr(lang, "digest_done_on" if on else "digest_done_off"))
@@ -541,10 +629,14 @@ def handle_update(update):
     em = emoji()
     if cmd == "/start":
         row = bot.user_row(q, user["id"])
+        state, acc = who(user)
+        if state == "ok" and acc["role"] != "leader":
+            set_chat_menu(chat_id)
         if not row or not row["lang"]:                   # first visit: introduce the bot, ask the language
             bot.remember(q, user["id"])
             return send(chat_id, bot.welcome_text(bot.detect(user), em), reply_markup=lang_kb("w"))
-        state, acc = who(user)
+        if state == "ok" and acc["role"] == "leader":
+            set_chat_menu(chat_id, row["lang"])
         return home(chat_id, state, acc, row["lang"], em)
     lang = bot.lang_of(q, user)
     if cmd == "/lang":
@@ -553,16 +645,19 @@ def handle_update(update):
     if state != "ok":
         return gate(chat_id, state, lang, em)
 
-    if cmd == "/help":
-        return send(chat_id, bot.tr(lang, "help"))
-    if cmd == "/me":
-        on = digest_on(user["id"])
-        return send(chat_id, bot.me_text(acc, on, lang, em), reply_markup=me_kb(lang, em, on, acc.get("owner")))
     if cmd == "/logout":
         if acc.get("owner"):
             return send(chat_id, bot.tr(lang, "owner_stays"))
         auth.logout(q, user["id"])
         return gate(chat_id, "login", lang, em)
+    if acc["role"] == "leader":
+        return home(chat_id, state, acc, lang, em)
+
+    if cmd == "/help":
+        return send(chat_id, bot.tr(lang, "help"))
+    if cmd == "/me":
+        on = digest_on(user["id"])
+        return send(chat_id, bot.me_text(acc, on, lang, em), reply_markup=me_kb(lang, em, on, acc.get("owner")))
     if cmd == "/setup" and acc.get("owner"):
         return setup(chat_id, lang)
     if cmd in OLD_ADMIN_CMDS and acc.get("is_admin"):

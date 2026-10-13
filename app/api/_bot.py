@@ -249,6 +249,71 @@ T = {
 }
 COMMANDS = ("today", "week", "topics", "top", "app", "me", "lang", "help")
 
+_LEADER_TEXT = {
+    "uz": {
+        "home_on": "Har kuni 09:00 da kechagi kun xulosasi shu yerga keladi.",
+        "home_off": "Ertalabki xabar o'chirilgan; uni ilovadagi Sozlamalarda yoqish mumkin.",
+        "home_intro": "Tanlangan kanallardagi iqtisodiy xabarlar kayfiyati — ilovada.",
+        "open": "Ilovani ochish", "menu": "Ilova", "more": "Batafsil — ilovada",
+        "channels": "{n} ta kanal", "weekly": "O'tgan hafta, {period}",
+        "econ": "Iqtisodiy xabarlar: <b>{econ} ta</b> (jami {posts} ta)",
+        "tones": "Ijobiy <b>{pos}%</b> · Neytral <b>{neu}%</b> · Salbiy <b>{neg}%</b>",
+        "mood": "Kayfiyat: <b>{mood}</b>", "no_prior": " ({period}: xabar yo'q)",
+        "compare_kun": ", oldingi kunga ({period}, {prior}) nisbatan <b>{change} ball</b>",
+        "compare_hafta": ", oldingi haftaga ({period}, {prior}) nisbatan <b>{change} ball</b>",
+        "level_kun": ", oldingi kun darajasida", "level_hafta": ", oldingi hafta darajasida",
+        "top": "Ko'p yozilgan mavzular: {items}",
+        "zero": "Tanlangan mavzular bo'yicha iqtisodiy xabar bo'lmadi.",
+        "card_daily": "Kunlik xulosa", "card_tones": "Xabarlar ohangi, ulush, foizda",
+        "card_topics": "Mavzular bo'yicha xabarlar, soni", "card_econ": "iqtisodiy xabar",
+        "card_total": "(jami {n})", "card_source": "Manba: tanlangan {n} ta Telegram kanalidagi xabarlar asosida hisob-kitoblar.",
+    },
+    "ru": {
+        "home_on": "Каждый день в 09:00 сюда приходит сводка за вчерашний день.",
+        "home_off": "Утренняя сводка выключена; её можно включить в Настройках приложения.",
+        "home_intro": "Настроение экономических новостей выбранных каналов — в приложении.",
+        "open": "Открыть приложение", "menu": "Приложение", "more": "Подробнее — в приложении",
+        "channels": "каналов: {n}", "weekly": "Прошлая неделя, {period}",
+        "econ": "Экономических новостей: <b>{econ}</b> (всего {posts})",
+        "tones": "Позитивные <b>{pos}%</b> · Нейтральные <b>{neu}%</b> · Негативные <b>{neg}%</b>",
+        "mood": "Настроение: <b>{mood}</b>", "no_prior": " ({period}: новостей нет)",
+        "compare_kun": ", к предыдущему дню ({period}, {prior}) <b>{change} п.</b>",
+        "compare_hafta": ", к предыдущей неделе ({period}, {prior}) <b>{change} п.</b>",
+        "level_kun": ", на уровне предыдущего дня", "level_hafta": ", на уровне предыдущей недели",
+        "top": "Популярные темы: {items}",
+        "zero": "По выбранным темам экономических новостей не было.",
+        "card_daily": "Итоги дня", "card_tones": "Тональность новостей, доля, %",
+        "card_topics": "Новости по темам, количество", "card_econ": "экономических новостей",
+        "card_total": "(всего {n})", "card_source": "Источник: расчёты по сообщениям {n} выбранных Telegram-каналов.",
+    },
+    "en": {
+        "home_on": "Every day at 09:00 the summary of the previous day arrives here.",
+        "home_off": "The morning summary is off; you can turn it on in the app's Settings.",
+        "home_intro": "The mood of economic news in your chosen channels — in the app.",
+        "open": "Open the app", "menu": "App", "more": "More in the app",
+        "channels": "{n} channels", "weekly": "Last week, {period}",
+        "econ": "Economic posts: <b>{econ}</b> (total {posts})",
+        "tones": "Positive <b>{pos}%</b> · Neutral <b>{neu}%</b> · Negative <b>{neg}%</b>",
+        "mood": "Mood: <b>{mood}</b>", "no_prior": " ({period}: no posts)",
+        "compare_kun": ", versus the previous day ({period}, {prior}) <b>{change} pts</b>",
+        "compare_hafta": ", versus the previous week ({period}, {prior}) <b>{change} pts</b>",
+        "level_kun": ", unchanged from the previous day", "level_hafta": ", unchanged from the previous week",
+        "top": "Top topics: {items}",
+        "zero": "There were no economic posts in the selected topics.",
+        "card_daily": "Daily summary", "card_tones": "Post sentiment, share, %",
+        "card_topics": "Posts by topic, number", "card_econ": "economic posts",
+        "card_total": "(total {n})", "card_source": "Source: calculations based on posts from {n} selected Telegram channels.",
+    },
+}
+for _lang, _words in _LEADER_TEXT.items():
+    T[_lang].update({"leader_" + _key: _value for _key, _value in _words.items()})
+
+_LEADER_WEEKDAYS = {
+    "uz": "dushanba seshanba chorshanba payshanba juma shanba yakshanba".split(),
+    "ru": "понедельник вторник среда четверг пятница суббота воскресенье".split(),
+    "en": "Monday Tuesday Wednesday Thursday Friday Saturday Sunday".split(),
+}
+
 # icon name -> fallback emoji Telegram requires next to a custom emoji (never shown when it works)
 TILES = {"logo": "📈", "eai": "🎯", "esi": "💬", "news": "📰", "topics": "🗂", "up": "📈", "down": "📉",
          "week": "📅", "user": "👤", "bell": "🔔", "lock": "🔒", "globe": "🌐", "check": "✅",
@@ -377,6 +442,44 @@ def delta(v, lang, unit="", em=None, tone=False):
 
 def topic_name(lang, key):
     return tr(lang, "topic_names").get(key, key)
+
+
+def leader_home_text(lang, digest=True):
+    return ("<b>Sentiment Monitor</b>\n" + escape(tr(lang, "leader_home_intro")) + "\n"
+            + escape(tr(lang, "leader_home_on" if digest else "leader_home_off")))
+
+
+def leader_caption(data, lang):
+    start, end = data["start"], data["end"]
+    if data["kind"] == "kun":
+        d = date.fromisoformat(start)
+        period = f"{day_label(d, lang, False)}, {_LEADER_WEEKDAYS[lang][d.weekday()]}"
+    else:
+        period = tr(lang, "leader_weekly", period=range_label(start, end, lang))
+    head = f"<b>{escape(period)} · {escape(tr(lang, 'leader_channels', n=len(data['channels'])))}</b>"
+    if not data["econ"]:
+        return head + "\n" + escape(tr(lang, "leader_zero"))
+    pos, neu, neg = data["shares"]
+    lines = [head,
+             tr(lang, "leader_econ", econ=num(data["econ"], lang), posts=num(data["posts"], lang)),
+             tr(lang, "leader_tones", pos=pos, neu=neu, neg=neg)]
+    mood = tr(lang, "leader_mood", mood=signed(data["mood"], lang, 0))
+    prev = data["previous_start"]
+    prev_period = (day_label(prev, lang, False) if data["kind"] == "kun"
+                   else range_label(prev, data["previous_end"], lang))
+    if data["previous_mood"] is None:
+        mood += tr(lang, "leader_no_prior", period=escape(prev_period))
+    elif data["change"] == 0:
+        mood += tr(lang, "leader_level_" + data["kind"])
+    else:
+        mood += tr(lang, "leader_compare_" + data["kind"], period=escape(prev_period),
+                   prior=signed(data["previous_mood"], lang, 0), change=signed(data["change"], lang, 0))
+    lines.append(mood)
+    if data["topic_count"] > 1 and data["topics"]:
+        items = ", ".join(f"{escape(topic_name(lang, row[0]))} {num(sum(row[1:]), lang)}"
+                          for row in data["topics"][:3])
+        lines.append(tr(lang, "leader_top", items=items))
+    return "\n".join(lines)
 
 
 # --------------------------------------------------------------- data -------
