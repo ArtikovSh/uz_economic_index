@@ -54,6 +54,10 @@ def fresh_db(monkeypatch):
     index._STATS = (None, None)
     sent = []
     monkeypatch.setattr(index, "send", lambda chat, text, **kw: sent.append((chat, text, kw)) or True)
+
+    def offline(method, params=None, files=None, timeout=30):     # no real Telegram calls from tests
+        raise index.botsetup.TgError("offline")
+    monkeypatch.setattr(index, "tg", offline)
     return sent
 
 

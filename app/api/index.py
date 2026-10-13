@@ -343,16 +343,43 @@ def leader_kb(lang):
     return app_kb(bot.tr(lang, "leader_more"))
 
 
+LEADER_COMMANDS = ("today", "week", "app", "lang")
+
+
 def set_chat_menu(chat_id, lang=None):
-    """Per-chat Web App menu for leaders, or Telegram's default for other roles."""
+    """With `lang` (a leader): the Web App menu button and the leader's short command list in this
+    chat; without: Telegram's defaults again. Failures are ignored: the reply matters more."""
+    scope = {"type": "chat", "chat_id": chat_id}
+    if lang:
+        cmds = [{"command": c, "description": bot.tr(lang, "leader_menu") if c == "app" else bot.tr(lang, "cmd")[c]}
+                for c in LEADER_COMMANDS]
+        calls = [("setMyCommands", {"commands": cmds, "scope": scope})]
+        if WEBAPP_URL:
+            calls.append(("setChatMenuButton", {"chat_id": chat_id, "menu_button": {
+                "type": "web_app", "text": bot.tr(lang, "leader_menu"), "web_app": {"url": app_url()}}}))
+    else:
+        calls = [("deleteMyCommands", {"scope": scope}), ("setChatMenuButton", {"chat_id": chat_id})]
+    for method, params in calls:
+        try:
+            tg(method, params, timeout=3)
+        except botsetup.TgError:
+            pass
+
+
+def send_leader_summary(chat_id, prefs, data, lang):
+    """A leader's day (card; text when nothing economic) or week (text) by their own channels and
+    topics; False when it could not be built or sent."""
     try:
-        params = {"chat_id": chat_id}
-        if lang and WEBAPP_URL:
-            params["menu_button"] = {"type": "web_app", "text": bot.tr(lang, "leader_menu"),
-                                     "web_app": {"url": app_url()}}
-        tg("setChatMenuButton", params, timeout=3)
-    except botsetup.TgError:
-        pass
+        result = leader.leader_summary(q, {"channels": prefs["channels"] or [],
+                                           "topics": prefs["topics"] if prefs["topics"] is not None else ["central_bank"]},
+                                       data["kind"], data["start"], LEADER_SQL)
+        caption = bot.leader_caption(result, lang)
+    except Exception as e:                               # one leader's failure must not stop the rest
+        print("leader summary error:", chat_id, repr(e))
+        return False
+    if data["kind"] == "hafta" or not result["econ"]:
+        return send(chat_id, caption, reply_markup=leader_kb(lang))
+    return send_leader_card(chat_id, result, lang, caption)
 
 
 def send_leader_card(chat_id, data, lang, caption):
@@ -461,16 +488,7 @@ def run_digest(now=None):
             start = _date(data["start"]) if data else None
             if not data or (p[col] and p[col] >= start):
                 continue
-            try:                                         # one leader's failure must not stop the rest
-                result = leader.leader_summary(q, {"channels": p["channels"] or [],
-                                                   "topics": p["topics"] if p["topics"] is not None else ["central_bank"]},
-                                               data["kind"], data["start"], LEADER_SQL)
-                caption = bot.leader_caption(result, lang)
-            except Exception as e:
-                print("leader digest error:", p["tg"], repr(e))
-                continue
-            if (send(p["tg"], caption, reply_markup=leader_kb(lang)) if col == "digest_week" or not result["econ"]
-                    else send_leader_card(p["tg"], result, lang, caption)):
+            if send_leader_summary(p["tg"], p, data, lang):
                 sent += 1
                 q(f"update bot_users set {col}=%s where telegram_id=%s", (start, p["tg"]))
     return {"ok": True, "sent": sent, "day": day and day["start"], "week": week and week["start"]}
@@ -627,14 +645,14 @@ def handle_update(update):
     if cmd == "/start":
         row = bot.user_row(q, user["id"])
         state, acc = who(user)
-        if state == "ok" and acc["role"] != "leader":
-            set_chat_menu(chat_id)
         if not row or not row["lang"]:                   # first visit: introduce the bot, ask the language
             bot.remember(q, user["id"])
-            return send(chat_id, bot.welcome_text(bot.detect(user), em), reply_markup=lang_kb("w"))
-        if state == "ok" and acc["role"] == "leader":
-            set_chat_menu(chat_id, row["lang"])
-        return home(chat_id, state, acc, row["lang"], em)
+            send(chat_id, bot.welcome_text(bot.detect(user), em), reply_markup=lang_kb("w"))
+        else:
+            home(chat_id, state, acc, row["lang"], em)
+        if state == "ok" and not acc.get("owner"):       # after the reply: a leader's menu, or the defaults
+            set_chat_menu(chat_id, ((row and row["lang"]) or "uz") if acc["role"] == "leader" else None)
+        return
     lang = bot.lang_of(q, user)
     if cmd == "/lang":
         return send(chat_id, bot.welcome_text(lang, em).rsplit("\n\n", 1)[1], reply_markup=lang_kb("p"))
@@ -646,8 +664,17 @@ def handle_update(update):
         if acc.get("owner"):
             return send(chat_id, bot.tr(lang, "owner_stays"))
         auth.logout(q, user["id"])
-        return gate(chat_id, "login", lang, em)
+        gate(chat_id, "login", lang, em)
+        if acc["role"] == "leader":
+            set_chat_menu(chat_id)
+        return
     if acc["role"] == "leader":
+        if cmd in ("/today", "/week"):
+            data = summary("kun" if cmd == "/today" else "hafta")
+            if not data:
+                return send(chat_id, bot.tr(lang, "no_data"))
+            return (send_leader_summary(chat_id, leader.prefs(q, acc["id"], user["id"]), data, lang)
+                    or send(chat_id, bot.tr(lang, "no_data")))
         return home(chat_id, state, acc, lang, em)
 
     if cmd == "/help":

@@ -29,7 +29,7 @@ def _fake_tg(monkeypatch):
 def test_leader_home_commands_callbacks_and_menu(account, fresh_db, monkeypatch, lang, open_label, menu_label):
     events = _fake_tg(monkeypatch)
     index.bot.set_lang(index.q, 701, lang)
-    for cmd in ("/start", "/app", "/today", "/index", "/week", "/top", "/topics", "/me", "/help", "hello"):
+    for cmd in ("/start", "/app", "/index", "/top", "/topics", "/me", "/help", "hello"):
         index.handle_update(upd(701, cmd))
         chat, text, kw = fresh_db[-1]
         assert chat == 701 and text.startswith("<b>Sentiment Monitor</b>")
@@ -38,6 +38,10 @@ def test_leader_home_commands_callbacks_and_menu(account, fresh_db, monkeypatch,
         assert button["text"] == open_label and button["web_app"]["url"] == index.app_url()
     menu = next(e[1]["menu_button"] for e in events if e[0] == "setChatMenuButton")
     assert menu == {"type": "web_app", "text": menu_label, "web_app": {"url": index.app_url()}}
+    cmds = next(e[1] for e in events if e[0] == "setMyCommands")
+    assert cmds["scope"] == {"type": "chat", "chat_id": 701}
+    assert [c["command"] for c in cmds["commands"]] == ["today", "week", "app", "lang"]
+    assert cmds["commands"][2]["description"] == menu_label
     for cb in ("nav:today", "nav:topics:kun:2026-05-02", "me:digest", "me:out", "unknown"):
         index.handle_update(press(701, cb))
         assert fresh_db[-1][1].startswith("<b>Sentiment Monitor</b>")
@@ -198,3 +202,30 @@ def test_language_change_moves_leader_menu(account, fresh_db, monkeypatch):
     index.handle_update(press(701, "lang:ru:p"))
     menu = [e[1] for e in events if e[0] == "setChatMenuButton"][-1]
     assert menu["menu_button"]["text"] == "Приложение"
+
+
+def test_leader_today_and_week_are_personal(account, news, fresh_db, monkeypatch):
+    events = _fake_tg(monkeypatch)
+    index.q("insert into leader_prefs (account_id, channels, topics) values (%s, %s, %s)",
+            (account, [], ["central_bank", "trade"]))
+    day = {"kind": "kun", "start": "2026-05-02", "end": "2026-05-02"}
+    week = {"kind": "hafta", "start": "2026-04-27", "end": "2026-05-03"}
+    monkeypatch.setattr(index, "summary", lambda kind, start=None: week if kind == "hafta" else day)
+    index.handle_update(upd(701, "/today"))
+    method, params, files = [e for e in events if e[0] == "sendPhoto"][-1]
+    assert params["chat_id"] == 701 and files and "Iqtisodiy xabarlar: <b>3 ta</b>" in params["caption"]
+    index.handle_update(upd(701, "/week"))
+    assert fresh_db[-1][0] == 701 and "O'tgan hafta" in unescape(fresh_db[-1][1])
+    assert len([e for e in events if e[0] == "sendPhoto"]) == 1  # the week is text
+    assert index.bot.user_row(index.q, 701)["digest_day"] is None  # on demand, not the morning digest
+    monkeypatch.setattr(index, "summary", lambda kind, start=None: None)
+    index.handle_update(upd(701, "/today"))
+    assert fresh_db[-1][1] == index.bot.tr("uz", "no_data")
+
+
+def test_leader_logout_restores_default_menu(account, fresh_db, monkeypatch):
+    events = _fake_tg(monkeypatch)
+    index.bot.set_lang(index.q, 701, "uz")
+    index.handle_update(upd(701, "/logout"))
+    assert [e[0] for e in events[-2:]] == ["deleteMyCommands", "setChatMenuButton"]
+    assert events[-1][1] == {"chat_id": 701}
