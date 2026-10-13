@@ -49,6 +49,7 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "").strip()
 CRON_SECRET = os.getenv("CRON_SECRET", "").strip()     # Vercel sends it with its cron calls
 DIGEST_MAX_AGE = 5                     # days: an older latest day is history, not news
+LEADER_WEEK_HOUR = 10                  # Tashkent: leaders' weekly text comes an hour after the day's card
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 TZ = "5 hours"
 INIT_DATA_MAX_AGE = 24 * 3600          # Mini App initData older than this is rejected
@@ -412,13 +413,15 @@ def send_details(chat_id, what, ref, lang, em):
     return send(chat_id, bot.top_text(rows, data, lang, names, post_parts, em))
 
 
-def run_digest():
+def run_digest(now=None):
     """Morning summaries (Vercel cron): the latest closed day, and the latest closed week when
-    it is new, to every signed-in user and the owner who keep them on. Each goes once."""
+    it is new, to every signed-in user and the owner who keep them on. Each goes once.
+    `now`: Tashkent time (tests); leaders get the week only from LEADER_WEEK_HOUR."""
     ensure_schema()
+    local = now or datetime.now(timezone.utc) + timedelta(hours=5)
     day, week = summary("kun"), summary("hafta")
     # only fresh periods: while the history is built month by month the latest day is old
-    fresh = (datetime.now(timezone.utc) + timedelta(hours=5)).date() - timedelta(days=DIGEST_MAX_AGE)
+    fresh = local.date() - timedelta(days=DIGEST_MAX_AGE)
     day = day if day and _date(day["start"]) >= fresh else None
     week = week if week and _date(week["end"]) >= fresh else None
     if not day and not week:
@@ -450,32 +453,26 @@ def run_digest():
                    where a.role='leader' and a.status='active' and a.telegram_id is not null
                      and (a.expires_at is null or a.expires_at > now())
                      and b.digest and not b.blocked_bot""") or []
+    # leaders: the day's card from 09:00, the closed week as a separate text from 10:00
+    periods = [(day, "digest_day")] + ([(week, "digest_week")] if local.hour >= LEADER_WEEK_HOUR else [])
     for p in leaders:
-        use_week = bool(week and (not p["digest_week"] or p["digest_week"] < _date(week["start"])))
-        data = week if use_week else day
-        if not data:
-            continue
-        start = _date(data["start"])
-        if not use_week and p["digest_day"] and p["digest_day"] >= start:
-            continue
         lang = p["lang"] or "uz"
-        try:                                             # one leader's failure must not stop the rest
-            result = leader.leader_summary(q, {"channels": p["channels"] or [],
-                                               "topics": p["topics"] if p["topics"] is not None else ["central_bank"]},
-                                           data["kind"], data["start"], LEADER_SQL)
-            caption = bot.leader_caption(result, lang)
-        except Exception as e:
-            print("leader digest error:", p["tg"], repr(e))
-            continue
-        success = (send(p["tg"], caption, reply_markup=leader_kb(lang))
-                   if use_week or not result["econ"] else send_leader_card(p["tg"], result, lang, caption))
-        if success:
-            sent += 1
-            if use_week:
-                q("""update bot_users set digest_week=%s, digest_day=%s where telegram_id=%s""",
-                  (start, _date(day["start"]) if day else start, p["tg"]))
-            else:
-                q("update bot_users set digest_day=%s where telegram_id=%s", (start, p["tg"]))
+        for data, col in periods:
+            start = _date(data["start"]) if data else None
+            if not data or (p[col] and p[col] >= start):
+                continue
+            try:                                         # one leader's failure must not stop the rest
+                result = leader.leader_summary(q, {"channels": p["channels"] or [],
+                                                   "topics": p["topics"] if p["topics"] is not None else ["central_bank"]},
+                                               data["kind"], data["start"], LEADER_SQL)
+                caption = bot.leader_caption(result, lang)
+            except Exception as e:
+                print("leader digest error:", p["tg"], repr(e))
+                continue
+            if (send(p["tg"], caption, reply_markup=leader_kb(lang)) if col == "digest_week" or not result["econ"]
+                    else send_leader_card(p["tg"], result, lang, caption)):
+                sent += 1
+                q(f"update bot_users set {col}=%s where telegram_id=%s", (start, p["tg"]))
     return {"ok": True, "sent": sent, "day": day and day["start"], "week": week and week["start"]}
 
 

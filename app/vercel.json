@@ -2,6 +2,7 @@
   "regions": ["fra1"],
   "crons": [
     { "path": "/api/index?cron=digest&at=09", "schedule": "0 4 * * *" },
+    { "path": "/api/index?cron=digest&at=10", "schedule": "0 5 * * *" },
     { "path": "/api/index?cron=digest&at=13", "schedule": "0 8 * * *" }
   ]
 }

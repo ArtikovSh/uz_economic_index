@@ -1,4 +1,5 @@
 """Leader bot routing, personal digest, cache, and card rendering with fake Telegram."""
+from datetime import datetime
 from io import BytesIO
 from html import unescape
 
@@ -112,7 +113,7 @@ def test_leader_card_cache_by_preferences(account, monkeypatch):
     assert len(index.q("select * from bot_cards where kind='leader'")) == 2
 
 
-def test_weekly_takes_priority_then_daily_zero(account, news, fresh_db, monkeypatch):
+def test_day_card_at_nine_week_text_at_ten(account, news, fresh_db, monkeypatch):
     events = _fake_tg(monkeypatch)
     index.q("insert into leader_prefs (account_id, channels, topics) values (%s, %s, %s)",
             (account, ["@daryo"], []))
@@ -122,17 +123,36 @@ def test_weekly_takes_priority_then_daily_zero(account, news, fresh_db, monkeypa
     monkeypatch.setattr(index, "summary", lambda kind, start=None: week if kind == "hafta" else day)
     monkeypatch.setattr(index.bot, "caption", lambda *_: "analytic")
     monkeypatch.setattr(index, "send_card", lambda *_: True)
-    assert index.run_digest()["sent"] == 3  # owner analytic day + week, leader one weekly
-    assert len([r for r in fresh_db if r[0] == 701]) == 2  # login home and weekly text
-    assert "O'tgan hafta" in unescape(fresh_db[-1][1]) and not any(e[0] == "sendPhoto" for e in events)
+    monday = lambda hour: datetime(2026, 5, 4, hour, 5)
+    assert index.run_digest(monday(9))["sent"] == 3  # owner analytic day + week, the leader's day card
+    photos = [e for e in events if e[0] == "sendPhoto"]
+    assert len(photos) == 1 and photos[0][1]["chat_id"] == 701
     row = index.bot.user_row(index.q, 701)
-    assert str(row["digest_week"]) == "2026-04-27" and str(row["digest_day"]) == "2026-05-03"
-    assert index.run_digest()["sent"] == 0
+    assert str(row["digest_day"]) == "2026-05-03" and row["digest_week"] is None
+    assert index.run_digest(monday(9))["sent"] == 0
+    assert index.run_digest(monday(10))["sent"] == 1  # the leader's weekly, as a separate text
+    assert fresh_db[-1][0] == 701 and "O'tgan hafta" in unescape(fresh_db[-1][1])
+    assert len([e for e in events if e[0] == "sendPhoto"]) == 1
+    assert str(index.bot.user_row(index.q, 701)["digest_week"]) == "2026-04-27"
+    assert index.run_digest(monday(13))["sent"] == 0
     day = {"kind": "kun", "start": "2026-05-05", "end": "2026-05-05"}
     monkeypatch.setattr(index, "summary", lambda kind, start=None: None if kind == "hafta" else day)
-    assert index.run_digest()["sent"] == 2  # owner analytic and leader text-only
+    assert index.run_digest(datetime(2026, 5, 6, 9, 5))["sent"] == 2  # owner analytic and leader text-only
     assert "iqtisodiy xabar bo'lmadi" in unescape(fresh_db[-1][1])
-    assert index.run_digest()["sent"] == 0
+    assert index.run_digest(datetime(2026, 5, 6, 13, 5))["sent"] == 0
+
+
+def test_missed_morning_sends_day_and_week_at_one(account, news, fresh_db, monkeypatch):
+    events = _fake_tg(monkeypatch)
+    monkeypatch.setattr(index, "DIGEST_MAX_AGE", 100000)
+    day = {"kind": "kun", "start": "2026-05-03", "end": "2026-05-03"}
+    week = {"kind": "hafta", "start": "2026-04-27", "end": "2026-05-03"}
+    monkeypatch.setattr(index, "summary", lambda kind, start=None: week if kind == "hafta" else day)
+    monkeypatch.setattr(index.bot, "caption", lambda *_: "analytic")
+    monkeypatch.setattr(index, "send_card", lambda *_: True)
+    assert index.run_digest(datetime(2026, 5, 4, 13, 5))["sent"] == 4  # owner day + week, leader day + week
+    row = index.bot.user_row(index.q, 701)
+    assert str(row["digest_day"]) == "2026-05-03" and str(row["digest_week"]) == "2026-04-27"
 
 
 def test_blocked_leader_skipped(account, news, fresh_db, monkeypatch):

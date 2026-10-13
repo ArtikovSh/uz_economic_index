@@ -85,8 +85,9 @@ Bosqichma-bosqich. **1-qism (Supabase) hozir bajariladi**; bot/app kodi tayyor b
 - Mini App'da kirgandan so'ng bot "Hisob faollashtirildi" xabarini yuboradi.
 - **Ertalabki xulosa:** har kuni Toshkent vaqti bilan 09:00–10:00 orasida (Vercel cron,
   `app/vercel.json`) har bir faol foydalanuvchiga oxirgi yakunlangan kunning kartasi va qisqa
-  xulosasi boradi; yangi hafta yopilgan kuni haftalik xulosa ham boradi. Quvur kechiksa, 13:00 dagi
-  ikkinchi cron yetkazadi. Har bir xulosa bir marta yuboriladi. Foydalanuvchi uni `/me` da o'chira oladi.
+  xulosasi boradi; yangi hafta yopilgan kuni haftalik xulosa ham boradi. Rahbarlarga esa o'z kanal va
+  mavzulari bo'yicha kunlik karta 09:00 da, haftalik xulosa alohida matn bilan 10:00–11:00 orasida
+  (ikkinchi cron) boradi. Quvur kechiksa, 13:00 dagi cron yetkazadi. Har bir xulosa bir marta yuboriladi. Foydalanuvchi uni `/me` da o'chira oladi.
   `CRON_SECRET` qo'yilmasa, ertalabki xulosa yuborilmaydi.
 - Mini App'da tanlangan til bot uchun ham saqlanadi va aksincha.
 - **Premium ikonkalar:** bot egasida Telegram Premium bo'lsa, xabar va tugmalarda botning o'z
