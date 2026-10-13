@@ -51,10 +51,12 @@ def set_prefs(q, account_id, telegram_id, body, topics):
     return {"ok": True, "prefs": prefs(q, account_id, telegram_id)}
 
 
-def leader_stats(q, selected):
-    # Use the same final-day, economic and tone definitions as the posts endpoint.
-    from index import COUNTED, DAY, FINAL_DAYS, NEG, POS, TOPICS_OF
-
+def leader_stats(q, selected, sql):
+    """`sql`: index.py's SQL pieces (COUNTED, DAY, FINAL_DAYS, NEG, POS, TOPICS_OF), so the counts use
+    the posts endpoint's final days, economic posts and tones. Passed in rather than imported:
+    Vercel may load index.py under another module name, and importing it again would run it twice."""
+    COUNTED, DAY, FINAL_DAYS = sql["COUNTED"], sql["DAY"], sql["FINAL_DAYS"]
+    NEG, POS, TOPICS_OF = sql["NEG"], sql["POS"], sql["TOPICS_OF"]
     available = active(q)
     if not valid_list(selected, available):
         return {"ok": False, "error": "bad_input"}

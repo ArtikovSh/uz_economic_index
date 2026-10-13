@@ -134,6 +134,8 @@ do $$ begin
   end if;
 end $$"""
 TOPICS_OF = "coalesce(topics, array[primary_topic])"
+# the pieces the leadership counts share with the posts endpoint (_leader.leader_stats)
+LEADER_SQL = {"COUNTED": COUNTED, "DAY": DAY, "FINAL_DAYS": FINAL_DAYS, "NEG": NEG, "POS": POS, "TOPICS_OF": TOPICS_OF}
 
 
 def ensure_schema():
@@ -869,7 +871,7 @@ def app_action(user, action, body):
             elif action == "prefs_set":
                 r = leader.set_prefs(q, acc["id"], user["id"], body, TOPICS)
             elif action == "leader_stats":
-                r = leader.leader_stats(q, body.get("channels", []))
+                r = leader.leader_stats(q, body.get("channels", []), LEADER_SQL)
             elif not isinstance(body.get("on"), bool):
                 r = {"ok": False, "error": "bad_input"}
             else:
@@ -1020,7 +1022,7 @@ class handler(BaseHTTPRequestHandler):
             if acc.get("role") == "leader":
                 prefs = leader.prefs(q, acc["id"], user["id"])
                 return self._json(200, {"auth": "ok", "lang": lang, "me": me_json(acc), "prefs": prefs,
-                                        "leader": leader.leader_stats(q, prefs["channels"])})
+                                        "leader": leader.leader_stats(q, prefs["channels"], LEADER_SQL)})
             return self._json(200, {"auth": "ok", "lang": lang, "me": me_json(acc), "stats": build_stats()})
         except Exception as e:
             print("data error:", repr(e))
