@@ -416,7 +416,7 @@ def test_admin_types_login_and_password(server, fresh_db):
     assert call(server, U(301), "login", {"login": "a.karimov", "password": "Sirli-parol7"})[0] == 200
 
     ov = admin("admin")[1]
-    assert ov["next_login"] == {"analyst": "analyst.01", "economist": "economist.01", "admin": "admin.01"}
+    assert ov["next_login"] == {"analyst": "analyst.01", "economist": "economist.01", "admin": "admin.01", "leader": "leader.01"}
     aid = ov["accounts"][0]["id"]
     assert admin("reset", {"id": aid, "password": "a.karimov99"})[1]["error"] == "weak_password"
     code, r = admin("reset", {"id": aid, "password": "Yangi-parol8"})

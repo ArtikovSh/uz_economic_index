@@ -40,6 +40,7 @@ import _auth as auth  # noqa: E402  (helper modules next to this file, not endpo
 import _bot as bot  # noqa: E402
 import _botsetup as botsetup  # noqa: E402
 import _channels as channels  # noqa: E402
+import _leader as leader  # noqa: E402
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 ADMIN_ID = os.getenv("BOT_ADMIN_ID", "").strip()
@@ -143,6 +144,7 @@ def ensure_schema():
         q(bot.SCHEMA)
         q(POSTS_DDL)
         channels.ensure(q)
+        q(leader.SCHEMA)
         _SCHEMA_READY = True
 
 
@@ -759,7 +761,7 @@ def _date(v):
         return None
 
 
-def posts_page(body):
+def posts_page(body, channel_limit=20):
     """Counted (economic) posts of final days, filtered and sorted, 30 per page."""
     lo, hi = _date(body.get("from")), _date(body.get("to"))
     if not lo or not hi:
@@ -769,7 +771,7 @@ def posts_page(body):
     topics = [t for t in body.get("topics") or [] if t in TOPICS]
     if topics:
         where.append(f"{TOPICS_OF} && %s::text[]"); params.append(topics)
-    channels = [str(c) for c in body.get("channels") or [] if isinstance(c, str)][:20]
+    channels = [str(c) for c in body.get("channels") or [] if isinstance(c, str)][:channel_limit]
     if channels:
         where.append("channel = any(%s)"); params.append(channels)
     tone = body.get("tone")
@@ -860,7 +862,18 @@ def app_action(user, action, body):
         if state != "ok":
             r = {"ok": False, "error": "forbidden"}
         elif action == "posts":                       # any signed-in user
-            r = posts_page(body)
+            r = posts_page(body, channel_limit=50 if acc.get("role") == "leader" else 20)
+        elif action in ("prefs_set", "leader_stats", "digest"):
+            if acc.get("role") != "leader":
+                r = {"ok": False, "error": "forbidden"}
+            elif action == "prefs_set":
+                r = leader.set_prefs(q, acc["id"], user["id"], body, TOPICS)
+            elif action == "leader_stats":
+                r = leader.leader_stats(q, body.get("channels", []))
+            elif not isinstance(body.get("on"), bool):
+                r = {"ok": False, "error": "bad_input"}
+            else:
+                r = bot.set_digest(q, user["id"], body["on"])
         elif not acc.get("is_admin"):
             r = {"ok": False, "error": "forbidden"}
         elif action == "admin":
@@ -1004,6 +1017,10 @@ class handler(BaseHTTPRequestHandler):
             if state != "ok":
                 return self._json(200, {"auth": state, "lang": lang,
                                         "request_open": auth.has_open_request(q, user["id"])})
+            if acc.get("role") == "leader":
+                prefs = leader.prefs(q, acc["id"], user["id"])
+                return self._json(200, {"auth": "ok", "lang": lang, "me": me_json(acc), "prefs": prefs,
+                                        "leader": leader.leader_stats(q, prefs["channels"])})
             return self._json(200, {"auth": "ok", "lang": lang, "me": me_json(acc), "stats": build_stats()})
         except Exception as e:
             print("data error:", repr(e))

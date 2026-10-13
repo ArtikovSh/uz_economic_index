@@ -303,6 +303,12 @@ def set_lang(q, tg_id, lang):
     return True
 
 
+def set_digest(q, tg_id, on):
+    q("""insert into bot_users (telegram_id, digest) values (%s, %s)
+         on conflict (telegram_id) do update set digest=excluded.digest""", (tg_id, on))
+    return {"ok": True, "digest": on}
+
+
 def remember(q, tg_id):
     """First contact: a row with the defaults (daily summary on). Returns whether it was new."""
     row = q("""insert into bot_users (telegram_id) values (%s)

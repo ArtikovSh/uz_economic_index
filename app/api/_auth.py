@@ -22,7 +22,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
-ROLES = ("analyst", "economist", "admin")
+ROLES = ("analyst", "economist", "admin", "leader")
 TERMS = {"30": 30, "90": 90, "0": None}           # days; "0" = no expiry
 LOGIN_RE = re.compile(r"[a-z][a-z0-9._-]{2,31}")  # the Mini App checks the same rules as you type
 RESERVED_LOGINS = ("admin",)                       # the owner's display name
@@ -38,7 +38,7 @@ create table if not exists accounts (
     id             bigserial primary key,
     login          text        not null unique,
     password_hash  text        not null,
-    role           text        not null check (role in ('analyst','economist','admin')),
+    role           text        not null check (role in ('analyst','economist','admin','leader')),
     status         text        not null default 'active' check (status in ('active','blocked')),
     expires_at     timestamptz,
     telegram_id    bigint      unique,
@@ -56,6 +56,15 @@ create table if not exists accounts (
     failed_logins  integer     not null default 0,
     locked_until   timestamptz
 );
+do $$
+begin
+    if exists (select 1 from pg_constraint where conrelid = 'accounts'::regclass
+               and conname = 'accounts_role_check' and position('leader' in pg_get_constraintdef(oid)) = 0) then
+        alter table accounts drop constraint accounts_role_check;
+        alter table accounts add constraint accounts_role_check
+            check (role in ('analyst','economist','admin','leader'));
+    end if;
+end $$;
 create table if not exists access_requests (
     id             bigserial primary key,
     telegram_id    bigint      not null,
