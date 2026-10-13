@@ -35,9 +35,11 @@ export function aggregate(data, p, topics) {
   result.topics = topics.map((key) => ({ key, tones: [0, 0, 0] }));
   const byTopic = new Map(result.topics.map((r) => [r.key, r]));
   data.topics.forEach(([i, topic, ...counts]) => {
-    if (indices.has(i) && byTopic.has(topic)) counts.forEach((v, j) => {
-      result.tones[j] += v; byTopic.get(topic).tones[j] += v;
-    });
+    if (indices.has(i) && byTopic.has(topic)) counts.forEach((v, j) => { byTopic.get(topic).tones[j] += v; });
+  });
+  const chosen = new Set(topics);
+  (data.groups || []).forEach(([i, group, ...counts]) => {
+    if (indices.has(i) && group.some((topic) => chosen.has(topic))) counts.forEach((v, j) => { result.tones[j] += v; });
   });
   result.total = result.tones.reduce((a, b) => a + b, 0);
   result.mood = result.total ? Math.round(100 * (result.tones[0] - result.tones[2]) / result.total) : null;

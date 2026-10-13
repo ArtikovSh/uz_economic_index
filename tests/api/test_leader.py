@@ -139,3 +139,19 @@ def test_posts_allow_fifty_leader_channels(server, news, account):
     body = {"from": "2026-05-02", "to": "2026-05-03", "channels": selected}
     assert call(server, U(701), "posts", body)[1]["total"] == 1
     assert call(server, U(OWNER), "posts", body)[1]["total"] == 0
+
+
+def test_multitopic_post_counts_once_in_summary(server, news, account):
+    for mid, topics, tone in ((20, ["trade", "business"], .7), (21, ["trade"], -.7)):
+        index.q("insert into messages values ('@daryo',%s,'2026-05-02 10:00+00',100,0,'Post')", (mid,))
+        index.q("""insert into labels (channel,message_id,primary_topic,topics,sentiment,
+                    is_economic,is_ad,is_foreign,is_digest)
+                    values ('@daryo',%s,'trade',%s,%s,true,false,false,false)""", (mid, topics, tone))
+    data = call(server, U(701), "leader_stats", {"channels": ["@daryo"]})[1]
+    assert [0, ["business", "trade"], 1, 0, 0] in data["groups"]
+    result = index.leader.leader_summary(index.q, {"channels": ["@daryo"],
+                                                   "topics": ["trade", "business"]},
+                                         "kun", "2026-05-02", index.LEADER_SQL)
+    assert result["econ"] == 2 and result["tones"] == [1, 0, 1]
+    assert result["shares"] == [50, 0, 50] and result["mood"] == 0
+    assert {row[0]: sum(row[1:]) for row in result["topics"]} == {"trade": 2, "business": 1}
