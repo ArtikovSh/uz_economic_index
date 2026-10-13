@@ -13,7 +13,8 @@ export function animate(duration, update, done = () => {}) {
     document.removeEventListener('visibilitychange', reset); mq.removeEventListener('change', finish);
   };
   const finish = () => { if (!stopped) { cancel(); update(1); done(); } };
-  const tick = (now) => {
+  const tick = () => {
+    const now = performance.now();
     if (stopped) return;
     if (document.hidden) last = null;
     else {

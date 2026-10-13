@@ -13,7 +13,7 @@ const TABS = [['home', 'home'], ['topics', 'layers'], ['settings', 'settings']];
 const VIEWS = { home, topics, posts, settings }, MOUNTS = { home: mountHome, topics: mountTopics, posts: mountPosts, settings: mountSettings };
 export function renderLeader(root, nav, state) {
   const shell = document.createElement('div'); shell.className = 'leader-shell'; root.replaceChildren(shell);
-  let cleanups = [], numberStop = () => {}, pending = {}, saveTimer, queue = Promise.resolve(), revision = 0;
+  let cleanups = [], numberStop = () => {}, pending = {}, saveTimer, queue = Promise.resolve();
   let confirmed = structuredClone(state.data.prefs);
   const ctx = {
     root, nav, shell, main: null, data: state.data.leader, prefs: state.data.prefs, me: state.data.me,
@@ -38,33 +38,34 @@ export function renderLeader(root, nav, state) {
     ctx.ui.tab = ctx.ui.origin; draw('static'); ctx.main.scrollTop = ctx.ui.scroll;
   }
   function updatePrefs(patch) {
-    Object.assign(ctx.prefs, patch); Object.assign(pending, patch); revision++;
+    Object.assign(ctx.prefs, patch); Object.assign(pending, patch);
     clearTimeout(saveTimer); saveTimer = setTimeout(flushPrefs, 400);
   }
   function flushPrefs() {
     clearTimeout(saveTimer);
-    const patch = pending, mine = revision; pending = {};
+    const patch = pending; pending = {};
     if (!Object.keys(patch).length) return queue;
     queue = queue.then(async () => {
       try {
+        // Fetch before persisting so a failed refresh cannot leave saved channels with stale figures.
+        const data = patch.channels ? await api('leader_stats', { channels: patch.channels }) : null;
+        if (data && !data.ok) throw data;
         const r = await api('prefs_set', patch); if (!r.ok) throw r;
         confirmed = r.prefs;
-        if (patch.channels) {
-          const data = await api('leader_stats', { channels: patch.channels }); if (!data.ok) throw data;
-          if (JSON.stringify(ctx.prefs.channels) === JSON.stringify(patch.channels)) ctx.data = data;
-        }
+        if (data && JSON.stringify(ctx.prefs.channels) === JSON.stringify(patch.channels)) ctx.data = data;
         if (shell.isConnected && ctx.ui.tab !== 'settings') draw('update', true);
       } catch (r) {
-        if (mine === revision) {
-          for (const key of Object.keys(patch)) ctx.prefs[key] = confirmed[key];
-          if (shell.isConnected) draw('update', true);
+        for (const key of Object.keys(patch)) {
+          if (JSON.stringify(ctx.prefs[key]) === JSON.stringify(patch[key])) ctx.prefs[key] = confirmed[key];
         }
+        if (shell.isConnected) draw('update', true);
         toast(errorText(r));
       }
     });
     return queue;
   }
   function launch() {
+    confirmed = structuredClone(ctx.prefs);
     shell.innerHTML = '<div class="leader-content"><header class="leader-header"></header><main class="leader-scroll"></main></div><nav class="leader-nav"></nav>';
     ctx.main = shell.querySelector('main'); draw('entry');
   }
