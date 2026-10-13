@@ -3,13 +3,14 @@ import { api, applyTheme, errorText, syncLang, tg } from './lib.js';
 import { renderContact, renderDenied, renderError, renderLogin, renderOutside, renderSent } from './screens.js';
 import { renderAdmin } from './admin.js';
 import { renderDashboard } from './dashboard.js';
+import { renderLeader } from './leader/app.js';
 
 const root = document.getElementById('root');
 const state = { auth: null, data: null, requestOpen: false };
 let deepLink = new URLSearchParams(location.search).get('screen');   // bot buttons open ?screen=admin or =requests
 const SCREENS = {
   login: renderLogin, contact: renderContact, sent: renderSent, denied: renderDenied,
-  outside: renderOutside, error: renderError, admin: renderAdmin, dashboard: renderDashboard,
+  outside: renderOutside, error: renderError, admin: renderAdmin, dashboard: renderDashboard, leader: renderLeader,
 };
 
 const nav = {
@@ -39,7 +40,7 @@ async function boot() {
   if ((want === 'admin' || want === 'requests') && r.me && r.me.is_admin) {
     return nav.go('admin', { view: want === 'requests' ? 'requests' : 'users' });
   }
-  return nav.go('dashboard');
+  return nav.go(r.me?.role === 'leader' ? 'leader' : 'dashboard');
 }
 
 if (tg) {

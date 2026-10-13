@@ -1,7 +1,7 @@
 // Admin panel: users (an account page per user and a form for new credentials), requests, channels.
 import { api, copy, errorText, esc, fmtDate, fmtWhen, haptic, icon, openSheet, segHTML, setBack, t, tg, toast } from './lib.js';
 
-const ROLES = ['analyst', 'economist', 'admin'];
+const ROLES = ['analyst', 'economist', 'admin', 'leader'];
 const TERMS = ['30', '90', '0'];
 const STATES = ['active', 'pending', 'expired', 'blocked'];
 const TERM_DAYS = { 30: 30, 90: 90, 0: null };
